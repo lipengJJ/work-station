@@ -219,7 +219,7 @@ onMounted(async () => {
               style="max-width: 70%; padding: 8px 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-word"
               :style="{
                 backgroundColor: msg.role === 'user' ? '#1677ff' : '#f5f5f5',
-                color: msg.role === 'user' ? '#fff' : 'inherit',
+                color: msg.role === 'user' ? '#fff' : 'rgba(0, 0, 0, 0.88)',
               }"
             >
               {{ msg.content || (sending && msg.role === 'assistant' ? '思考中…' : '') }}
