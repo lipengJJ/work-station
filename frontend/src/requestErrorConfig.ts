@@ -2,6 +2,7 @@
 import type { RequestConfig } from '@umijs/max';
 import { getIntl } from '@umijs/max';
 import { message, notification } from 'antd';
+import { getToken } from '@/services/workbench/token';
 
 // 错误处理方案： 错误类型
 enum ErrorShowType {
@@ -90,15 +91,13 @@ export const errorConfig: RequestConfig = {
     },
   },
 
-  // 请求拦截器
+  // 请求拦截器：给每个请求带上工作台后端签发的 JWT
   requestInterceptors: [
     (config: RequestOptions) => {
-      // 拦截请求配置，进行个性化处理。
-      // 示例：为请求附加 token（按需启用）
-      // const token = localStorage.getItem('token');
-      // if (token) {
-      //   config.headers = { ...config.headers, Authorization: `Bearer ${token}` };
-      // }
+      const token = getToken();
+      if (token) {
+        config.headers = { ...config.headers, Authorization: `Bearer ${token}` };
+      }
       return config;
     },
   ],
