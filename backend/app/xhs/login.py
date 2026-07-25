@@ -68,6 +68,12 @@ def poll_qrcode_login(db: Session, qr_id: str) -> dict:
     entry["cookies"] = cookies
 
     if success:
+        if "web_session" not in cookies:
+            # check_qrcode_status 的 success 只代表"手机上已扫码确认"，真正的登录态 session
+            # 是它内部另发的第二个请求拿的，那个请求偶尔会慢一拍/失败而不影响这里的 success。
+            # 这时候不能把不完整的 cookie 存下来（后面采集任务会报"无登录信息"），继续等
+            # 下一轮轮询——status 还是 2，会自然重试那个内部请求，通常一两次就好了。
+            return {"status": "pending", "msg": "登录确认中，请稍候…"}
         _pending_qrcode.pop(qr_id, None)
         _, user_info, cookies = _login_api.get_user_info(cookies)
         cookies_str = _login_api.cookies_to_str(cookies)
