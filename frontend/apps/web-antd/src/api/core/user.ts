@@ -15,7 +15,7 @@ interface BackendCurrentUser {
  * 后端 /api/auth/me 只返回 { id, username, role }，这里映射成模板期望的 UserInfo 形状。
  */
 export async function getUserInfoApi(): Promise<UserInfo> {
-  const user = await requestClient.get<BackendCurrentUser>('/api/auth/me');
+  const user = await requestClient.get<BackendCurrentUser>('/auth/me');
   const accessStore = useAccessStore();
   return {
     avatar: '',

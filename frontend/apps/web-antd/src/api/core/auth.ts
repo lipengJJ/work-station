@@ -25,7 +25,7 @@ export async function loginApi(data: AuthApi.LoginParams) {
   const result = await requestClient.post<{
     access_token: string;
     token_type: string;
-  }>('/api/auth/login', form.toString(), {
+  }>('/auth/login', form.toString(), {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });
   return { accessToken: result.access_token } satisfies AuthApi.LoginResult;
@@ -45,6 +45,6 @@ export async function logoutApi() {
  * 后端目前只有单管理员角色，没有细粒度权限码体系，用 role 映射成一个简单的 code 数组。
  */
 export async function getAccessCodesApi() {
-  const user = await requestClient.get<{ role: string }>('/api/auth/me');
+  const user = await requestClient.get<{ role: string }>('/auth/me');
   return [user.role];
 }

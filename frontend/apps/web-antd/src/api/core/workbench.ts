@@ -41,9 +41,9 @@ export namespace WorkbenchApi {
 }
 
 export async function getHomeApi() {
-  return requestClient.get<WorkbenchApi.HomeResponse>('/api/home');
+  return requestClient.get<WorkbenchApi.HomeResponse>('/home');
 }
 
 export async function getTasksCenterApi() {
-  return requestClient.get<WorkbenchApi.TaskCenterResponse>('/api/tasks-center');
+  return requestClient.get<WorkbenchApi.TaskCenterResponse>('/tasks-center');
 }
