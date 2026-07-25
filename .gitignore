@@ -5,9 +5,10 @@ backend/**/__pycache__/
 backend/*.db
 backend/workbench.db
 
-# frontend
-frontend/node_modules/
-frontend/dist/
-frontend/.umi/
-frontend/.umi-production/
-frontend/.env.local
+# frontend (Vben Admin monorepo)
+frontend/**/node_modules/
+frontend/**/dist/
+frontend/**/dist.zip
+frontend/**/.turbo/
+frontend/**/.cache/
+frontend/**/.env.local

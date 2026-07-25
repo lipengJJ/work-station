@@ -1,161 +1,157 @@
-Language : [English](./README.md) | 简体中文
-
-<h1 align="center">Ant Design Pro</h1>
-
 <div align="center">
+  <a href="https://github.com/anncwb/vue-vben-admin">
+    <img alt="VbenAdmin Logo" width="215" src="https://unpkg.com/@vbenjs/static-source@0.1.7/source/logo-v1.webp">
+  </a>
+  <br>
+  <br>
 
-开箱即用的中台前端/设计解决方案。
+[![license](https://img.shields.io/github/license/anncwb/vue-vben-admin.svg)](LICENSE)
 
-[![CI](https://github.com/ant-design/ant-design-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/ant-design/ant-design-pro/actions/workflows/ci.yml)
-[![GitHub release](https://img.shields.io/github/v/release/ant-design/ant-design-pro.svg)](https://github.com/ant-design/ant-design-pro/releases)
-[![Build With Utoo](https://img.shields.io/badge/build%20with-utoo-028fe4.svg)](https://utoo.land)
-[![Build With Umi](https://img.shields.io/badge/build%20with-umi-028fe4.svg)](https://umijs.org/)
-[![Checked with Biome](https://img.shields.io/badge/Checked_with-Biome-60a5fa?style=flat&logo=biome)](https://biomejs.dev)
-[![Ant Design](https://badgen.net/badge/icon/Ant%20Design?icon=https://gw.alipayobjects.com/zos/antfincdn/Pp4WPgVDB3/KDpgvguMpGfqaHPjicRK.svg&label)](https://ant.design/)
-
-![](https://github.com/user-attachments/assets/fde29061-3d9a-4397-8ac2-397b0e033ef5)
-
+  <h1>Vue Vben Admin</h1>
 </div>
 
-- 预览：https://preview.pro.ant.design
-- 使用文档：[docs/cheatsheet.zh-CN.md](./docs/cheatsheet.zh-CN.md)
-- 更新日志: https://github.com/ant-design/ant-design-pro/releases
-- 常见问题：[docs/cheatsheet.zh-CN.md#faq](./docs/cheatsheet.zh-CN.md#faq)
-- **v6 正式发布！** — [查看 v6 更新内容](https://github.com/ant-design/ant-design-pro/releases/tag/v6.0.0)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=vbenjs_vue-vben-admin&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=vbenjs_vue-vben-admin) ![codeql](https://github.com/vbenjs/vue-vben-admin/actions/workflows/codeql.yml/badge.svg) ![build](https://github.com/vbenjs/vue-vben-admin/actions/workflows/build.yml/badge.svg) ![ci](https://github.com/vbenjs/vue-vben-admin/actions/workflows/ci.yml/badge.svg) ![deploy](https://github.com/vbenjs/vue-vben-admin/actions/workflows/deploy.yml/badge.svg)
+
+**中文** | [English](./README.md) | [日本語](./README.ja-JP.md)
+
+## 简介
+
+Vue Vben Admin 是 Vue Vben Admin 的升级版本。作为一个免费开源的中后台模板，它采用了最新的 Vue 3、Vite、TypeScript 等主流技术开发，开箱即用，可用于中后台前端开发，也适合学习参考。
+
+## 升级提示
+
+该版本为最新版本 `5.0`，与其他版本不兼容，如果你是新项目，建议使用最新版本。如果你想查看旧版本，请使用 [v2 分支](https://github.com/vbenjs/vue-vben-admin/tree/v2)
 
 ## 特性
 
-- :bulb: **TypeScript**: 应用程序级 JavaScript 的语言
-- :scroll: **区块**: 通过区块模板快速构建页面
-- :gem: **优雅美观**：基于 [Ant Design 6](https://ant.design/) 体系精心设计
-- :triangular_ruler: **常见设计模式**：提炼自中后台应用的典型页面和场景
-- :rocket: **最新技术栈**：使用 React 19/[Umi Max 4](https://umijs.org/)/[antd 6](https://ant.design/)/[utoopack](https://utoo.land) 等前端前沿技术开发
-- :iphone: **响应式**：针对不同屏幕大小设计
-- :art: **主题**：基于 [Tailwind CSS v4](https://tailwindcss.com/) + [antd-style](https://github.com/ant-design/antd-style) 的可配置主题满足多样化品牌诉求
-- :globe_with_meridians: **国际化**：内建业界通用的国际化方案
-- :gear: **最佳实践**：良好的工程实践助您持续产出高质量代码
-- :1234: **Mock 数据**：实用的本地数据调试方案
-- :robot: **AI 助手**：内置 AI 聊天助手页面，基于 [Ant Design X](https://x.ant.design/)
-- :white_check_mark: **UI 测试**：自动化测试保障前端产品质量
+- **最新技术栈**：使用 Vue3/vite 等前端前沿技术开发
+- **TypeScript**：应用程序级 JavaScript 的语言
+- **主题**：提供多套主题色彩，可配置自定义主题
+- **国际化**：内置完善的国际化方案
+- **权限**：内置完善的动态路由权限生成方案
 
-## 模板
+## 预览
 
-```
-- 欢迎页
-- Dashboard
-  - 分析页
-  - 监控页
-  - 工作台
-- 表单页
-  - 基础表单页
-  - 分步表单页
-  - 高级表单页
-- 列表页
-  - 搜索列表（文章/项目/应用）
-  - 查询表格
-  - 标准列表
-  - 卡片列表
-- 详情页
-  - 基础详情页
-  - 高级详情页
-- 结果
-  - 成功页
-  - 失败页
-- 异常
-  - 403 无权限
-  - 404 找不到
-  - 500 服务器出错
-- 用户
-  - 用户中心页
-  - 用户设置页
-- AI 助手
-- 账户
-  - 登录
-  - 注册
-  - 注册成功
-```
+- [Vben Admin](https://vben.pro/) - 完整版中文站点
 
-## 使用
+测试账号：vben/123456
 
-### 开始使用
+<div align="center">
+  <img alt="VbenAdmin Logo" width="100%" src="https://anncwb.github.io/anncwb/images/preview1.png">
+  <img alt="VbenAdmin Logo" width="100%" src="https://anncwb.github.io/anncwb/images/preview2.png">
+  <img alt="VbenAdmin Logo" width="100%" src="https://anncwb.github.io/anncwb/images/preview3.png">
+</div>
 
-克隆或下载本项目到本地：
+### 使用 Gitpod
+
+在 Gitpod（适用于 GitHub 的免费在线开发环境）中打开项目，并立即开始编码。
+
+[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/vbenjs/vue-vben-admin)
+
+## 文档
+
+[文档地址](https://doc.vben.pro/)
+
+## 安装使用
+
+1. 获取项目代码
 
 ```bash
-git clone --depth=1 https://github.com/ant-design/ant-design-pro.git myapp
-cd myapp
+git clone https://github.com/vbenjs/vue-vben-admin.git
 ```
 
-### 安装依赖
+2. 安装依赖
 
 ```bash
-npm install
+cd vue-vben-admin
+npm i -g corepack
+pnpm install
 ```
 
-### 开发
+3. 运行
 
 ```bash
-# 启动开发服务器（默认为完整版）
-npm start
+pnpm dev
 ```
 
-### 精简为简单版本
-
-本项目默认包含所有区块。如果你需要一个最小化的版本，运行：
+4. 打包
 
 ```bash
-npm run simple
+pnpm build
 ```
 
-这将会：
-- 删除多余的页面目录（dashboard、form、list/*、profile、result、exception、account 等）
-- 删除多余的 mock 文件
-- 替换路由为简单版本
-- 从 package.json 中移除多余的依赖
+## 更新日志
 
-**注意**：此操作不可逆，将永久删除文件。
+[CHANGELOG](https://github.com/vbenjs/vue-vben-admin/releases)
 
-### 构建
+## 如何贡献
 
-```bash
-npm run build
-```
+非常欢迎你的加入！[提一个 Issue](https://github.com/anncwb/vue-vben-admin/issues/new/choose) 或者提交一个 Pull Request。
 
-更多信息请参考 [使用文档](./docs/cheatsheet.zh-CN.md)。
+**Pull Request 流程：**
 
-## AI Skills（Claude Code）
+1. Fork 代码
+2. 创建自己的分支：`git checkout -b feature/xxxx`
+3. 提交你的修改：`git commit -am 'feat(function): add xxxxx'`
+4. 推送您的分支：`git push origin feature/xxxx`
+5. 提交 `pull request`
 
-本项目内置了两个 [Claude Code Skills](https://docs.anthropic.com/en/docs/claude-code/skills)，位于 `.claude/skills/` 目录下：
+## Git 贡献提交规范
 
-| Skill | 触发词 | 说明 |
-|---|---|---|
-| `/pro-upgrade` | "升级"、"upgrade pro"、"update to latest" | 自动升级到最新 Ant Design Pro 版本。对比最新模板差异，合并框架变更并保留业务代码。 |
-| `/antd` | antd 相关代码或问题 | 查询 antd 组件 API、props、token、demo；检查废弃用法；跨版本迁移 — 基于 `@ant-design/cli`。 |
+参考 [vue](https://github.com/vuejs/vue/blob/dev/.github/COMMIT_CONVENTION.md) 规范 ([Angular](https://github.com/conventional-changelog/conventional-changelog/tree/master/packages/conventional-changelog-angular))
 
-**在 Claude Code 中使用：**
+- `feat` 增加新功能
+- `fix` 修复问题/BUG
+- `style` 代码风格相关无影响运行结果的
+- `perf` 优化/性能提升
+- `refactor` 重构
+- `revert` 撤销修改
+- `test` 测试相关
+- `docs` 文档/注释
+- `chore` 依赖更新/脚手架配置修改等
+- `ci` 持续集成
+- `types` 类型定义文件更改
 
-```bash
-# 升级项目到最新 Pro 版本
-/pro-upgrade
+## 浏览器支持
 
-# 查询 antd 组件信息、调试问题、运行 lint 等
-/antd
-```
+Tailwind CSS v4.0 is designed for Safari 16.4+, Chrome 111+, and Firefox 128+
 
-> 💡 如果你的项目是从本仓库克隆的，这些 skill 已经内置，无需额外安装。如需获取最新 skill 定义，可以从模板拉取更新或运行 `npx skills add ant-design/ant-design-pro` 刷新。
-
-## 支持环境
-
-现代浏览器。
+支持现代浏览器，不支持 IE
 
 | [<img src="https://raw.githubusercontent.com/alrra/browser-logos/master/src/edge/edge_48x48.png" alt="Edge" width="24px" height="24px" />](http://godban.github.io/browsers-support-badges/)</br>Edge | [<img src="https://raw.githubusercontent.com/alrra/browser-logos/master/src/firefox/firefox_48x48.png" alt="Firefox" width="24px" height="24px" />](http://godban.github.io/browsers-support-badges/)</br>Firefox | [<img src="https://raw.githubusercontent.com/alrra/browser-logos/master/src/chrome/chrome_48x48.png" alt="Chrome" width="24px" height="24px" />](http://godban.github.io/browsers-support-badges/)</br>Chrome | [<img src="https://raw.githubusercontent.com/alrra/browser-logos/master/src/safari/safari_48x48.png" alt="Safari" width="24px" height="24px" />](http://godban.github.io/browsers-support-badges/)</br>Safari |
-| --- | --- | --- | --- |
-| Edge | last 2 versions | last 2 versions | last 2 versions |
+| :-: | :-: | :-: | :-: |
+| last 2 versions | last 2 versions | last 2 versions | last 2 versions |
 
-## 参与贡献
+## 维护者
 
-我们非常欢迎你的贡献，你可以通过以下方式和我们一起共建 :smiley:：
+[@Vben](https://github.com/anncwb)
 
-- 在你的公司或个人项目中使用 Ant Design Pro。
-- 通过 [Issue](http://github.com/ant-design/ant-design-pro/issues) 报告 bug 或进行咨询。
-- 提交 [Pull Request](http://github.com/ant-design/ant-design-pro/pulls) 改进 Pro 的代码。
+## Star 历史
+
+[![Star History Chart](https://api.star-history.com/svg?repos=vbenjs/vue-vben-admin&type=Date)](https://star-history.com/#vbenjs/vue-vben-admin&Date)
+
+## 捐赠
+
+如果你觉得这个项目对你有帮助，你可以帮作者买一杯咖啡表示支持！
+
+![donate](https://unpkg.com/@vbenjs/static-source@0.1.7/source/sponsor.png)
+
+<a style="display: block;width: 100px;height: 50px;line-height: 50px; color: #fff;text-align: center; background: #408aed;border-radius: 4px;" href="https://www.paypal.com/paypalme/cvvben">Paypal Me</a>
+
+## 贡献者
+
+<a href="https://openomy.app/github/vbenjs/vue-vben-admin" target="_blank" style="display: block; width: 100%;" align="center">
+  <img src="https://openomy.app/svg?repo=vbenjs/vue-vben-admin&chart=bubble&latestMonth=3" target="_blank" alt="Contribution Leaderboard" style="display: block; width: 100%;" />
+ </a>
+
+<a href="https://github.com/vbenjs/vue-vben-admin/graphs/contributors">
+  <img alt="Contributors" src="https://contrib.rocks/image?repo=vbenjs/vue-vben-admin" />
+</a>
+
+## Discord
+
+- [Github Discussions](https://github.com/anncwb/vue-vben-admin/discussions)
+
+## 许可证
+
+[MIT © Vben-2020](./LICENSE)

@@ -1,164 +1,157 @@
-<h1 align="center">Ant Design Pro</h1>
-
 <div align="center">
+  <a href="https://github.com/anncwb/vue-vben-admin">
+    <img alt="VbenAdmin Logo" width="215" src="https://unpkg.com/@vbenjs/static-source@0.1.7/source/logo-v1.webp">
+  </a>
+  <br>
+  <br>
 
-An out-of-box UI solution for enterprise applications as a React boilerplate.
+[![license](https://img.shields.io/github/license/anncwb/vue-vben-admin.svg)](LICENSE)
 
-[![CI](https://github.com/ant-design/ant-design-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/ant-design/ant-design-pro/actions/workflows/ci.yml)
-[![GitHub release](https://img.shields.io/github/v/release/ant-design/ant-design-pro.svg)](https://github.com/ant-design/ant-design-pro/releases)
-[![Build With Utoo](https://img.shields.io/badge/build%20with-utoo-028fe4.svg)](https://utoo.land)
-[![Build With Umi](https://img.shields.io/badge/build%20with-umi-028fe4.svg)](https://umijs.org/)
-[![Checked with Biome](https://img.shields.io/badge/Checked_with-Biome-60a5fa?style=flat&logo=biome)](https://biomejs.dev)
-[![Ant Design](https://badgen.net/badge/icon/Ant%20Design?icon=https://gw.alipayobjects.com/zos/antfincdn/Pp4WPgVDB3/KDpgvguMpGfqaHPjicRK.svg&label)](https://ant.design/)
-
-Language: English | [简体中文](./README.zh-CN.md)
-
-<img width="1718" height="1191" alt="light theme preview" src="https://github.com/user-attachments/assets/74ad0b4a-e086-4955-8edd-9f2cff31aee8" />
-<img width="1718" height="1191" alt="dark theme preview" src="https://github.com/user-attachments/assets/d4bcb7c1-42c7-4c0f-b130-1193a931f9f7" />
-
+  <h1>Vue Vben Admin</h1>
 </div>
 
-- Preview: https://preview.pro.ant.design
-- Documentation: [docs/cheatsheet.en-US.md](./docs/cheatsheet.en-US.md)
-- ChangeLog: https://github.com/ant-design/ant-design-pro/releases
-- FAQ: [docs/cheatsheet.en-US.md#faq](./docs/cheatsheet.en-US.md#faq)
-- **v6 Released!** — [What's new in v6](https://github.com/ant-design/ant-design-pro/releases/tag/v6.0.0)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=vbenjs_vue-vben-admin&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=vbenjs_vue-vben-admin) [![codeql](https://github.com/vbenjs/vue-vben-admin/actions/workflows/codeql.yml/badge.svg)](https://github.com/vbenjs/vue-vben-admin/actions/workflows/codeql.yml) [![build](https://github.com/vbenjs/vue-vben-admin/actions/workflows/build.yml/badge.svg)](https://github.com/vbenjs/vue-vben-admin/actions/workflows/build.yml) [![ci](https://github.com/vbenjs/vue-vben-admin/actions/workflows/ci.yml/badge.svg)](https://github.com/vbenjs/vue-vben-admin/actions/workflows/ci.yml) [![deploy](https://github.com/vbenjs/vue-vben-admin/actions/workflows/deploy.yml/badge.svg)](https://github.com/vbenjs/vue-vben-admin/actions/workflows/deploy.yml)
+
+**English** | [中文](./README.zh-CN.md) | [日本語](./README.ja-JP.md)
+
+## Introduction
+
+Vue Vben Admin is a free and open source middle and back-end template. Using the latest `vue3`, `vite`, `TypeScript` and other mainstream technology development, the out-of-the-box middle and back-end front-end solutions can also be used for learning reference.
+
+## Upgrade Notice
+
+This is the latest version, 5.0, and it is not compatible with previous versions. If you are starting a new project, it is recommended to use the latest version. If you wish to view the old version, please use the [v2 branch](https://github.com/vbenjs/vue-vben-admin/tree/v2).
 
 ## Features
 
-- :bulb: **TypeScript**: A language for application-scale JavaScript
-- :scroll: **Blocks**: Build page with block template
-- :gem: **Neat Design**: Built on [Ant Design 6](https://ant.design/) specification
-- :triangular_ruler: **Common Templates**: Typical templates for enterprise applications
-- :rocket: **State of The Art Development**: Newest development stack of React 19/[Umi Max 4](https://umijs.org/)/[antd 6](https://ant.design/)/[utoopack](https://utoo.land)
-- :iphone: **Responsive**: Designed for variable screen sizes
-- :art: **Theming**: Customizable theme with [Tailwind CSS v4](https://tailwindcss.com/) + [antd-style](https://github.com/ant-design/antd-style)
-- :globe_with_meridians: **International**: Built-in i18n solution
-- :gear: **Best Practices**: Solid workflow to make your code healthy
-- :1234: **Mock development**: Easy to use mock development solution
-- :robot: **AI Assistant**: Built-in AI chatbot page powered by [Ant Design X](https://x.ant.design/)
-- :white_check_mark: **UI Test**: Fly safely with unit and e2e tests
+- **Latest Technology Stack**: Developed with cutting-edge front-end technologies like Vue 3 and Vite
+- **TypeScript**: A language for application-scale JavaScript
+- **Themes**: Multiple theme colors available with customizable options
+- **Internationalization**: Comprehensive built-in internationalization support
+- **Permissions**: Built-in solution for dynamic route-based permission generation
 
-## Templates
+## Preview
 
-```
-- Welcome
-- Dashboard
-  - Analysis
-  - Monitor
-  - Workplace
-- Form
-  - Basic Form
-  - Step Form
-  - Advanced Form
-- List
-  - Search List (Articles/Projects/Applications)
-  - Table List
-  - Basic List
-  - Card List
-- Profile
-  - Basic Profile
-  - Advanced Profile
-- Result
-  - Success
-  - Fail
-- Exception
-  - 403
-  - 404
-  - 500
-- Account
-  - Account Center
-  - Account Settings
-- AI Assistant
-- User
-  - Login
-  - Register
-  - Register Result
-```
+- [Vben Admin](https://vben.pro/) - Full version Chinese site
 
-## Usage
+Test Account: vben/123456
 
-### Get Started
+<div align="center">
+  <img alt="VbenAdmin Logo" width="100%" src="https://anncwb.github.io/anncwb/images/preview1.png">
+  <img alt="VbenAdmin Logo" width="100%" src="https://anncwb.github.io/anncwb/images/preview2.png">
+  <img alt="VbenAdmin Logo" width="100%" src="https://anncwb.github.io/anncwb/images/preview3.png">
+</div>
 
-Clone or download this repository to your local machine:
+### Use Gitpod
+
+Open the project in Gitpod (free online dev environment for GitHub) and start coding immediately.
+
+[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/vbenjs/vue-vben-admin)
+
+## Documentation
+
+[Document](https://doc.vben.pro/)
+
+## Install and Use
+
+1. Get the project code
 
 ```bash
-git clone --depth=1 https://github.com/ant-design/ant-design-pro.git myapp
-cd myapp
+git clone https://github.com/vbenjs/vue-vben-admin.git
 ```
 
-### Installation
+2. Install dependencies
 
 ```bash
-npm install
+cd vue-vben-admin
+npm i -g corepack
+pnpm install
 ```
 
-### Development
+3. Run
 
 ```bash
-# Start development server (full version by default)
-npm start
+pnpm dev
 ```
 
-### Simplify to Simple Version
-
-This project includes all blocks by default. If you need a minimal version, run:
+4. Build
 
 ```bash
-npm run simple
+pnpm build
 ```
 
-This will:
-- Remove extra page directories (dashboard, form, list/*, profile, result, exception, account, etc.)
-- Remove extra mock files
-- Replace routes with simple version
-- Remove extra dependencies from package.json
+## Change Log
 
-**Note**: This operation is irreversible and will permanently delete files.
+[CHANGELOG](https://github.com/vbenjs/vue-vben-admin/releases)
 
-### Build
+## How to Contribute
 
-```bash
-npm run build
-```
+You are very welcome to join! [Raise an issue](https://github.com/anncwb/vue-vben-admin/issues/new/choose) or submit a Pull Request.
 
-## AI Skills (Claude Code)
+**Pull Request Process:**
 
-This project ships with two built-in [Claude Code Skills](https://docs.anthropic.com/en/docs/claude-code/skills) in `.claude/skills/`:
+1. Fork the code
+2. Create your branch: `git checkout -b feat/xxxx`
+3. Submit your changes: `git commit -am 'feat(function): add xxxxx'`
+4. Push your branch: `git push origin feat/xxxx`
+5. Submit `pull request`
 
-| Skill | Trigger | Description |
-|---|---|---|
-| `/pro-upgrade` | "upgrade pro", "update to latest" | Auto-upgrade to the latest Ant Design Pro version. Diffs the latest template, merges framework changes while preserving your business code. |
-| `/antd` | antd-related code or questions | Query antd component APIs, props, tokens, demos; lint for deprecated usage; migrate between versions — all via `@ant-design/cli`. |
+## Git Contribution Submission Specification
 
-**Usage in Claude Code:**
+Reference [vue](https://github.com/vuejs/vue/blob/dev/.github/COMMIT_CONVENTION.md) specification ([Angular](https://github.com/conventional-changelog/conventional-changelog/tree/master/packages/conventional-changelog-angular))
 
-```bash
-# Upgrade the project to latest Pro version
-/pro-upgrade
+- `feat` Add new features
+- `fix` Fix the problem/BUG
+- `style` The code style is related and does not affect the running result
+- `perf` Optimization/performance improvement
+- `refactor` Refactor
+- `revert` Undo edit
+- `test` Test related
+- `docs` Documentation/notes
+- `chore` Dependency update/scaffolding configuration modification etc.
+- `ci` Continuous integration
+- `types` Type definition file changes
 
-# Query antd component info, debug issues, run lint, etc.
-/antd
-```
+## Browser Support
 
-> 💡 If your project was cloned from this repo, these skills are already included — no installation needed. To get the latest skill definitions, pull the updates from the template or run `npx skills add ant-design/ant-design-pro` to refresh them.
+Tailwind CSS v4.0 is designed for Safari 16.4+, Chrome 111+, and Firefox 128+
 
-## Browsers support
-
-Modern browsers.
+Support modern browsers, not IE
 
 | [<img src="https://raw.githubusercontent.com/alrra/browser-logos/master/src/edge/edge_48x48.png" alt="Edge" width="24px" height="24px" />](http://godban.github.io/browsers-support-badges/)</br>Edge | [<img src="https://raw.githubusercontent.com/alrra/browser-logos/master/src/firefox/firefox_48x48.png" alt="Firefox" width="24px" height="24px" />](http://godban.github.io/browsers-support-badges/)</br>Firefox | [<img src="https://raw.githubusercontent.com/alrra/browser-logos/master/src/chrome/chrome_48x48.png" alt="Chrome" width="24px" height="24px" />](http://godban.github.io/browsers-support-badges/)</br>Chrome | [<img src="https://raw.githubusercontent.com/alrra/browser-logos/master/src/safari/safari_48x48.png" alt="Safari" width="24px" height="24px" />](http://godban.github.io/browsers-support-badges/)</br>Safari |
-| --- | --- | --- | --- |
-| Edge | last 2 versions | last 2 versions | last 2 versions |
+| :-: | :-: | :-: | :-: |
+| last 2 versions | last 2 versions | last 2 versions | last 2 versions |
 
-## Contributing
+## Maintainer
 
-Any type of contribution is welcome, here are some examples of how you may contribute to this project:
+[@Vben](https://github.com/anncwb)
 
-- Use Ant Design Pro in your daily work.
-- Submit [issues](http://github.com/ant-design/ant-design-pro/issues) to report bugs or ask questions.
-- Propose [pull requests](http://github.com/ant-design/ant-design-pro/pulls) to improve our code.
+## Star History
 
-<a href="https://openomy.app/github/ant-design/ant-design-pro" target="_blank" style="display: block; width: 100%;" align="center">
-  <img src="https://openomy.app/svg?repo=ant-design/ant-design-pro&chart=bubble&latestMonth=3" target="_blank" alt="Contribution Leaderboard" style="display: block; width: 100%;" />
+[![Star History Chart](https://api.star-history.com/svg?repos=vbenjs/vue-vben-admin&type=Date)](https://star-history.com/#vbenjs/vue-vben-admin&Date)
+
+## Donate
+
+If you think this project is helpful to you, you can help the author buy a cup of coffee to show your support!
+
+![donate](https://unpkg.com/@vbenjs/static-source@0.1.7/source/sponsor.png)
+
+<a style="display: block;width: 100px;height: 50px;line-height: 50px; color: #fff;text-align: center; background: #408aee;border-radius: 4px;" href="https://www.paypal.com/paypalme/cvvben">Paypal Me</a>
+
+## Contributors
+
+<a href="https://openomy.app/github/vbenjs/vue-vben-admin" target="_blank" style="display: block; width: 100%;" align="center">
+  <img src="https://openomy.app/svg?repo=vbenjs/vue-vben-admin&chart=bubble&latestMonth=3" target="_blank" alt="Contribution Leaderboard" style="display: block; width: 100%;" />
+ </a>
+
+<a href="https://github.com/vbenjs/vue-vben-admin/graphs/contributors">
+  <img alt="Contributors" src="https://contrib.rocks/image?repo=vbenjs/vue-vben-admin" />
 </a>
+
+## Discord
+
+- [Github Discussions](https://github.com/anncwb/vue-vben-admin/discussions)
+
+## License
+
+[MIT © Vben-2020](./LICENSE)
