@@ -15,8 +15,12 @@ if [ ! -f .env ]; then
   fi
 fi
 
-echo "==> docker compose build + up"
-docker compose up -d --build
+echo "==> docker compose build（顺序构建，避免小磁盘 VM 上并行构建把空间挤爆）"
+docker compose build backend
+docker compose build frontend
+
+echo "==> docker compose up"
+docker compose up -d
 
 echo "==> 等待 backend 就绪"
 for _ in $(seq 1 20); do
