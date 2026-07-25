@@ -6,3 +6,13 @@ python-jose[cryptography]>=3.3
 bcrypt>=4.1
 python-multipart>=0.0.9
 pydantic-settings>=2.2
+
+# xhs 采集（Spider_XHS 核心依赖，创作者中心相关的 opencv-python/numpy/aiohttp 用不到，跳过）
+requests
+loguru
+python-dotenv
+retry
+openpyxl
+PyExecJS
+qrcode[pil]
+Pillow

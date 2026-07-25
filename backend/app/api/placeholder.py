@@ -47,7 +47,7 @@ xhs_router = placeholder_router(
         "keyword-stats": "关键词统计",
         "sentiment": "情绪分析",
         "brand-ranking": "酒店/品牌提及排名",
-        "collect-tasks": "采集任务",
+        # collect-tasks 已经在 app/api/xhs.py 里接上真实实现了，这里不再占位
     },
 )
 
