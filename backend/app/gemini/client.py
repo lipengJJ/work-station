@@ -45,10 +45,13 @@ def stream_chat(api_key: str, model: str, messages: list) -> Iterator[str]:
             raise GeminiError(f"Gemini API 请求失败（{resp.status_code}）：{detail}")
 
         data_lines: list = []
-        for raw_line in resp.iter_lines(decode_unicode=True):
-            if raw_line is None:
+        # 不用 iter_lines(decode_unicode=True)：那个走的是 resp.encoding，requests 在响应头
+        # 没显式声明 charset 时会按 HTTP 旧规范默认猜成 ISO-8859-1，把 UTF-8 多字节字符
+        # （中文）拆成乱码——直接按字节读、自己用 utf-8 解码，不依赖它的猜测。
+        for raw_bytes in resp.iter_lines():
+            if raw_bytes is None:
                 continue
-            line = raw_line.strip()
+            line = raw_bytes.decode("utf-8", errors="replace").strip()
             if not line:
                 # 空行 = 一个 SSE 事件结束
                 if data_lines:
