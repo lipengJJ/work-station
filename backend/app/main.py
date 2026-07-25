@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, home, system, tasks_center
+from app.api import auth, chat, home, system, tasks_center
 from app.api import xhs as xhs_api
 from app.api.placeholder import datacenter_router, stock_router, xhs_router
 from app.core.config import get_settings
@@ -45,6 +45,7 @@ def create_app() -> FastAPI:
         return {"status": "ok", "service": "workbench-backend"}
 
     app.include_router(auth.router)
+    app.include_router(chat.router)
     app.include_router(home.router)
     app.include_router(tasks_center.router)
     app.include_router(system.router)
