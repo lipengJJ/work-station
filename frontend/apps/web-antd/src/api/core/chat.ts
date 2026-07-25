@@ -58,6 +58,10 @@ export async function streamChatApi(content: string, handlers: StreamChatHandler
     '/chat/stream',
     { content },
     {
+      // postSSE 只有在请求头已经带了 application/json 时才会把 body 对象序列化成
+      // JSON 字符串，不然会把裸对象直接塞进 fetch 的 body，后端收到的不是合法 JSON，
+      // FastAPI 直接 422——这里必须显式声明
+      headers: { 'Content-Type': 'application/json' },
       onMessage: (raw: string) => {
         buffer += raw;
         const events = buffer.split('\n\n');

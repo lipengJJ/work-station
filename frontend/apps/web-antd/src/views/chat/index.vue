@@ -131,6 +131,9 @@ async function sendMessage() {
     });
   } catch (e: any) {
     message.error(`发送失败：${e.message}`);
+    if (!assistantMsg.content) {
+      assistantMsg.content = `[发送失败：${e.message}]`;
+    }
     sending.value = false;
   }
 }
