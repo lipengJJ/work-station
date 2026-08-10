@@ -1,6 +1,10 @@
 # docker-compose 的真实密钥（.env.example 是模板，可以提交）
 .env
 
+# 根目录运行日志与本地工具数据
+logs/
+.workbuddy-ai/
+
 # backend
 backend/.venv/
 backend/__pycache__/
@@ -10,6 +14,9 @@ backend/workbench.db
 backend/node_modules/
 # xhs 采集任务的产出（素材/Excel），不进版本库
 backend/storage/
+backend/app/storage/
+# 应用运行日志，不进版本库
+backend/logs/
 
 # frontend (Vben Admin monorepo)
 frontend/**/node_modules/
@@ -18,3 +25,6 @@ frontend/**/dist.zip
 frontend/**/.turbo/
 frontend/**/.cache/
 frontend/**/.env.local
+# 临时验证脚本
+frontend/_tmp_*
+frontend/**/verify-logic.tmp.mjs

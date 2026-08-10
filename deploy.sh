@@ -5,14 +5,16 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 if [ ! -f .env ]; then
-  echo "==> 未找到 .env，基于 .env.example 生成，并随机写入 WORKBENCH_SECRET_KEY"
+  echo "==> 未找到 .env，基于 .env.example 生成，并随机写入密钥"
   cp .env.example .env
-  SECRET="$(openssl rand -hex 32)"
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' "s#^WORKBENCH_SECRET_KEY=.*#WORKBENCH_SECRET_KEY=${SECRET}#" .env
-  else
-    sed -i "s#^WORKBENCH_SECRET_KEY=.*#WORKBENCH_SECRET_KEY=${SECRET}#" .env
-  fi
+  for KEY in WORKBENCH_SECRET_KEY; do
+    SECRET="$(openssl rand -hex 32)"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      sed -i '' "s#^${KEY}=.*#${KEY}=${SECRET}#" .env
+    else
+      sed -i "s#^${KEY}=.*#${KEY}=${SECRET}#" .env
+    fi
+  done
 fi
 
 echo "==> docker compose build（顺序构建，避免小磁盘 VM 上并行构建把空间挤爆）"
@@ -20,7 +22,7 @@ docker compose build backend
 docker compose build frontend
 
 echo "==> docker compose up"
-docker compose up -d
+docker compose up -d backend frontend
 
 echo "==> 等待 backend 就绪"
 for _ in $(seq 1 20); do

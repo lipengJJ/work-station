@@ -5,13 +5,27 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, chat, home, system, tasks_center
-from app.api import xhs as xhs_api
-from app.api.placeholder import datacenter_router, stock_router, xhs_router
+from app.common.controllers import auth, chat, home, system, tasks_center
 from app.core.config import get_settings
 from app.core.database import init_db
+from app.core.logging import setup_logging
+from app.core.placeholder import datacenter_router, stock_router
 from app.core.scheduler import shutdown_scheduler, start_scheduler
-from app.xhs import tasks as xhs_tasks
+
+setup_logging()
+from app.analysis.controllers import analyses as analyses_api
+from app.resource.controllers import resource as resource_api
+from app.skills.controllers import skills as skills_api
+from app.skills.services import registry_service as skills_registry
+from app.stock.controllers import fundamentals as fundamentals_api
+from app.stock.controllers import market_overview as market_overview_api
+from app.stock.controllers import stock as stock_api
+from app.xhs.controllers import analysis as xhs_analysis_api
+from app.xhs.controllers import collect_tasks as xhs_api
+from app.xhs.controllers import notes as xhs_notes_api
+from app.xhs.controllers import tracking as xhs_tracking_api
+from app.xhs.services import tasks as xhs_tasks
+from app.xhs.services import tracking as xhs_tracking
 
 settings = get_settings()
 
@@ -20,8 +34,10 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     init_db()
     start_scheduler()
+    skills_registry.scan_on_startup()
     xhs_tasks.requeue_pending_tasks()
     xhs_tasks.start_worker()
+    xhs_tracking.register_all_enabled_jobs()
     try:
         yield
     finally:
@@ -49,9 +65,17 @@ def create_app() -> FastAPI:
     app.include_router(home.router)
     app.include_router(tasks_center.router)
     app.include_router(system.router)
+    app.include_router(skills_api.router)
+    app.include_router(analyses_api.router)
+    app.include_router(stock_api.router)
+    app.include_router(fundamentals_api.router)
+    app.include_router(market_overview_api.router)
     app.include_router(stock_router)
     app.include_router(xhs_api.router)
-    app.include_router(xhs_router)
+    app.include_router(xhs_notes_api.router)
+    app.include_router(xhs_analysis_api.router)
+    app.include_router(xhs_tracking_api.router)
+    app.include_router(resource_api.router)
     app.include_router(datacenter_router)
 
     return app

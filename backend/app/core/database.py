@@ -27,6 +27,14 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    from app import models  # noqa: F401  ensure models are registered before create_all
+    # noqa: F401  各域的 models 子包只是被 import 一下确保类注册到 Base.metadata 上，
+    # 不在这里直接用——按域拆分后模型定义各自归属 common/stock/xhs，不再有一个统一的
+    # app.models 聚合包
+    from app.analysis import models as analysis_models  # noqa: F401
+    from app.common import models as common_models  # noqa: F401
+    from app.resource import models as resource_models  # noqa: F401
+    from app.skills import models as skills_models  # noqa: F401
+    from app.stock import models as stock_models  # noqa: F401
+    from app.xhs import models as xhs_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

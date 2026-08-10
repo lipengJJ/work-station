@@ -29,6 +29,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('#/views/settings/schedules/index.vue'),
         meta: { title: '定时任务' },
       },
+      {
+        name: 'SettingsLogs',
+        path: 'logs',
+        component: () => import('#/views/settings/logs/index.vue'),
+        meta: { title: '系统日志' },
+      },
     ],
   },
 ];

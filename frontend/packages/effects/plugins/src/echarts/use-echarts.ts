@@ -88,10 +88,17 @@ function useEcharts(chartRef: Ref<EchartsUIType>) {
     options: EChartsOption,
     clear = true,
   ): Promise<Nullable<echarts.ECharts>> => {
+    // 缓存放在 isActiveRef 判断之前：调用方常见写法是 watch(deps, () => renderEcharts(...),
+    // { immediate: true })，这个 immediate 回调在 setup 阶段就同步执行，早于 onMounted
+    // 把 isActiveRef 置为 true。如果依赖的数据这时候已经就绪（比如页面间共享的 state、
+    // 或者组件被 keep-alive 缓存过一次），会命中下面的提前返回、且此前从不缓存 options，
+    // 之后除非依赖再变一次否则永远不会补渲染，图表就一直空着——直到用户手动切一次
+    // tab 之类的操作才会重新触发。提前缓存，让下面 isActiveRef 的 watch 一旦变 true
+    // 就能把这次没渲染成的 options 补上。
+    cacheOptions = options;
     if (!unref(isActiveRef)) {
       return Promise.resolve(null);
     }
-    cacheOptions = options;
     const currentOptions = {
       ...options,
       ...getOptions.value,
@@ -176,12 +183,19 @@ function useEcharts(chartRef: Ref<EchartsUIType>) {
   useResizeObserver(chartRef as never, resizeHandler);
 
   watch([isDark, isActiveRef], () => {
-    if (chartInstance && unref(isActiveRef)) {
+    if (!unref(isActiveRef)) return;
+    if (chartInstance) {
       chartInstance.dispose();
       initCharts();
-      renderEcharts(cacheOptions);
-      resize();
     }
+    // chartInstance 为空说明还从没渲染成功过——常见于 renderEcharts 在 isActiveRef 变
+    // true 之前就被调用过一次（见上面 renderEcharts 里的注释），这里用缓存的 options
+    // 补一次；Object.keys 判断只是避免组件刚创建、renderEcharts 从没被调用过时拿一个
+    // 空对象去初始化一次没有意义的图表
+    if (chartInstance || Object.keys(cacheOptions).length > 0) {
+      renderEcharts(cacheOptions);
+    }
+    resize();
   });
 
   tryOnUnmounted(() => {

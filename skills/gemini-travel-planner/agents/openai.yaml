@@ -1,0 +1,7 @@
+interface:
+  display_name: "Gemini 旅行攻略规划师"
+  short_description: "核验实时旅行信息并生成可执行的中文行程、预算、预约与避坑攻略"
+  default_prompt: "使用 $gemini-travel-planner 根据目的地、日期、预算和偏好，生成经过信息核验的详细旅行攻略。"
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,30 @@
+{
+  "type": "object",
+  "properties": {
+    "origin": { "type": "string", "title": "出发地" },
+    "destinations": {
+      "type": "array",
+      "title": "目的地",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "startDate": { "type": "string", "format": "date", "title": "出发日期" },
+    "endDate": { "type": "string", "format": "date", "title": "返回日期" },
+    "adults": { "type": "integer", "title": "成人数量", "minimum": 1, "default": 1 },
+    "children": { "type": "integer", "title": "儿童数量", "minimum": 0, "default": 0 },
+    "budget": { "type": "number", "title": "总预算", "minimum": 0 },
+    "currency": { "type": "string", "title": "币种", "default": "CNY" },
+    "preferences": {
+      "type": "array",
+      "title": "偏好",
+      "items": { "type": "string" }
+    },
+    "pace": {
+      "type": "string",
+      "title": "节奏",
+      "enum": ["relaxed", "balanced", "packed"],
+      "default": "balanced"
+    }
+  },
+  "required": ["destinations", "startDate", "endDate", "adults"]
+}

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.core.database import SessionLocal, init_db
 from app.core.security import hash_password
-from app.models import Task, User
+from app.common.models import Task, User
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "admin123"  # 仅骨架阶段本地验证用，Phase 3 前务必修改/加强

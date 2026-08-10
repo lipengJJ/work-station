@@ -1,0 +1,30 @@
+version: "1.0.0"
+category: "travel"
+tags:
+  - "旅行"
+  - "攻略"
+  - "预算"
+runtime:
+  preferred_provider: "gemini"
+  recommended_model: "gemini-2.0-flash"
+  tools:
+    google_search: true
+    url_context: true
+inputs:
+  schema: "./assets/input-schema.json"
+templates:
+  - id: "weekend-city"
+    name: "城市周末游"
+    description: "2-3 天的单城市短途，强调交通便利和高密度体验，适合说走就走的周末安排。"
+    prompt: "./assets/prompts/weekend-city.md"
+    output: "./assets/itinerary-template.md"
+  - id: "multi-city"
+    name: "多城市自由行"
+    description: "多个城市的接续行程，安排城际交通、住宿切换与整体节奏分配。"
+    prompt: "./assets/prompts/multi-city.md"
+    output: "./assets/itinerary-template.md"
+  - id: "family"
+    name: "亲子旅行"
+    description: "面向带儿童或老人出行，优先考虑体力负荷、安全和亲子友好设施。"
+    prompt: "./assets/prompts/family.md"
+    output: "./assets/itinerary-template.md"

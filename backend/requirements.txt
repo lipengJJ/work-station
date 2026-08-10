@@ -16,3 +16,6 @@ openpyxl
 PyExecJS
 qrcode[pil]
 Pillow
+yfinance
+lxml  # yfinance 的 earnings_dates（历史 EPS surprise）需要它解析
+PyYAML  # 解析 Skill 的 SKILL.md frontmatter 和 workbench.yaml

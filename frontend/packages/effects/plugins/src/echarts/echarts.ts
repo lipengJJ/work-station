@@ -1,8 +1,11 @@
-import { BarChart, LineChart, PieChart, RadarChart } from 'echarts/charts';
+import { BarChart, CandlestickChart, LineChart, PieChart, RadarChart } from 'echarts/charts';
 import {
   DatasetComponent,
+  DataZoomComponent,
   GridComponent,
   LegendComponent,
+  MarkLineComponent,
+  MarkPointComponent,
   TitleComponent,
   ToolboxComponent,
   TooltipComponent,
@@ -26,6 +29,10 @@ echarts.use([
   TransformComponent,
   BarChart,
   LineChart,
+  CandlestickChart,
+  DataZoomComponent,
+  MarkPointComponent,
+  MarkLineComponent,
   LabelLayout,
   LegacyGridContainLabel,
   UniversalTransition,

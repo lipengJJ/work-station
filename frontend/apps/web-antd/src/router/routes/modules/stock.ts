@@ -9,8 +9,14 @@ const routes: RouteRecordRaw[] = [
     },
     name: 'Stock',
     path: '/stock',
-    redirect: '/stock/watchlist',
+    redirect: '/stock/market-overview',
     children: [
+      {
+        name: 'StockMarketOverview',
+        path: 'market-overview',
+        component: () => import('#/views/stock/market-overview/index.vue'),
+        meta: { title: '大盘行情' },
+      },
       {
         name: 'StockWatchlist',
         path: 'watchlist',

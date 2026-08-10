@@ -89,7 +89,7 @@ class SSE {
 
     const response = await fetch(safeJoinUrl(baseUrl, url), requestInit);
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(await extractErrorMessage(response));
     }
 
     const reader = response.body?.getReader();
@@ -109,6 +109,28 @@ class SSE {
       const content = decoder.decode(value, { stream: true });
       requestOptions?.onMessage?.(content);
     }
+  }
+}
+
+/**
+ * SSE 请求在建立流之前就失败时（比如后端还没开始 StreamingResponse 就抛了 HTTPException），
+ * 响应体是普通 JSON（FastAPI 默认序列化成 { detail: "..." }），不是 SSE 格式。之前直接丢掉
+ * 响应体、只报 "HTTP error! status: 400" 这种没有信息量的错误，这里改成尽量把后端给的
+ * 具体错误文案读出来，读不到/解析失败再退回通用文案。
+ */
+async function extractErrorMessage(response: Response): Promise<string> {
+  const fallback = `HTTP error! status: ${response.status}`;
+  try {
+    const text = await response.text();
+    if (!text) return fallback;
+    try {
+      const parsed = JSON.parse(text);
+      return parsed?.detail || parsed?.message || fallback;
+    } catch {
+      return text;
+    }
+  } catch {
+    return fallback;
   }
 }
 

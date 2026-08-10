@@ -43,8 +43,15 @@
     "@vueuse/core": "catalog:",
     "ant-design-vue": "catalog:",
     "dayjs": "catalog:",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
+    "lucide-vue-next": "^1.0.0",
+    "markdown-it": "^14.3.0",
     "pinia": "catalog:",
     "vue": "catalog:",
     "vue-router": "catalog:"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2"
   }
 }
