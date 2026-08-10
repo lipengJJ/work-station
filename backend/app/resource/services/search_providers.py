@@ -8,8 +8,11 @@ pan.quark.cn/s/{share_id} 分享链接，统一解析成 QuarkLink 后再标准�
 """
 from __future__ import annotations
 
+import concurrent.futures
 import html
+import json
 import re
+import time
 import urllib.parse
 import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
@@ -95,7 +98,7 @@ class BingRssProvider(SearchProvider):
             "https://www.bing.com/search",
             params={"format": "rss", "q": query, "count": page_size, "first": offset},
             headers={"User-Agent": UA},
-            timeout=12,
+            timeout=8,
         )
         resp.raise_for_status()
         root = ET.fromstring(resp.content)
@@ -141,7 +144,7 @@ class DuckDuckGoHtmlProvider(SearchProvider):
             "https://html.duckduckgo.com/html/",
             data={"q": query, "s": (page - 1) * page_size},
             headers={"User-Agent": UA},
-            timeout=12,
+            timeout=8,
         )
         resp.raise_for_status()
         root = etree.HTML(resp.text)
@@ -171,6 +174,100 @@ class DuckDuckGoHtmlProvider(SearchProvider):
             links.append(
                 QuarkLink(
                     title=title or share_url,
+                    url=share_url,
+                    share_id=share_id,
+                    snippet=snippet,
+                    pwd=extract_pwd(f"{title} {snippet}"),
+                )
+            )
+        return _dedupe(links)
+
+
+class ToutiaoProvider(SearchProvider):
+    """
+    头条搜索（so.toutiao.com）：国内可直连、结果里大量包含网盘分享帖。
+    解析页面内嵌的 ala-data 结构化数据（title/summary_text），从中提取夸克分享链接。
+
+    备注：页面结构可能随头条改版变化；若一段时间失效，优先检查
+    `script[data-for="ala-data"]` 与 `"title"/"summary_text"` 字段是否还在。
+    """
+
+    provider_id = "toutiao"
+    provider_name = "头条搜索"
+
+    # 分类词后缀会触发头条的商业广告页（整页夸克 app 推广、无资源帖），
+    # 首次 0 条命中时去掉这些词再搜一次（如 "流浪地球 电影 夸克网盘" → "流浪地球 夸克网盘"）。
+    _FALLBACK_WORDS = {"电影", "剧集", "电子书", "动漫", "音乐", "软件"}
+
+    # 分享链接也可能写成 //pan.quark.cn/s/xxx 或带参数
+    _SHARE_RE = re.compile(r"https?://(?:www\.)?pan\.quark\.cn/s/([A-Za-z0-9]{12,40})")
+    _TITLE_RE = re.compile(r'"title"\s*:\s*"(.*?)"', re.S)
+    _SUM_RE = re.compile(r'"(?:summary_text|summary)"\s*:\s*"(.*?)"', re.S)
+
+    @staticmethod
+    def _decode_json_str(s: str) -> str:
+        """头条 JSON 里的字符串带 \\u003c 等转义，用 json.loads 安全还原（避免中文乱码）。"""
+        try:
+            return json.loads(f'"{s}"')
+        except Exception:  # noqa: BLE001 转义不完整时退回原样
+            return s
+
+    def search(self, query: str, page: int, page_size: int) -> list[QuarkLink]:
+        links = self._search_once(query, page, page_size)
+        if links:
+            return links
+        # 0 条命中 → 去掉分类词重试（头条对"X 电影/电子书… 夸克网盘"常整页广告）。
+        # 实测头条对无间隔的连续请求会返回空响应，回退前必须等 1.5s 左右。
+        reduced = [w for w in query.split() if w not in self._FALLBACK_WORDS]
+        new_query = " ".join(reduced).strip()
+        if new_query and new_query != query:
+            logger.info(f"resource.search provider=toutiao 分类词回退: {query!r} -> {new_query!r}")
+            time.sleep(1.5)
+            links = self._search_once(new_query, page, page_size)
+        return links
+
+    def _search_once(self, query: str, page: int, page_size: int) -> list[QuarkLink]:
+        # 注意：只能带 dv/keyword 两个参数。实测加 offset/format 会让头条返回
+        # 另一种结构（无 ala-data 块、无夸克链接），翻页暂不做。
+        resp = requests.get(
+            "https://so.toutiao.com/search",
+            params={"dv": "0", "keyword": query},
+            headers={
+                "User-Agent": UA,
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Referer": "https://so.toutiao.com/",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        root = etree.HTML(resp.text)
+        if root is None:
+            return []
+
+        links: list[QuarkLink] = []
+        for node in root.xpath('//script[@data-for="ala-data"]'):
+            content = node.text or ""
+            share_match = self._SHARE_RE.search(content)
+            if not share_match:
+                continue
+            title_m = self._TITLE_RE.search(content)
+            sum_m = self._SUM_RE.search(content)
+            title = ""
+            if title_m:
+                title = re.sub(r"<[^>]+>", "", self._decode_json_str(title_m.group(1))).strip()
+            snippet = ""
+            if sum_m:
+                snippet = re.sub(r"<[^>]+>", "", self._decode_json_str(sum_m.group(1))).strip()[:200]
+            share_url = share_match.group(0)
+            share_id = share_match.group(1)
+            # 结果块里的 title 是页面标题（如"夸克网盘"）时用摘要补充描述
+            if title and title != "夸克网盘":
+                display_title = title
+            else:
+                display_title = snippet or share_url
+            links.append(
+                QuarkLink(
+                    title=display_title[:120],
                     url=share_url,
                     share_id=share_id,
                     snippet=snippet,
@@ -238,26 +335,45 @@ class CustomApiProvider(SearchProvider):
         return _dedupe(links)
 
 
-# 默认启用顺序：自定义 API（若配置）→ Bing → DDG
+# 默认启用顺序：自定义 API（若配置）→ 头条 → Bing → DDG。
+# 头条在国内网络直连稳定、网盘帖命中率高，排在通用搜索引擎前面。
 def build_providers() -> list[SearchProvider]:
-    bing, ddg, custom = BingRssProvider(), DuckDuckGoHtmlProvider(), CustomApiProvider()
+    custom, toutiao, bing, ddg = (
+        CustomApiProvider(),
+        ToutiaoProvider(),
+        BingRssProvider(),
+        DuckDuckGoHtmlProvider(),
+    )
     ordered: list[SearchProvider] = [custom] if custom.base_url else []
-    ordered += [bing, ddg]
+    ordered += [toutiao, bing, ddg]
     return ordered
 
 
 def search_with_providers(query: str, page: int, page_size: int) -> tuple[list[QuarkLink], str]:
-    """按序尝试各 Provider，返回 (结果, 实际命中的 provider_id)。"""
+    """并发尝试所有 Provider，取第一个有结果的；全部失败时抛出汇总错误。
+
+    串行版最坏要等 sum(各渠道超时)（Bing 12s + DDG 12s ≈ 24s），用户体感就是"超时"。
+    并发后整体等待 ≈ 最快渠道的耗时（国内网络下头条通常 3~5s 返回）。
+    """
+    providers = build_providers()
     errors: list[str] = []
-    for provider in build_providers():
-        try:
-            links = provider.search(query, page, page_size)
+    futures: dict[concurrent.futures.Future, SearchProvider] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(providers)) as pool:
+        for provider in providers:
+            fut = pool.submit(provider.search, query, page, page_size)
+            futures[fut] = provider
+        for fut in concurrent.futures.as_completed(futures):
+            provider = futures[fut]
+            try:
+                links = fut.result()
+            except Exception as exc:  # noqa: BLE001 单个渠道失败不阻断整体搜索
+                errors.append(f"{provider.provider_name}: {exc}")
+                logger.warning(f"resource.search provider={provider.provider_id} 失败: {exc}")
+                continue
             if links:
+                logger.info(f"resource.search provider={provider.provider_id} 命中 {len(links)} 条")
                 return links, provider.provider_id
             logger.info(f"resource.search provider={provider.provider_id} 无夸克链接命中")
-        except Exception as exc:  # noqa: BLE001 单个渠道失败不阻断整体搜索
-            errors.append(f"{provider.provider_name}: {exc}")
-            logger.warning(f"resource.search provider={provider.provider_id} 失败: {exc}")
     if errors:
         raise RuntimeError("；".join(errors))
     return [], ""

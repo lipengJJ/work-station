@@ -37,7 +37,7 @@ class QuarkSource(ResourceSource):
     source_name = "夸克网盘"
     supports_search = True
     supports_save = True
-    search_providers = ["bing", "duckduckgo", "custom_api"]
+    search_providers = ["toutiao", "bing", "duckduckgo", "custom_api"]
 
     def search(self, keyword: str, category: str, page: int, page_size: int) -> SearchResult:
         query = keyword.strip()
