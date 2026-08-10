@@ -59,6 +59,35 @@ class SaveIn(BaseModel):
     target_dir: str = ""  # 空 = 转存到根目录
 
 
+class LinkCheckItem(BaseModel):
+    """单条待校验链接（url 与 share_id 二选一即可）。"""
+
+    url: str = ""
+    share_id: str = ""
+    pwd: str = ""
+
+
+class LinkCheckIn(BaseModel):
+    links: list[LinkCheckItem] = Field(..., max_length=20, description="单次最多校验 20 个链接")
+
+
+class LinkCheckOut(BaseModel):
+    """链接有效性校验结果。
+
+    status 取值：
+      valid      - 链接有效（含文件）
+      needs_pwd  - 链接有效但需要提取码
+      invalid    - 链接已失效/不存在/无可转存文件
+      unknown    - 无法校验（未配置夸克 Cookie 或接口异常）
+    """
+
+    url: str = ""
+    share_id: str
+    status: str
+    message: str = ""
+    file_count: int = 0
+
+
 class SaveTaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

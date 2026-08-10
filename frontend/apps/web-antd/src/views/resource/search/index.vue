@@ -30,6 +30,7 @@ import {
 } from 'lucide-vue-next';
 
 import {
+  checkResourceLinksApi,
   getQuarkCookieStatusApi,
   listResourceSourcesApi,
   saveResourceApi,
@@ -82,6 +83,7 @@ async function doSearch() {
     return;
   }
   loading.value = true;
+  linkStatus.value = {}; // 新结果集，清空旧校验状态
   try {
     result.value = await searchResourceApi({
       keyword: kw,
@@ -91,11 +93,42 @@ async function doSearch() {
       page_size: pageSize,
     });
     searched.value = true;
+    void checkResultLinks(result.value.items);
   } catch (e: any) {
     message.error(`搜索失败：${e.message}`);
   } finally {
     loading.value = false;
   }
+}
+
+// ------------------------------------------------------------ 链接有效性校验 ----
+// share_id -> 校验状态（valid / invalid / needs_pwd / unknown）
+const linkStatus = ref<Record<string, ResourceApi.LinkCheckResult>>({});
+
+async function checkResultLinks(items: ResourceApi.ResourceItem[]) {
+  const pending = items.filter((item) => !linkStatus.value[item.share_id]);
+  if (pending.length === 0) return;
+  const BATCH = 10;
+  for (let i = 0; i < pending.length; i += BATCH) {
+    const batch = pending.slice(i, i + BATCH).map((item) => ({ share_id: item.share_id, pwd: item.share_pwd || undefined }));
+    try {
+      const checked = await checkResourceLinksApi(batch);
+      const next = { ...linkStatus.value };
+      for (const c of checked) next[c.share_id] = c;
+      linkStatus.value = next;
+    } catch {
+      // 校验失败不阻塞展示，保持"未验证"状态
+    }
+  }
+}
+
+function statusOf(item: ResourceApi.ResourceItem): ResourceApi.LinkCheckResult | undefined {
+  return linkStatus.value[item.share_id];
+}
+
+function canSave(item: ResourceApi.ResourceItem): boolean {
+  const st = statusOf(item);
+  return cookieReady.value && (!st || st.status !== 'invalid');
 }
 
 function onKeywordSearch() {
@@ -129,6 +162,11 @@ const savePwd = ref('');
 const saveDir = ref('');
 
 function openSaveModal(item: ResourceApi.ResourceItem) {
+  const st = statusOf(item);
+  if (st?.status === 'invalid') {
+    message.error('该链接已失效，无法转存');
+    return;
+  }
   saveTarget.value = item;
   savePwd.value = item.share_pwd || '';
   saveDir.value = '';
@@ -168,7 +206,24 @@ async function savePastedLink() {
     message.warning('请先粘贴夸克分享链接');
     return;
   }
+  // 转存前先校验链接有效性
   pasteSaving.value = true;
+  try {
+    const checked = await checkResourceLinksApi([{ url: link }]);
+    const st = checked?.[0];
+    if (st?.status === 'invalid') {
+      message.error(st.message || '该链接已失效，无法转存');
+      pasteSaving.value = false;
+      return;
+    }
+    if (st?.status === 'needs_pwd') {
+      message.warning('该分享需要提取码，请填写提取码后再转存');
+      pasteSaving.value = false;
+      return;
+    }
+  } catch {
+    // 校验接口异常时继续走转存（后端仍有预检兜底）
+  }
   try {
     const task = await saveResourceApi({ source: 'quark', share_url: link });
     if (task.status === 'success') {
@@ -285,6 +340,15 @@ async function savePastedLink() {
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
                   <Tag color="purple">夸克</Tag>
+                  <!-- 链接有效性徽标：校验后显示 -->
+                  <Tooltip v-if="statusOf(item)" :title="statusOf(item)?.message">
+                    <Tag v-if="statusOf(item)?.status === 'valid'" color="green">
+                      有效{{ statusOf(item)?.file_count ? ` · ${statusOf(item)?.file_count} 个文件` : '' }}
+                    </Tag>
+                    <Tag v-else-if="statusOf(item)?.status === 'invalid'" color="red">已失效</Tag>
+                    <Tag v-else-if="statusOf(item)?.status === 'needs_pwd'" color="orange">需提取码</Tag>
+                    <Tag v-else color="default">未验证</Tag>
+                  </Tooltip>
                   <span v-if="item.category" class="text-xs text-slate-500">
                     {{ categoryLabel }}
                   </span>
@@ -311,14 +375,16 @@ async function savePastedLink() {
                   {{ item.snippet }}
                 </div>
               </div>
-              <Button
-                type="primary"
-                :disabled="!cookieReady"
-                @click="openSaveModal(item)"
-              >
-                <FolderPlus class="mr-1 size-4" />
-                转存
-              </Button>
+              <Tooltip :title="statusOf(item)?.status === 'invalid' ? '该链接已失效' : ''">
+                <Button
+                  type="primary"
+                  :disabled="!canSave(item)"
+                  @click="openSaveModal(item)"
+                >
+                  <FolderPlus class="mr-1 size-4" />
+                  转存
+                </Button>
+              </Tooltip>
             </div>
           </List.Item>
         </template>

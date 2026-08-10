@@ -86,6 +86,17 @@ class QuarkSource(ResourceSource):
         if not share_id:
             raise ResourceSourceError("不是有效的夸克分享链接：https://pan.quark.cn/s/xxxx")
 
+        # 转存前先校验链接状态：已失效直接拒绝，避免白跑一轮接口
+        client = QuarkClient(cookies_str)
+        try:
+            status, message, _file_count = client.check_share(share_id, share_pwd or "")
+        except ResourceSourceError as exc:
+            status, message = "invalid", str(exc)
+        if status == "invalid":
+            raise ResourceSourceError(message or "分享链接已失效，无法转存")
+        if status == "needs_pwd" and not share_pwd:
+            raise ResourceSourceError("该分享需要提取码，请填写提取码后再转存")
+
         task = ResourceSaveTask(
             user_id=1,
             source=self.source_id,
@@ -101,7 +112,6 @@ class QuarkSource(ResourceSource):
         db.refresh(task)
 
         try:
-            client = QuarkClient(cookies_str)
             count, message = client.save_share(share_id, share_pwd or "", target_dir or "")
             task.status = "success"
             task.message = message

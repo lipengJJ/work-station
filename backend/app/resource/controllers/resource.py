@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.resource.models import ResourceSaveTask
-from app.resource.schemas.resource import CookieIn, SaveIn
-from app.resource.services import cookie_store, quark_source
+from app.resource.schemas.resource import CookieIn, LinkCheckIn, SaveIn
+from app.resource.services import cookie_store, link_checker, quark_source
 from app.resource.services.base import ResourceSourceError
 from app.resource.services.quark_client import QuarkClient
 from app.resource.services.registry import registry
@@ -51,6 +51,12 @@ def search(
 
 
 # -------------------------------------------------------------------- 转存 ----
+@router.post("/links/check")
+def check_links(body: LinkCheckIn, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    """批量校验夸克分享链接是否有效（最多 20 条）。"""
+    return link_checker.check_links(db, [item.model_dump() for item in body.links])
+
+
 @router.post("/save")
 def save_resource(body: SaveIn, db: Session = Depends(get_db), _=Depends(get_current_user)):
     src = registry.get(body.source)

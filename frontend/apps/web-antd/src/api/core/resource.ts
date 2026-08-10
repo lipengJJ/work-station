@@ -68,6 +68,20 @@ export namespace ResourceApi {
     capacity: number;
     used: number;
   }
+
+  export interface LinkCheckItem {
+    share_id?: string;
+    url?: string;
+    pwd?: string;
+  }
+
+  export interface LinkCheckResult {
+    share_id: string;
+    status: 'invalid' | 'needs_pwd' | 'unknown' | 'valid';
+    message: string;
+    file_count: number;
+    url: string;
+  }
 }
 
 /** 可用资源源列表（新增网盘源后自动扩展） */
@@ -89,6 +103,11 @@ export async function searchResourceApi(params: {
 /** 转存分享链接到网盘 */
 export async function saveResourceApi(body: ResourceApi.SaveParams) {
   return requestClient.post<ResourceApi.SaveTask>('/resource/save', body);
+}
+
+/** 批量校验夸克分享链接是否有效（最多 20 条） */
+export async function checkResourceLinksApi(links: ResourceApi.LinkCheckItem[]) {
+  return requestClient.post<ResourceApi.LinkCheckResult[]>('/resource/links/check', { links });
 }
 
 /** 转存记录分页列表 */

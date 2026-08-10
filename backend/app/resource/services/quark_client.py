@@ -123,6 +123,32 @@ class QuarkClient:
             raise ResourceSourceError("提取码错误或已失效")
         return token
 
+    # ------------------------------------------------------------ 链接有效性 ----
+    def check_share(self, share_id: str, pwd: str = "") -> tuple[str, str, int]:
+        """
+        检查分享链接是否仍然有效。返回 (status, message, file_count)。
+
+        status 取值：
+          valid      - 有效，file_count 为可转存文件数
+          needs_pwd  - 链接有效但需要提取码（pwd 缺失或错误）
+          invalid    - 已失效 / 不存在 / 无可转存文件
+          unknown    - 网络或接口响应异常，无法判定（不误判为失效）
+        """
+        try:
+            data = self.get_share_info(share_id, pwd or "")
+        except ResourceSourceError as exc:
+            msg = str(exc)
+            # 请求失败/响应异常属于"无法判定"，不是链接失效
+            if msg.startswith(("夸克接口请求失败", "夸克接口响应异常")):
+                return "unknown", msg, 0
+            if "提取码" in msg:
+                return "needs_pwd", msg, 0
+            return "invalid", msg, 0
+        files = data.get("files") or []
+        if not files:
+            return "invalid", "该分享没有可转存的文件", 0
+        return "valid", "", len(files)
+
     # ------------------------------------------------------------ 目录与转存 ----
     def create_dir(self, name: str, parent_fid: str = "0") -> str:
         """在网盘创建目录，返回目录 fid。"""
