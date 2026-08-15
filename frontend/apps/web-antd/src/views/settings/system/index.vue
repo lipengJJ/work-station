@@ -5,7 +5,7 @@ import type { NotifyApi } from '#/api/core/notify';
 import { computed, onMounted, reactive, ref } from 'vue';
 
 import { Button, Drawer, Dropdown, Empty, Form, FormItem, Input, message, Modal, Select, Switch } from 'ant-design-vue';
-import { Bell, Check, Flame, MoreHorizontal, Plus, Send } from 'lucide-vue-next';
+import { Bell, Boxes, KeyRound, MoreHorizontal, Plus, Send, Sparkles } from 'lucide-vue-next';
 
 import { getChatConfigApi, setChatConfigApi } from '#/api/core/chat';
 import {
@@ -288,20 +288,13 @@ onMounted(() => {
         <p>集中管理服务凭证与通知渠道，保存后全局生效</p>
       </header>
 
-      <!-- ============================ 区块一：服务凭证 ============================ -->
+      <!-- ============================ 区块一：服务凭证（固定三行，标题由页面副标题覆盖） ============================ -->
       <section class="ss-section">
-        <div class="ss-section-head">
-          <div>
-            <h3>服务凭证</h3>
-            <p>各业务模块使用的第三方服务密钥，系统预定义，仅可更新</p>
-          </div>
-        </div>
-
         <div class="ss-list">
           <!-- AI 模型 -->
           <div class="ss-row">
             <span class="ss-dot" :class="modelConfig.configured ? 'ok' : 'no'" />
-            <span class="ss-icon ss-icon--ai"><Flame class="size-4" /></span>
+            <span class="ss-icon ss-icon--ai"><Sparkles class="size-5" /></span>
             <div class="ss-main">
               <div class="ss-name-line">
                 <span class="ss-name">AI 模型</span>
@@ -310,14 +303,14 @@ onMounted(() => {
               <p class="ss-desc">用于小红书 AI 分析与 Skill 分析</p>
             </div>
             <div class="ss-actions">
-              <Button size="small" class="ss-btn" @click="openModelModal">更新</Button>
+              <Button size="small" class="ss-btn ss-update-btn" :auto-insert-space-in-button="false" @click="openModelModal">更新</Button>
             </div>
           </div>
 
           <!-- 小红书 token -->
           <div class="ss-row">
             <span class="ss-dot" :class="xhsConfigured ? 'ok' : 'no'" />
-            <span class="ss-icon ss-icon--xhs"><Send class="size-4" /></span>
+            <span class="ss-icon ss-icon--xhs"><KeyRound class="size-5" /></span>
             <div class="ss-main">
               <div class="ss-name-line">
                 <span class="ss-name">小红书 token</span>
@@ -326,14 +319,14 @@ onMounted(() => {
               <p class="ss-desc">采集与追踪任务所需的登录态凭证</p>
             </div>
             <div class="ss-actions">
-              <Button size="small" class="ss-btn" @click="tokenManagerRef?.open()">更新</Button>
+              <Button size="small" class="ss-btn ss-update-btn" :auto-insert-space-in-button="false" @click="tokenManagerRef?.open()">更新</Button>
             </div>
           </div>
 
           <!-- 数据处理模型 -->
           <div class="ss-row">
             <span class="ss-dot" :class="zhipuConfigured ? 'ok' : 'no'" />
-            <span class="ss-icon ss-icon--zhipu"><Check class="size-4" /></span>
+            <span class="ss-icon ss-icon--zhipu"><Boxes class="size-5" /></span>
             <div class="ss-main">
               <div class="ss-name-line">
                 <span class="ss-name">数据处理模型</span>
@@ -342,7 +335,7 @@ onMounted(() => {
               <p class="ss-desc">采集笔记时的结构化预处理，与 AI 模型独立配置</p>
             </div>
             <div class="ss-actions">
-              <Button size="small" class="ss-btn" @click="openZhipuModal">更新</Button>
+              <Button size="small" class="ss-btn ss-update-btn" :auto-insert-space-in-button="false" @click="openZhipuModal">更新</Button>
             </div>
           </div>
         </div>
@@ -521,11 +514,16 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* ==================== 页面容器 ==================== */
 .ss-page {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  max-width: 1200px;
+  margin-left: 0;
+  margin-right: auto;
 }
+/* 页面标题区与下方第一行间距 24px（由 ss-page gap 承担） */
 .ss-header h2 {
   font-size: 20px;
   font-weight: 700;
@@ -536,14 +534,21 @@ onMounted(() => {
   font-size: 13px;
   color: hsl(var(--muted-foreground));
 }
+/* ==================== 区块 ==================== */
 .ss-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+}
+.ss-section + .ss-section {
+  gap: 16px; /* 说明文案与下方内容间距 16px */
+}
+/* 消息通知标题与上方（数据处理模型行）间距 32px */
+.ss-section + .ss-section {
+  margin-top: 32px;
 }
 .ss-section-head {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
@@ -553,35 +558,36 @@ onMounted(() => {
   color: hsl(var(--foreground));
 }
 .ss-section-head p {
-  margin-top: 2px;
+  margin-top: 4px;
   font-size: 13px;
   color: hsl(var(--muted-foreground));
 }
 .ss-head-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
+/* ==================== 统一行组件 ==================== */
 .ss-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
-/* ==================== 统一行组件 ==================== */
 .ss-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 72px;
-  padding: 0 16px;
+  min-height: 76px;
+  padding: 0 24px;
   border-radius: 12px;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid rgba(255, 255, 255, 0.06);
   background: hsl(var(--card));
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s;
 }
 .ss-row:hover {
   background: hsl(var(--accent));
-  border-color: hsl(var(--border));
 }
+/* 状态点 8px */
 .ss-dot {
   flex-shrink: 0;
   width: 8px;
@@ -596,13 +602,14 @@ onMounted(() => {
   background: hsl(var(--muted-foreground));
   opacity: 0.45;
 }
+/* 图标容器 40×40，圆角 10px，图标 20×20 居中（gap 12 已由 .ss-row 承担） */
 .ss-icon {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   color: #fff;
 }
@@ -624,9 +631,11 @@ onMounted(() => {
 .ss-icon--pushplus {
   background: #e8590c;
 }
+/* 文字区：图标右侧 16px 间距 */
 .ss-main {
   flex: 1;
   min-width: 0;
+  margin-left: 16px;
 }
 .ss-name-line {
   display: flex;
@@ -642,38 +651,61 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 未配置 pill：与主标题同基线，padding 2px 8px，12px，圆角 full */
 .ss-pill {
   flex-shrink: 0;
-  padding: 1px 8px;
+  padding: 2px 8px;
   border-radius: 999px;
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.4;
 }
+/* 说明文案：主标题下方 4px */
 .ss-desc {
-  margin-top: 2px;
+  margin-top: 4px;
   font-size: 13px;
   color: hsl(var(--muted-foreground));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 操作区：右内边距 24px 由 .ss-row padding 承担 */
 .ss-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
 }
-.ss-btn {
+/* 更新按钮：高 32px，左右 padding 16px，13px */
+.ss-update-btn {
+  height: 32px !important;
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+  font-size: 13px !important;
   border-radius: 8px;
+  color: hsl(var(--muted-foreground)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  background: hsl(var(--muted)) !important;
+}
+.ss-update-btn:hover {
+  color: hsl(var(--foreground)) !important;
+  border-color: hsl(var(--primary)) !important;
 }
 .ss-loading {
   padding: 32px;
   text-align: center;
   color: hsl(var(--muted-foreground));
 }
+/* ==================== 空态 ==================== */
 .ss-empty {
-  padding: 40px 0;
+  padding: 48px 0;
+}
+.ss-empty :deep(.ant-empty-image) {
+  margin-bottom: 16px;
+}
+.ss-empty :deep(.ant-empty-description) {
+  margin-top: 0;
 }
 .ss-modal-desc {
   margin-bottom: 12px;
@@ -715,7 +747,8 @@ onMounted(() => {
     row-gap: 8px;
   }
   .ss-main {
-    flex: 1 1 calc(100% - 60px);
+    flex: 1 1 calc(100% - 76px);
+    margin-left: 12px;
   }
   .ss-actions {
     flex: 1 1 100%;
