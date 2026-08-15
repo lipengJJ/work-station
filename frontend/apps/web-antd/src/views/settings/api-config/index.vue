@@ -1147,7 +1147,10 @@ body.dark {
 
 /* ================= 配置项列表 ================= */
 .ac-items {
-  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0 4px;
 }
 
 .ac-items.is-loading {
@@ -1158,14 +1161,21 @@ body.dark {
 .ac-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
-  border-radius: 8px;
-  transition: background 0.15s;
+  gap: 12px;
+  height: 68px; /* 等高：与消息通知页通道卡片一致 */
+  box-sizing: border-box;
+  padding: 0 16px;
+  background: var(--ac-bg);
+  border: 1px solid var(--ac-border-strong);
+  border-radius: 12px;
+  box-shadow: var(--ac-shadow);
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.15s;
 }
 
 .ac-item:hover {
-  background: var(--ac-hover);
+  border-color: var(--ac-border-strong);
+  box-shadow: var(--ac-shadow-lg);
+  background: var(--ac-bg);
 }
 
 .ac-item-info {
