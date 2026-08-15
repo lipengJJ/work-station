@@ -7,6 +7,7 @@ export namespace NotifyApi {
     id: number;
     channel: string;
     webhook_url: string;
+    sendkey: string;
     enabled: boolean;
     mention_all: boolean;
     created_at: string;
@@ -16,6 +17,7 @@ export namespace NotifyApi {
   export interface NotificationConfigIn {
     channel?: string;
     webhook_url: string;
+    sendkey: string;
     enabled: boolean;
     mention_all: boolean;
   }

@@ -5,7 +5,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Alert, Button, Form, FormItem, Input, message, Modal, Switch, Table, Tag } from 'ant-design-vue';
+import { Alert, Button, Form, FormItem, Input, message, Modal, Segmented, Switch, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
@@ -18,21 +18,56 @@ import {
 
 const TextArea = Input.TextArea;
 
+// 通知通道选项：wecom_webhook=企业微信群机器人（默认）；serverchan=Server酱
+const CHANNEL_OPTIONS = [
+  { label: '企业微信群机器人', value: 'wecom_webhook' },
+  { label: 'Server酱', value: 'serverchan' },
+];
+
 // -------------------------------------------------------------- 配置表单 ----
 
 const configLoading = ref(true);
 const configSaving = ref(false);
 const form = reactive<NotifyApi.NotificationConfigIn>({
+  channel: 'wecom_webhook',
   webhook_url: '',
+  sendkey: '',
   enabled: false,
   mention_all: false,
 });
+
+const isServerChan = computed(() => form.channel === 'serverchan');
+
+/** 按当前通道校验必填项；不合法返回提示文案，合法返回空串。 */
+function validateForm(): string {
+  if (isServerChan.value) {
+    if (!form.sendkey.trim()) {
+      return '请先填写 Server酱 SendKey';
+    }
+  } else if (!form.webhook_url.trim()) {
+    return '请先填写企业微信机器人 Webhook 地址';
+  }
+  return '';
+}
+
+/** 组装保存 payload：channel + 当前通道对应字段（另一通道字段也一并带上，切换通道不丢数据）。 */
+function buildConfigPayload() {
+  return {
+    channel: form.channel,
+    webhook_url: form.webhook_url.trim(),
+    sendkey: form.sendkey.trim(),
+    enabled: form.enabled,
+    mention_all: form.mention_all,
+  };
+}
 
 async function fetchConfig() {
   configLoading.value = true;
   try {
     const config = await getNotifyConfigApi();
+    form.channel = config.channel || 'wecom_webhook';
     form.webhook_url = config.webhook_url;
+    form.sendkey = config.sendkey || '';
     form.enabled = config.enabled;
     form.mention_all = config.mention_all;
   } catch (e: any) {
@@ -43,17 +78,14 @@ async function fetchConfig() {
 }
 
 async function saveConfig() {
-  if (!form.webhook_url.trim()) {
-    message.error('请先填写企业微信机器人 Webhook 地址');
+  const errMsg = validateForm();
+  if (errMsg) {
+    message.error(errMsg);
     return;
   }
   configSaving.value = true;
   try {
-    await saveNotifyConfigApi({
-      webhook_url: form.webhook_url.trim(),
-      enabled: form.enabled,
-      mention_all: form.mention_all,
-    });
+    await saveNotifyConfigApi(buildConfigPayload());
     message.success('配置已保存');
   } catch (e: any) {
     message.error(`保存失败：${e.message}`);
@@ -68,24 +100,21 @@ const testing = ref(false);
 const testResult = ref<NotifyApi.SendResult | null>(null);
 
 async function testSend() {
-  if (!form.webhook_url.trim()) {
-    message.error('请先填写 Webhook 地址');
+  const errMsg = validateForm();
+  if (errMsg) {
+    message.error(errMsg);
     return;
   }
   testing.value = true;
   testResult.value = null;
   try {
     // 后端测试发送读的是【已保存】配置，先保存当前表单再触发测试，避免发到旧地址/误报未配置
-    await saveNotifyConfigApi({
-      webhook_url: form.webhook_url.trim(),
-      enabled: form.enabled,
-      mention_all: form.mention_all,
-    });
+    await saveNotifyConfigApi(buildConfigPayload());
     testResult.value = await testNotifySendApi();
     if (!testResult.value.success) {
       message.error(`测试发送失败：${testResult.value.message}`);
     } else {
-      message.success('测试消息已发送，请检查企业微信');
+      message.success(isServerChan.value ? '测试消息已发送，请检查微信（Server酱 推送）' : '测试消息已发送，请检查企业微信');
     }
     await fetchLogs(1);
   } catch (e: any) {
@@ -100,8 +129,9 @@ const manualSending = ref(false);
 const manualForm = reactive({ title: '手动通知', content: '', msgtype: 'text' });
 
 async function submitManualSend() {
-  if (!form.webhook_url.trim()) {
-    message.error('请先填写 Webhook 地址');
+  const errMsg = validateForm();
+  if (errMsg) {
+    message.error(errMsg);
     return;
   }
   if (!manualForm.content.trim()) {
@@ -111,11 +141,7 @@ async function submitManualSend() {
   manualSending.value = true;
   try {
     // 与测试发送一致：后端读取的是【已保存】配置，先保存当前表单再发送
-    await saveNotifyConfigApi({
-      webhook_url: form.webhook_url.trim(),
-      enabled: form.enabled,
-      mention_all: form.mention_all,
-    });
+    await saveNotifyConfigApi(buildConfigPayload());
     const result = await manualNotifySendApi({
       title: manualForm.title.trim() || '手动通知',
       content: manualForm.content,
@@ -172,6 +198,7 @@ function orDash(value: null | string) {
 
 const columns = [
   { title: '时间', dataIndex: 'created_at', key: 'created_at', width: 170 },
+  { title: '通道', dataIndex: 'channel', key: 'channel', width: 130 },
   { title: '标题', dataIndex: 'title', key: 'title', width: 200 },
   { title: '状态', dataIndex: 'status', key: 'status', width: 90 },
   {
@@ -204,9 +231,9 @@ onMounted(() => {
         <div class="nt-header-main">
           <div class="nt-header-title">
             <h2>消息通知</h2>
-            <div class="nt-header-badge">企业微信</div>
+            <div class="nt-header-badge">{{ isServerChan ? 'Server酱' : '企业微信' }}</div>
           </div>
-          <p>任务完成 / 失败时自动推送到企业微信群机器人，配置一次全局生效</p>
+          <p>任务完成 / 失败时自动推送（企业微信群机器人或 Server酱），配置一次全局生效</p>
         </div>
       </div>
 
@@ -220,40 +247,83 @@ onMounted(() => {
               </svg>
             </span>
             <div class="nt-card-head-text">
-              <div class="nt-card-title">企业微信机器人</div>
-              <div class="nt-card-desc">在群聊中添加「群机器人」获取 Webhook 地址</div>
+              <div class="nt-card-title">{{ isServerChan ? 'Server酱' : '企业微信机器人' }}</div>
+              <div class="nt-card-desc">
+                {{ isServerChan ? '微信扫码登录获取 SendKey，推送直达微信' : '在群聊中添加「群机器人」获取 Webhook 地址' }}
+              </div>
             </div>
           </div>
         </div>
         <div v-if="configLoading" class="nt-empty">加载中…</div>
         <Form v-else layout="vertical">
-          <FormItem
-            label="Webhook 地址"
-            :extra="'从企业微信群机器人复制完整地址，如 ' + 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx'"
-          >
-            <TextArea
-              v-model:value="form.webhook_url"
-              :rows="2"
-              class="nt-mono-input"
-              placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=你的key"
+          <FormItem label="通知通道">
+            <Segmented
+              v-model:value="form.channel"
+              :options="CHANNEL_OPTIONS"
+              class="nt-channel-segmented"
             />
           </FormItem>
-          <div class="nt-switch-row">
-            <div class="nt-switch-item">
-              <Switch v-model:checked="form.enabled" />
-              <div class="nt-switch-text">
-                <b>启用任务通知</b>
-                <span>开启后，任务中心的任务完成 / 失败会自动推送</span>
+
+          <!-- 企业微信机器人：Webhook 地址 + @所有人 -->
+          <template v-if="!isServerChan">
+            <FormItem
+              label="Webhook 地址"
+              :extra="'从企业微信群机器人复制完整地址，如 ' + 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx'"
+            >
+              <TextArea
+                v-model:value="form.webhook_url"
+                :rows="2"
+                class="nt-mono-input"
+                placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=你的key"
+              />
+            </FormItem>
+            <div class="nt-switch-row">
+              <div class="nt-switch-item">
+                <Switch v-model:checked="form.enabled" />
+                <div class="nt-switch-text">
+                  <b>启用任务通知</b>
+                  <span>开启后，任务中心的任务完成 / 失败会自动推送</span>
+                </div>
+              </div>
+              <div class="nt-switch-item">
+                <Switch v-model:checked="form.mention_all" />
+                <div class="nt-switch-text">
+                  <b>@所有人</b>
+                  <span>text 消息附带 @all，适合需要强提醒的群</span>
+                </div>
               </div>
             </div>
-            <div class="nt-switch-item">
-              <Switch v-model:checked="form.mention_all" />
-              <div class="nt-switch-text">
-                <b>@所有人</b>
-                <span>text 消息附带 @all，适合需要强提醒的群</span>
+          </template>
+
+          <!-- Server酱：SendKey + 获取指引 -->
+          <template v-else>
+            <FormItem
+              label="SendKey"
+              :extra="'前往 https://sct.ftqq.com 微信扫码登录，在「SendKey」页面复制你的 Key'"
+            >
+              <Input
+                v-model:value="form.sendkey"
+                class="nt-mono-input"
+                placeholder="SCTxxxxxxxxxxxxxxxxxxxxxxxx"
+              />
+            </FormItem>
+            <div class="nt-switch-row">
+              <div class="nt-switch-item">
+                <Switch v-model:checked="form.enabled" />
+                <div class="nt-switch-text">
+                  <b>启用任务通知</b>
+                  <span>开启后，任务中心的任务完成 / 失败会自动推送</span>
+                </div>
+              </div>
+              <div class="nt-switch-item">
+                <div class="nt-switch-text">
+                  <b>消息标题</b>
+                  <span>任务通知标题固定取任务标题（如「任务完成：笔记采集」）；手动发送时在弹窗填写标题</span>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
+
           <div class="nt-actions">
             <Button type="primary" :loading="configSaving" class="nt-btn" @click="saveConfig">
               保存配置
@@ -297,7 +367,7 @@ onMounted(() => {
           :data-source="logs"
           :columns="columns"
           :pagination="pagination"
-          :scroll="{ x: 720 }"
+          :scroll="{ x: 800 }"
           @change="onTableChange"
         >
           <template #bodyCell="{ column, text }">
@@ -307,6 +377,9 @@ onMounted(() => {
             <span v-else-if="column.key === 'created_at'" class="nt-time">
               {{ formatTime(text as string) }}
             </span>
+            <span v-else-if="column.key === 'channel'" class="nt-channel-tag">
+              {{ text === 'serverchan' ? 'Server酱' : '企业微信' }}
+            </span>
           </template>
         </Table>
       </div>
@@ -314,9 +387,11 @@ onMounted(() => {
 
     <!-- ============================ 手动发送弹窗 ============================ -->
     <Modal v-model:open="manualOpen" title="手动发送" :footer="null" width="480px">
-      <div class="nt-modal-desc">自定义内容推送到企业微信，支持 text 与 markdown 两种格式。</div>
+      <div class="nt-modal-desc">
+        {{ isServerChan ? '自定义内容推送到微信（Server酱），正文支持 Markdown。' : '自定义内容推送到企业微信，支持 text 与 markdown 两种格式。' }}
+      </div>
       <Form layout="vertical">
-        <FormItem label="消息类型">
+        <FormItem v-if="!isServerChan" label="消息类型">
           <div class="nt-msgtype-row">
             <Button
               :type="manualForm.msgtype === 'text' ? 'primary' : 'default'"
@@ -334,7 +409,7 @@ onMounted(() => {
             </Button>
           </div>
         </FormItem>
-        <FormItem label="标题（记录用）">
+        <FormItem :label="isServerChan ? '标题（Server酱 消息标题）' : '标题（记录用）'">
           <Input v-model:value="manualForm.title" placeholder="手动通知" />
         </FormItem>
         <FormItem label="内容">
@@ -500,6 +575,10 @@ body.dark {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+.nt-channel-segmented {
+  border-radius: 8px;
+}
+
 .nt-switch-row {
   display: flex;
   flex-direction: column;
@@ -551,6 +630,15 @@ body.dark {
 .nt-time {
   font-variant-numeric: tabular-nums;
   font-size: 12.5px;
+}
+
+.nt-channel-tag {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--nt-bg-soft);
+  border: 1px solid var(--nt-border);
+  color: var(--nt-text-2);
 }
 
 .nt-empty {

@@ -10,16 +10,18 @@ from app.core.database import Base
 
 class NotificationConfig(Base):
     """
-    系统设置 > 消息通知：企业微信机器人 webhook 配置。
+    系统设置 > 消息通知：通知通道配置（企业微信机器人 / Server酱）。
     单例配置——表里最多一行（id=1），保存接口按固定 id 覆盖，避免出现多行配置让
     发送逻辑不知道该用哪条。
+    channel 语义：wecom_webhook=企业微信群机器人（默认）；serverchan=Server酱。
     """
 
     __tablename__ = "notification_config"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     channel: Mapped[str] = mapped_column(String(32), default="wecom_webhook")
-    webhook_url: Mapped[str] = mapped_column(String(512), default="")
+    webhook_url: Mapped[str] = mapped_column(String(512), default="")  # 企业微信机器人 webhook（含 key 参数）
+    sendkey: Mapped[str] = mapped_column(String(256), default="")  # Server酱 SendKey（channel='serverchan' 时使用）
     enabled: Mapped[bool] = mapped_column(default=False)  # 总开关：关闭时不发任何任务通知
     mention_all: Mapped[bool] = mapped_column(default=False)  # text 消息是否 @所有人
     created_at: Mapped[datetime] = mapped_column(

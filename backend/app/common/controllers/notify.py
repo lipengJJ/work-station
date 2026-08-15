@@ -15,7 +15,11 @@ from app.common.schemas.notify import (
     NotificationLogPage,
     SendResult,
 )
-from app.common.services.notify_service import log_notification, send_wecom_message
+from app.common.services.notify_service import (
+    config_missing_hint,
+    log_notification,
+    send_by_config,
+)
 
 router = APIRouter(prefix="/api/notify", tags=["notify"])
 
@@ -39,6 +43,7 @@ def get_config(db: Session = Depends(get_db), _=Depends(get_current_user)):
         id=_SINGLETON_ID,
         channel="wecom_webhook",
         webhook_url="",
+        sendkey="",
         enabled=False,
         mention_all=False,
         created_at=now,
@@ -59,6 +64,7 @@ def save_config(
         db.add(config)
     config.channel = body.channel or "wecom_webhook"
     config.webhook_url = (body.webhook_url or "").strip()
+    config.sendkey = (body.sendkey or "").strip()
     config.enabled = body.enabled
     config.mention_all = body.mention_all
     db.commit()
@@ -68,15 +74,16 @@ def save_config(
 
 @router.post("/test", response_model=SendResult)
 def test_send(db: Session = Depends(get_db), _=Depends(get_current_user)):
-    """手动触发一条测试消息到已配置的 webhook（不要求已启用，方便先测后开）。"""
+    """手动触发一条测试消息到已配置的通道（不要求已启用，方便先测后开）。"""
     config = _get_config(db)
-    if not config or not (config.webhook_url or "").strip():
-        return SendResult(success=False, message="尚未配置 webhook 地址，请先填写并保存")
+    missing = config_missing_hint(config)
+    if missing:
+        return SendResult(success=False, message=missing)
     content = (
         "【统一工作台】消息通知测试\n"
-        "这是一条测试消息，如果你能收到，说明企业微信机器人配置正确。"
+        "这是一条测试消息，如果你能收到，说明当前通知通道配置正确。"
     )
-    ok, msg = send_wecom_message(config.webhook_url, content)
+    ok, msg = send_by_config(config, "测试消息", content, msgtype="text")
     log_notification(
         db,
         config.channel,
@@ -94,12 +101,13 @@ def manual_send(
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """手动发送一条自定义内容（text 或 markdown），供临时通知/联调用。"""
+    """手动发送一条自定义内容（企业微信 text/markdown；Server酱 标题+markdown 正文）。"""
     config = _get_config(db)
-    if not config or not (config.webhook_url or "").strip():
-        return SendResult(success=False, message="尚未配置 webhook 地址，请先填写并保存")
+    missing = config_missing_hint(config)
+    if missing:
+        return SendResult(success=False, message=missing)
     content = body.content.strip() or f"【统一工作台】{body.title}"
-    ok, msg = send_wecom_message(config.webhook_url, content, msgtype=body.msgtype)
+    ok, msg = send_by_config(config, body.title, content, msgtype=body.msgtype)
     log_notification(
         db,
         config.channel,

@@ -9,6 +9,7 @@ class NotificationConfigOut(BaseModel):
     id: int
     channel: str
     webhook_url: str
+    sendkey: str
     enabled: bool
     mention_all: bool
     created_at: datetime
@@ -16,9 +17,10 @@ class NotificationConfigOut(BaseModel):
 
 
 class NotificationConfigIn(BaseModel):
-    # 长度上限与 ORM 列保持一致（NotificationConfig.channel String(32) / webhook_url String(512)）
+    # 长度上限与 ORM 列保持一致（NotificationConfig.channel String(32) / webhook_url String(512) / sendkey String(256)）
     channel: str = Field(default="wecom_webhook", max_length=32)
     webhook_url: str = Field(default="", max_length=512)  # 企业微信机器人完整 webhook 地址（含 key 参数）
+    sendkey: str = Field(default="", max_length=256)  # Server酱 SendKey（channel='serverchan' 时使用）
     enabled: bool = False
     mention_all: bool = False
 
