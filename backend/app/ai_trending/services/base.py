@@ -42,6 +42,22 @@ DROP_QUERY_PARAMS = {
     "mc_eid",
 }
 
+# 已知仅支持 https 的站点：http/https 统一为 https（跨源去重需要，如 arXiv Atom 的 entry.id 是 http）
+HTTPS_ONLY_HOSTS = {
+    "arxiv.org",
+    "www.arxiv.org",
+    "huggingface.co",
+    "www.huggingface.co",
+    "hf.co",
+    "github.com",
+    "www.github.com",
+    "news.ycombinator.com",
+    "infoq.cn",
+    "www.infoq.cn",
+    "36kr.com",
+    "www.36kr.com",
+}
+
 # AI 关键词过滤（标题 + 摘要命中任一即保留；36氪默认启用，InfoQ 提供开关）
 AI_KEYWORDS = [
     "人工智能",
@@ -161,6 +177,12 @@ def normalize_url(url: str) -> str:
     netloc = parts.netloc.lower()
     path = parts.path or ""
     fragment = parts.fragment
+
+    # 已知仅支持 https 的站点：http/https 统一为 https，避免跨源同内容因 scheme 不同无法去重
+    # （如 arXiv Atom feed 的 entry.id 是 http://，而 HF daily_papers 拼的是 https://）
+    host_raw = netloc.split(":")[0]
+    if scheme == "http" and host_raw in HTTPS_ONLY_HOSTS:
+        scheme = "https"
 
     # 丢弃跟踪参数
     query = ""

@@ -245,20 +245,20 @@ onMounted(() => {
       <!-- Layout Mode 1: Comprehensive List View -->
       <div v-else-if="displayLayout === 'list'" class="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] shadow-xl">
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
+          <table class="wl-table w-full text-left text-xs">
             <thead class="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] font-mono text-[11px] text-[hsl(var(--muted-foreground))] uppercase">
               <tr>
                 <th class="px-3 py-3.5 text-center">移除</th>
                 <th class="px-4 py-3.5">标的代码 / 名称</th>
                 <th class="px-4 py-3.5">最新价格</th>
                 <th class="px-4 py-3.5">24h涨跌</th>
-                <th class="px-4 py-3.5">1D 涨幅</th>
-                <th class="px-4 py-3.5">1W 涨幅</th>
-                <th class="px-4 py-3.5">1M 涨幅</th>
-                <th class="px-4 py-3.5">成交量</th>
-                <th class="px-4 py-3.5">PE / 市值</th>
-                <th class="px-4 py-3.5">RSI(14)</th>
-                <th class="px-4 py-3.5">MACD 信号</th>
+                <th class="col-d1 px-4 py-3.5">1D 涨幅</th>
+                <th class="col-w px-4 py-3.5">1W 涨幅</th>
+                <th class="col-m px-4 py-3.5">1M 涨幅</th>
+                <th class="col-vol px-4 py-3.5">成交量</th>
+                <th class="col-pe px-4 py-3.5">PE / 市值</th>
+                <th class="col-rsi px-4 py-3.5">RSI(14)</th>
+                <th class="col-macd px-4 py-3.5">MACD 信号</th>
                 <th class="px-4 py-3.5 text-right">操作</th>
               </tr>
             </thead>
@@ -288,7 +288,7 @@ onMounted(() => {
                     <div>
                       <div class="flex items-center gap-1.5 font-mono text-sm font-extrabold text-[hsl(var(--foreground))]">
                         <span>{{ st.symbol }}</span>
-                        <span class="rounded border border-indigo-500/20 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-normal text-indigo-400">
+                        <span class="wl-sector-tag rounded border border-indigo-500/20 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-normal text-indigo-400">
                           {{ (st.sector || '--').split('/')[0] }}
                         </span>
                       </div>
@@ -302,37 +302,37 @@ onMounted(() => {
 
                 <!-- 24h Change -->
                 <td class="px-4 py-4 font-bold" :class="[st.change >= 0 ? (colorMode === 'cn' ? 'text-rose-500' : 'text-emerald-400') : colorMode === 'cn' ? 'text-emerald-400' : 'text-rose-500']">
-                  <div>{{ st.change >= 0 ? '+' : '' }}{{ st.change.toFixed(2) }}</div>
+                  <div class="wl-chg-value">{{ st.change >= 0 ? '+' : '' }}{{ st.change.toFixed(2) }}</div>
                   <div class="text-[10px] opacity-80">{{ st.changePercent >= 0 ? '+' : '' }}{{ st.changePercent }}%</div>
                 </td>
 
                 <!-- 1D Change -->
-                <td class="px-4 py-4 font-bold" :class="changeClass(st.change1D)">{{ formatPercent(st.change1D ?? null) }}</td>
+                <td class="col-d1 px-4 py-4 font-bold" :class="changeClass(st.change1D)">{{ formatPercent(st.change1D ?? null) }}</td>
 
                 <!-- 1W Change -->
-                <td class="px-4 py-4 font-bold" :class="changeClass(st.change1W)">{{ formatPercent(st.change1W) }}</td>
+                <td class="col-w px-4 py-4 font-bold" :class="changeClass(st.change1W)">{{ formatPercent(st.change1W) }}</td>
 
                 <!-- 1M Change -->
-                <td class="px-4 py-4 font-bold" :class="changeClass(st.change1M)">{{ formatPercent(st.change1M) }}</td>
+                <td class="col-m px-4 py-4 font-bold" :class="changeClass(st.change1M)">{{ formatPercent(st.change1M) }}</td>
 
                 <!-- Volume -->
-                <td class="px-4 py-4 font-medium text-[hsl(var(--muted-foreground))]">{{ st.volume }}</td>
+                <td class="col-vol px-4 py-4 font-medium text-[hsl(var(--muted-foreground))]">{{ st.volume }}</td>
 
                 <!-- PE / Market Cap -->
-                <td class="px-4 py-4 text-[hsl(var(--muted-foreground))]">
+                <td class="col-pe px-4 py-4 text-[hsl(var(--muted-foreground))]">
                   <div class="font-semibold">{{ st.marketCap }}</div>
                   <div class="text-[10px] text-[hsl(var(--muted-foreground))]">{{ st.pe === null ? '--' : `${st.pe}x PE` }}</div>
                 </td>
 
                 <!-- RSI -->
-                <td class="px-4 py-4">
+                <td class="col-rsi px-4 py-4">
                   <span class="rounded border px-2 py-0.5 text-[10px] font-bold" :class="rsiClass(st.rsi)">
                     {{ st.rsi ?? '--' }}
                   </span>
                 </td>
 
                 <!-- MACD Signal -->
-                <td class="px-4 py-4">
+                <td class="col-macd px-4 py-4">
                   <span class="rounded border px-2 py-0.5 text-[10px] font-bold" :class="macdClass(st.macdSignal)">
                     {{ macdText(st.macdSignal) }}
                   </span>
@@ -342,12 +342,12 @@ onMounted(() => {
                 <td class="px-4 py-4 text-right" @click.stop>
                   <div class="flex items-center justify-end gap-2">
                     <button
-                      class="flex items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-600/20 p-1.5 text-xs font-semibold text-indigo-400 transition-all hover:bg-indigo-600 hover:text-white"
+                      class="wl-action-btn flex items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-600/20 p-1.5 text-xs font-semibold text-indigo-400 transition-all hover:bg-indigo-600 hover:text-white"
                       title="查看K线与结构"
                       @click="goToKline(st)"
                     >
                       <BarChart2 class="h-3.5 w-3.5" />
-                      <span>查看K线</span>
+                      <span class="wl-action-text">查看K线</span>
                     </button>
                   </div>
                 </td>
@@ -419,3 +419,39 @@ onMounted(() => {
     <KlineViewer v-model:open="klineDrawerOpen" :stock="klineDrawerStock" />
   </Page>
 </template>
+
+<style scoped>
+/* 移动端渐进披露：手机只保留核心 5 列（移除/代码/价格/24h涨跌/操作），
+   次要列（1D/1W/1M/成交量/PE/RSI/MACD）在 <768px 隐藏，桌面完整显示。
+   想看完整指标点进 K 线详情页。 */
+@media (max-width: 767px) {
+  .col-d1,
+  .col-w,
+  .col-m,
+  .col-vol,
+  .col-pe,
+  .col-rsi,
+  .col-macd {
+    display: none;
+  }
+  /* 手机端密度压缩：板块 tag 隐藏、单元格内边距收紧、操作按钮只留图标 */
+  .wl-sector-tag {
+    display: none !important;
+  }
+  .wl-table th,
+  .wl-table td {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+  .wl-action-text {
+    display: none !important;
+  }
+  .wl-action-btn {
+    padding: 6px !important;
+  }
+  /* 24h 涨跌两行信息在手机上改为单行（百分比为主） */
+  .wl-chg-value {
+    display: none;
+  }
+}
+</style>
