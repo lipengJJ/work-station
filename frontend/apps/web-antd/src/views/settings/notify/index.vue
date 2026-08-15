@@ -16,7 +16,6 @@ import {
   Radio,
   Switch,
   Table,
-  Tag,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -402,14 +401,32 @@ onMounted(() => {
           @change="onTableChange"
         >
           <template #bodyCell="{ column, text }">
-            <Tag v-if="column.key === 'status'" :color="text === 'success' ? 'success' : 'error'">
+            <!-- 状态：与通道 chip 同一胶囊语言，语义色（绿=成功/红=失败） -->
+            <span
+              v-if="column.key === 'status'"
+              class="nt-chip"
+              :class="text === 'success' ? 'nt-chip--success' : 'nt-chip--error'"
+            >
               {{ text === 'success' ? '成功' : '失败' }}
-            </Tag>
+            </span>
+            <!-- 时间：弱化层级，让视线聚焦标题与状态 -->
             <span v-else-if="column.key === 'created_at'" class="nt-time">
               {{ formatTime(text as string) }}
             </span>
+            <!-- 通道：中性胶囊 -->
             <span v-else-if="column.key === 'channel'" class="nt-channel-tag">
               {{ channelLabel(text as string) }}
+            </span>
+            <!-- 标题：主文字色 -->
+            <span v-else-if="column.key === 'title'" class="nt-title-text">
+              {{ text }}
+            </span>
+            <!-- 错误信息：有错误用失败语义色淡化；无错误（-）用中性弱色 -->
+            <span
+              v-else-if="column.key === 'error_msg'"
+              :class="text ? 'nt-error-text' : 'nt-error-muted'"
+            >
+              {{ orDash(text as null | string) }}
             </span>
           </template>
         </Table>
@@ -789,13 +806,56 @@ body.dark {
 }
 
 /* ================= 发送记录 ================= */
-.nt-time {
-  font-variant-numeric: tabular-nums;
-  font-size: 12.5px;
+/* 统一的胶囊 chip 语言：通道/状态同一体系，语义色区分 */
+.nt-chip {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--nt-bg-soft);
+  border: 1px solid var(--nt-border);
+  color: var(--nt-text-2);
 }
 
-.nt-channel-tag {
+.nt-chip--success {
+  color: #10b981;
+  background: color-mix(in srgb, #10b981 12%, transparent);
+  border-color: color-mix(in srgb, #10b981 25%, transparent);
+}
+
+.nt-chip--error {
+  color: #ef4444;
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  border-color: color-mix(in srgb, #ef4444 25%, transparent);
+}
+
+/* 时间：弱化（表格中最不重要的信息） */
+.nt-time {
+  font-variant-numeric: tabular-nums;
   font-size: 12px;
+  color: var(--nt-text-3);
+}
+
+/* 标题：主文字色，略小 */
+.nt-title-text {
+  font-size: 12.5px;
+  color: var(--nt-text);
+}
+
+/* 错误信息：失败语义色淡化，不抢状态 chip */
+.nt-error-text {
+  font-size: 12px;
+  color: color-mix(in srgb, #ef4444 65%, var(--nt-text-2));
+}
+
+/* 无错误时的占位符：中性弱色 */
+.nt-error-muted {
+  font-size: 12px;
+  color: var(--nt-text-3);
+}
+
+/* 通道：中性胶囊 */
+.nt-channel-tag {
+  font-size: 11px;
   padding: 1px 8px;
   border-radius: 999px;
   background: var(--nt-bg-soft);
