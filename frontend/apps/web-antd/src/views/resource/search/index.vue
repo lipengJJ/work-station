@@ -329,7 +329,12 @@ async function savePastedLink() {
       </Alert>
 
       <!-- 粘贴链接直接转存 -->
-      <Collapse ghost class="!bg-transparent" v-model:active-key="expanded ? ['paste'] : []">
+      <Collapse
+        ghost
+        class="!bg-transparent"
+        :active-key="expanded ? ['paste'] : []"
+        @update:active-key="(keys) => (expanded = (keys as string[]).includes('paste'))"
+      >
         <Collapse.Panel key="paste" header="没有搜到？直接粘贴夸克分享链接一键转存">
           <div class="flex items-center gap-3 py-2">
             <Input

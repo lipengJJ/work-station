@@ -22,14 +22,9 @@ def main() -> None:
 
         if db.query(Task).count() == 0:
             now = datetime.now(timezone.utc)
+            # 示例任务只保留 xhs 的（stock 模块尚未接入真实任务，不再造 mock 数据，
+            # 避免首页看板出现"stock 残留任务"的假象）
             sample_tasks = [
-                Task(
-                    module="stock", task_type="analyze", status="success",
-                    params={"tickers": ["AAPL", "QQQ"]},
-                    result_summary="分析完成，写入 2 份报告",
-                    created_at=now - timedelta(hours=2), started_at=now - timedelta(hours=2),
-                    finished_at=now - timedelta(hours=1, minutes=55),
-                ),
                 Task(
                     module="xhs", task_type="xhs_search", status="running",
                     params={"keyword": "普吉岛酒店推荐", "require_num": 20},
@@ -41,11 +36,6 @@ def main() -> None:
                     result_summary="访问频繁，请稍后再试",
                     created_at=now - timedelta(days=1), started_at=now - timedelta(days=1),
                     finished_at=now - timedelta(days=1) + timedelta(minutes=2),
-                ),
-                Task(
-                    module="stock", task_type="analyze", status="pending",
-                    params={"tickers": ["NVDA", "TSLA"]},
-                    created_at=now - timedelta(minutes=1),
                 ),
             ]
             db.add_all(sample_tasks)
