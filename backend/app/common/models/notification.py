@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from sqlalchemy import DateTime, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.database import Base
+
+
+class NotificationConfig(Base):
+    """
+    系统设置 > 消息通知：通知通道配置（**每通道一行**）。
+    channel 为唯一键：wecom_webhook=企业微信群机器人（默认）；serverchan=Server酱；
+    pushplus=PushPlus（预留通道）。
+    每个通道独立 enabled，任务完成/失败通知会扇出到所有启用通道。
+    """
+
+    __tablename__ = "notification_config"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel: Mapped[str] = mapped_column(String(32), unique=True, default="wecom_webhook")
+    webhook_url: Mapped[str] = mapped_column(String(512), default="")  # 企业微信机器人 webhook（含 key 参数）
+    sendkey: Mapped[str] = mapped_column(String(256), default="")  # Server酱 SendKey
+    token: Mapped[str] = mapped_column(String(256), default="")  # PushPlus Token（预留通道）
+    enabled: Mapped[bool] = mapped_column(default=False)  # 本通道开关：关闭时不发任务通知
+    mention_all: Mapped[bool] = mapped_column(default=False)  # text 消息是否 @所有人（企业微信）
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class NotificationLog(Base):
+    """
+    消息通知发送记录：任务完成/失败通知、手动测试发送都会记一条。
+    发送失败也照常落库（status='failed' + error_msg），方便在页面上排查 webhook 问题。
+    """
+
+    __tablename__ = "notification_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel: Mapped[str] = mapped_column(String(32), default="wecom_webhook")
+    title: Mapped[str] = mapped_column(String(256), default="")
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="success", index=True)  # success/failed
+    error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )

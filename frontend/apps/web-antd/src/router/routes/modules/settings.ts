@@ -18,6 +18,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'API配置' },
       },
       {
+        name: 'SettingsNotify',
+        path: 'notify',
+        component: () => import('#/views/settings/notify/index.vue'),
+        meta: { title: '消息通知' },
+      },
+      {
         name: 'SettingsTaskCenter',
         path: 'task-center',
         component: () => import('#/views/task-center/index.vue'),

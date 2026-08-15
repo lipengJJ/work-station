@@ -1,4 +1,5 @@
 from app.common.models.api_config import ApiConfig
+from app.common.models.notification import NotificationConfig, NotificationLog
 from app.common.models.storage_snapshot import StorageSnapshot
 from app.common.models.task import Task
 from app.common.models.user import User
@@ -8,4 +9,6 @@ __all__ = [
     "Task",
     "ApiConfig",
     "StorageSnapshot",
+    "NotificationConfig",
+    "NotificationLog",
 ]

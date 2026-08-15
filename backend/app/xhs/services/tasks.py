@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.common.models import Task
+from app.common.services.notify_service import notify_task_result
 from app.xhs.models import XhsCollectStats, XhsTaskExtra, XhsTaskPendingOp
 from app.xhs.services import note_cache, note_preprocess, note_structurer, token_store
 from app.xhs.services.spider import Data_Spider
@@ -807,6 +808,7 @@ def _run_task(task_id: int) -> None:
             extra.phase = "failed"
             db.commit()
             _clear_pending_op(db, task_id)
+            notify_task_result(task_id)
             return
 
         # 登录态心跳探测：cookie 失效时任务直接失败，提示重新登录，而不是跑到一半才发现
@@ -818,6 +820,7 @@ def _run_task(task_id: int) -> None:
             extra.phase = "failed"
             db.commit()
             _clear_pending_op(db, task_id)
+            notify_task_result(task_id)
             return
 
         task.status = "running"
@@ -943,6 +946,7 @@ def _run_task(task_id: int) -> None:
             task.finished_at = datetime.now(timezone.utc)
             db.commit()
             _clear_pending_op(db, task_id)
+            notify_task_result(task_id)
         except XhsAuthError as e:
             # 登录态失效是"确定性的"失败：重试没有意义，给出明确提示让用户重新登录
             logger.error(f"任务 {task_id} 因登录态失效终止: {e}")
@@ -952,6 +956,7 @@ def _run_task(task_id: int) -> None:
             extra.phase = "failed"
             db.commit()
             _clear_pending_op(db, task_id)
+            notify_task_result(task_id)
         except XhsRateLimitError as e:
             # 风控熔断触发：任务失败保护账号/cookie，提示用户稍后再试
             logger.error(f"任务 {task_id} 因连续触发风控终止: {e}")
@@ -961,6 +966,7 @@ def _run_task(task_id: int) -> None:
             extra.phase = "failed"
             db.commit()
             _clear_pending_op(db, task_id)
+            notify_task_result(task_id)
         except Exception as e:
             logger.exception(f"任务 {task_id} 执行失败")
             task.status = "failed"
@@ -976,6 +982,7 @@ def _run_task(task_id: int) -> None:
             extra.phase = "failed"
             db.commit()
             _clear_pending_op(db, task_id)
+            notify_task_result(task_id)
     finally:
         db.close()
 
@@ -1006,6 +1013,7 @@ def _run_incremental_task(task_id: int, increment_count: int) -> None:
             extra.phase = "failed"
             db.commit()
             _clear_pending_op(db, task_id)
+            notify_task_result(task_id)
             return
 
         # 登录态心跳探测：cookie 失效时任务直接失败，提示重新登录，而不是跑到一半才发现
@@ -1017,6 +1025,7 @@ def _run_incremental_task(task_id: int, increment_count: int) -> None:
             extra.phase = "failed"
             db.commit()
             _clear_pending_op(db, task_id)
+            notify_task_result(task_id)
             return
 
         task.status = "running"
@@ -1153,6 +1162,7 @@ def _run_incremental_task(task_id: int, increment_count: int) -> None:
             task.finished_at = datetime.now(timezone.utc)
             db.commit()
             _clear_pending_op(db, task_id)
+            notify_task_result(task_id)
         except XhsAuthError as e:
             logger.error(f"任务 {task_id} 因登录态失效终止: {e}")
             task.status = "failed"
@@ -1161,6 +1171,7 @@ def _run_incremental_task(task_id: int, increment_count: int) -> None:
             extra.phase = "failed"
             db.commit()
             _clear_pending_op(db, task_id)
+            notify_task_result(task_id)
         except XhsRateLimitError as e:
             # 风控熔断触发：任务失败保护账号/cookie，提示用户稍后再试
             logger.error(f"任务 {task_id} 因连续触发风控终止: {e}")
@@ -1170,6 +1181,7 @@ def _run_incremental_task(task_id: int, increment_count: int) -> None:
             extra.phase = "failed"
             db.commit()
             _clear_pending_op(db, task_id)
+            notify_task_result(task_id)
         except Exception as e:
             logger.exception(f"任务 {task_id} 增量采集失败")
             task.status = "failed"
@@ -1178,6 +1190,7 @@ def _run_incremental_task(task_id: int, increment_count: int) -> None:
             extra.phase = "failed"
             db.commit()
             _clear_pending_op(db, task_id)
+            notify_task_result(task_id)
     finally:
         db.close()
 

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
 
-from app.common.controllers import auth, chat, home, system, tasks_center
+from app.common.controllers import auth, chat, home, notify, system, tasks_center
 from app.core.config import get_settings
 from app.core.database import init_db
 from app.core.logging import setup_logging
@@ -111,6 +111,7 @@ def create_app() -> FastAPI:
     app.include_router(home.router)
     app.include_router(tasks_center.router)
     app.include_router(system.router)
+    app.include_router(notify.router)
     app.include_router(skills_api.router)
     app.include_router(analyses_api.router)
     app.include_router(stock_api.router)

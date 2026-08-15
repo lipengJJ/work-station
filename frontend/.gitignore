@@ -29,7 +29,8 @@ package-lock.json
 .env.*.local
 .eslintcache
 
-logs
+# 只忽略 frontend 根目录的运行日志目录；不要写裸 logs（会误伤 src/views/settings/logs 页面）
+/logs
 *.log
 npm-debug.log*
 yarn-debug.log*
