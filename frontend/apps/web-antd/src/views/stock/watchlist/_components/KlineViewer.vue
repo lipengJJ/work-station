@@ -10,7 +10,7 @@ import { ArrowLeft, Loader2, TrendingDown, TrendingUp } from 'lucide-vue-next';
 import { getStockKlineApi } from '#/api/core/stock';
 import { chartColor } from '../../_shared/chart-theme';
 
-import FundamentalsOverview from '../../_shared/FundamentalsOverview.vue';
+import FundamentalsTabs from '../../_shared/FundamentalsTabs.vue';
 import IndicatorCards from '../../_shared/IndicatorCards.vue';
 
 /**
@@ -356,9 +356,9 @@ function showRecent(count: number) {
           <IndicatorCards :symbol="stock.symbol" />
         </div>
 
-        <!-- 基本面视图 -->
+        <!-- 基本面视图：与「股票分析 > 基本面」页共用完整面板（含财报/估值/收益等全部 tab） -->
         <div v-else class="custom-scrollbar h-full overflow-y-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-4">
-          <FundamentalsOverview :symbol="stock.symbol" />
+          <FundamentalsTabs :symbol="stock.symbol" />
         </div>
       </div>
     </div>
