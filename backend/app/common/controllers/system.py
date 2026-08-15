@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user
 from app.core.database import get_db
 from app.core.logging import LOG_FILE
-from app.common.models import ApiConfig, ScheduleConfig, User
-from app.common.schemas.system import ApiConfigIn, ApiConfigOut, ScheduleConfigIn, ScheduleConfigOut, UserOut
+from app.common.models import ApiConfig, User
+from app.common.schemas.system import ApiConfigIn, ApiConfigOut, UserOut
 from app.common.services.config_file import sync_config_to_file
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -88,25 +88,3 @@ def get_logs(lines: int = 500, _=Depends(get_current_user)):
         "file": str(LOG_FILE),
         "total_lines": total_lines,
     }
-
-
-# -------------------------------------------------------------------- 定时任务 ----
-# Phase 3 接入 stock/xhs 真实调度逻辑时，会读这张表决定要不要往 core/scheduler 里注册 job。
-
-@router.get("/schedules", response_model=list[ScheduleConfigOut])
-def list_schedules(db: Session = Depends(get_db), _=Depends(get_current_user)):
-    return db.query(ScheduleConfig).all()
-
-
-@router.put("/schedules", response_model=ScheduleConfigOut)
-def upsert_schedule(body: ScheduleConfigIn, db: Session = Depends(get_db), _=Depends(get_current_user)):
-    existing = db.query(ScheduleConfig).filter(ScheduleConfig.module == body.module).first()
-    if existing:
-        for key, value in body.model_dump().items():
-            setattr(existing, key, value)
-    else:
-        existing = ScheduleConfig(**body.model_dump())
-        db.add(existing)
-    db.commit()
-    db.refresh(existing)
-    return existing

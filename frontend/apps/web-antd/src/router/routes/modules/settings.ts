@@ -18,12 +18,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'API配置' },
       },
       {
-        name: 'SettingsSchedules',
-        path: 'schedules',
-        component: () => import('#/views/settings/schedules/index.vue'),
-        meta: { title: '定时任务' },
-      },
-      {
         name: 'SettingsLogs',
         path: 'logs',
         component: () => import('#/views/settings/logs/index.vue'),
