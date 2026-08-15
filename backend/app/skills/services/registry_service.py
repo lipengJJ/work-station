@@ -37,6 +37,9 @@ def _sync_skill(db: Session, skill: Skill, skill_dir: Path) -> tuple[dict[str, A
     skill.description = manifest["description"]
     skill.category = manifest.get("category")
     skill.risk_level = validation["risk_level"]
+    # 新建 Skill 时在这里先 flush：确保主键已生成，下面 SkillVersion.skill_id 才能取到；
+    # 对已有 Skill 只是一次 UPDATE，无害。（配合 scan_builtin_skills 不在 add 后提前 flush）
+    db.flush()
 
     current_version = (
         db.get(SkillVersion, skill.current_version_id) if skill.current_version_id else None
@@ -85,7 +88,9 @@ def scan_builtin_skills(db: Session) -> None:
         if skill is None:
             skill = Skill(skill_key=skill_key, source_type="builtin")
             db.add(skill)
-            db.flush()
+        # 注意：这里不要提前 flush——新建 Skill 时 display_name 还是 None，
+        # 提前 flush 会违反 NOT NULL 约束（全新数据库首次启动即报错）；
+        # 让 _sync_skill 先赋值 display_name 等字段，再由其内部的 flush 落库。
         try:
             _sync_skill(db, skill, skill_dir)
             db.commit()
