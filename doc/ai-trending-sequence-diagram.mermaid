@@ -1,0 +1,28 @@
+sequenceDiagram
+    participant APS as APScheduler(cron 每小时)
+    participant SJ as SchedulerJobs
+    participant C as Collector
+    participant S as TrendingSource(子类实例)
+    participant HTTP as 外部数据源(HN/GitHub/arXiv/HF/InfoQ/36氪)
+    participant DB as SQLite
+
+    APS->>SJ: 触发 ai_trending_{source_id}
+    SJ->>C: run_source(source_id)
+    C->>C: 查询/初始化 ai_trending_source_status 行
+    loop 重试 ≤3 次（5s/15s 退避）
+        C->>S: fetch()
+        S->>HTTP: requests 请求 API / HTML / RSS
+        HTTP-->>S: 原始数据（含 published_at / 原始热度指标）
+        S->>S: 解析 + category 映射 + 热度归一化(hn_heat 等)
+        S-->>C: list[RawItem]
+    end
+    C->>DB: 逐条 url_hash 查重
+    alt 不存在
+        C->>DB: INSERT（added+1）
+    else 已存在且新热度更高
+        C->>DB: UPDATE 覆盖为热度更高来源（updated+1）
+    else 已存在且热度不更高
+        C->>DB: 忽略（skipped+1）
+    end
+    C->>DB: 更新 source_status(last_status=success, consecutive_failures=0, total_fetched+=n)
+    C-->>SJ: {source_id, added, updated, skipped, status}

@@ -1,0 +1,104 @@
+classDiagram
+    class RawItem {
+        +str source
+        +str title
+        +str url
+        +str summary
+        +str category
+        +list[str] tags
+        +datetime published_at
+        +float heat_score
+        +dict heat_meta
+    }
+
+    class TrendingSource {
+        <<abstract>>
+        +str source_id
+        +str source_name
+        +str category_type
+        +list[str] filter_keywords
+        +fetch() list[RawItem]
+    }
+
+    class HackerNewsSource
+    class GitHubSource
+    class ArxivSource
+    class HuggingFaceSource {
+        +str mode  "models | papers"
+        +_fetch_models() list[RawItem]
+        +_fetch_papers() list[RawItem]
+    }
+    class InfoQSource
+    class Kr36Source
+
+    class TrendingSourceRegistry {
+        -dict _sources
+        +register(source) void
+        +get(source_id) TrendingSource
+        +list() list[TrendingSource]
+    }
+
+    class Collector {
+        +run_source(source_id) dict
+        +run_all() dict
+        +_fetch_with_retry(source) list[RawItem]
+        +_upsert_items(db, items) dict
+        +_update_status(db, source_id, ok, error, added)
+        +cleanup_old_items(db) int
+    }
+
+    class SchedulerJobs {
+        +register_all_enabled_jobs() void
+        +register_job(source_id) void
+        +unregister_job(source_id) void
+        +_cleanup_job() void
+    }
+
+    class AiTrendingItem {
+        +int id
+        +str source
+        +str title
+        +str url
+        +str url_hash
+        +str summary
+        +float heat_score
+        +str category
+        +str tags
+        +str heat_meta
+        +datetime published_at
+        +datetime fetched_at
+        +datetime created_at
+    }
+
+    class AiTrendingSourceStatus {
+        +str source_id PK
+        +str source_name
+        +str category_type
+        +datetime last_fetched_at
+        +str last_status
+        +str last_error
+        +int consecutive_failures
+        +int fail_count
+        +datetime last_success_at
+        +int total_fetched
+    }
+
+    class TrendingItemOut
+    class TrendingItemPage
+    class SourceStatusOut
+    class RefreshOut
+
+    TrendingSource <|-- HackerNewsSource
+    TrendingSource <|-- GitHubSource
+    TrendingSource <|-- ArxivSource
+    TrendingSource <|-- HuggingFaceSource
+    TrendingSource <|-- InfoQSource
+    TrendingSource <|-- Kr36Source
+
+    TrendingSourceRegistry o-- TrendingSource : holds
+    Collector ..> TrendingSource : uses
+    Collector ..> AiTrendingItem : upsert
+    Collector ..> AiTrendingSourceStatus : update
+    SchedulerJobs ..> Collector : invokes
+    TrendingItemOut --> AiTrendingItem : from_attributes
+    TrendingItemPage o-- TrendingItemOut

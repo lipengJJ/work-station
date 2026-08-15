@@ -594,6 +594,8 @@ onBeforeUnmount(() => {
     transform: rotate(360deg);
   }
 }
+</style>
+
 <style scoped>
 .kpi-grid {
   display: grid;
