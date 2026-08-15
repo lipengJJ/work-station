@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
         if _missing:
             logger.warning(
                 f"检测到小红书签名脚本缺失（{len(_missing)} 个: {', '.join(_missing[:3])}{'…' if len(_missing) > 3 else ''}）。"
-                "部署须知：该脚本为平台逆向产物不进版本库，请放入 backend/static/ 后重启，否则 xhs 搜索/详情接口不可用（见 README）"
+                "部署须知：签名脚本仅供个人学习研究、禁止商用（见 DISCLAIMER.md），缺失时请从仓库 backend/static/ 恢复后重启"
             )
     except Exception:
         pass
