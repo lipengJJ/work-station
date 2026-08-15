@@ -9,8 +9,7 @@
 #
 # 数据持久化：./data（数据库+配置镜像）、./storage（采集素材）挂在宿主机，
 # 升级/重建容器数据不丢；API 配置会自动从 data/config.json 恢复。
-# 小红书签名脚本：如需搜索/详情功能，把 backend/static 下的 xhs_*.js 放到
-# 宿主机 ./static/ 目录（不提供则仅评论等页面级功能不可用，详见 README）。
+# 小红书签名脚本已内置在镜像中（个人学习用途，见 DISCLAIMER.md），开箱即用。
 
 services:
   backend:
@@ -22,7 +21,6 @@ services:
     volumes:
       - ./data:/app/data
       - ./storage:/app/storage
-      - ./static:/app/static
     ports:
       - "${BACKEND_PORT:-8010}:8010"
     restart: unless-stopped

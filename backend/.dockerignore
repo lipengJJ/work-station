@@ -9,6 +9,4 @@ logs/
 *.log
 .env
 
-# 逆向签名脚本不进镜像（公开推送合规风险），部署时挂载宿主机 ./static 目录提供
-static/xhs_*.js
 node_modules/
