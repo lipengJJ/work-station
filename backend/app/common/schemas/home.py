@@ -33,6 +33,17 @@ class HomeSummary(BaseModel):
     success_rate: float
 
 
+class StorageStats(BaseModel):
+    """首页存储概览：数据库/素材占用 + 各数据表行数"""
+    db_size: int  # 字节
+    storage_size: int  # 素材/Excel 目录总字节
+    note_count: int
+    comment_count: int
+    structured_count: int
+    report_count: int
+    task_count: int
+
+
 class HomeResponse(BaseModel):
     recent_tasks: list[TaskOut]
     running_tasks: list[RunningTask]

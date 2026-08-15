@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
@@ -13,6 +14,7 @@ from app.common.schemas.home import (
     HomeResponse,
     HomeSummary,
     RunningTask,
+    StorageStats,
     TrendPoint,
 )
 from app.common.schemas.task import TaskOut
@@ -152,4 +154,55 @@ def get_home(db: Session = Depends(get_db), _=Depends(get_current_user)):
             today_done=today_done,
             success_rate=success_rate,
         ),
+    )
+
+
+# ------------------------------------------------------------ 存储概览 ----
+# 首页"存储概览"：数据库文件 + 素材/Excel 目录占用 + 各数据表行数。
+# 独立接口 + 前端低频轮询（30s），避免每次 du 全量扫描拖慢主看板。
+
+
+def _dir_size(path: str) -> int:
+    total = 0
+    try:
+        for root, _dirs, files in os.walk(path):
+            for f in files:
+                try:
+                    total += os.path.getsize(os.path.join(root, f))
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
+
+
+@router.get("/storage", response_model=StorageStats)
+def get_storage_stats(db: Session = Depends(get_db), _=Depends(get_current_user)):
+    # 数据库文件：从 engine URL 解析 sqlite 路径（docker 里是 /app/data/workbench.db）
+    db_path = ""
+    url = str(db.get_bind().engine.url)
+    if url.startswith("sqlite:///"):
+        db_path = url[len("sqlite:///"):]
+    db_size = os.path.getsize(db_path) if db_path and os.path.exists(db_path) else 0
+
+    # 素材/Excel 存储目录（backend/storage，docker 里 /app/storage）
+    from app.core.config import BASE_DIR
+    storage_dir = str(BASE_DIR / "storage")
+    storage_size = _dir_size(storage_dir) if os.path.isdir(storage_dir) else 0
+
+    from app.xhs.models import XhsNote, XhsNoteComment, XhsNoteStructured, XhsAnalysisReport
+    note_count = db.query(func.count(XhsNote.note_id)).scalar() or 0
+    comment_count = db.query(func.count(XhsNoteComment.comment_id)).scalar() or 0
+    structured_count = db.query(func.count(XhsNoteStructured.note_id)).scalar() or 0
+    report_count = db.query(func.count(XhsAnalysisReport.id)).scalar() or 0
+    task_count = db.query(func.count(Task.id)).scalar() or 0
+
+    return StorageStats(
+        db_size=db_size,
+        storage_size=storage_size,
+        note_count=note_count,
+        comment_count=comment_count,
+        structured_count=structured_count,
+        report_count=report_count,
+        task_count=task_count,
     )

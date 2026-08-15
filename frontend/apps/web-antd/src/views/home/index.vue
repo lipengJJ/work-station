@@ -11,12 +11,15 @@ import {
   Activity,
   CheckCircle2,
   Database,
+  FolderArchive,
+  HardDrive,
   Loader2,
+  MessageSquare,
   PlusCircle,
   TrendingUp,
 } from 'lucide-vue-next';
 
-import { getHomeApi } from '#/api/core/workbench';
+import { getHomeApi, getHomeStorageApi } from '#/api/core/workbench';
 
 // ---------------------------------------------------------------- 常量 ----
 
@@ -57,8 +60,28 @@ const STATUS_LABEL: Record<string, string> = {
 // ---------------------------------------------------------------- 数据 ----
 
 const data = ref<WorkbenchApi.HomeResponse>();
+const storage = ref<WorkbenchApi.StorageStats>();
 const loading = ref(true);
 const router = useRouter();
+
+function formatBytes(n: number): string {
+  if (!n) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+async function loadStorage() {
+  try {
+    storage.value = await getHomeStorageApi();
+  } catch {
+    // 静默
+  }
+}
 const nowText = ref('');
 const lastRefreshText = ref('');
 
@@ -153,16 +176,21 @@ function ringOffset(i: number): number {
 // ---------------------------------------------------------------- 时钟 ----
 
 let timer: ReturnType<typeof setInterval> | undefined;
+let storageTimer: ReturnType<typeof setInterval> | undefined;
 
 onMounted(() => {
   clockTick();
   setInterval(clockTick, 1000);
   loadHome();
   timer = setInterval(loadHome, 5000);
+  loadStorage();
+  // 存储统计独立低频轮询（du 扫描有成本）
+  storageTimer = setInterval(loadStorage, 30000);
 });
 
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer);
+  if (storageTimer) clearInterval(storageTimer);
 });
 </script>
 
@@ -250,6 +278,45 @@ onBeforeUnmount(() => {
           </div>
           <div style="font-size: 11px; color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">
             {{ kpi.sub }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 存储概览 -->
+    <div
+      style="
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        margin-bottom: 14px;
+        border-radius: 12px;
+        border: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+      "
+    >
+      <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: hsl(var(--foreground)); margin-right: 10px; white-space: nowrap">
+        <HardDrive style="width: 14px; height: 14px" />
+        存储概览
+      </span>
+      <div
+        v-for="item in [
+          { label: '数据库', value: formatBytes(storage?.db_size ?? 0), icon: Database, color: '#3b82f6' },
+          { label: '笔记素材', value: formatBytes(storage?.storage_size ?? 0), icon: FolderArchive, color: '#22c55e' },
+          { label: '笔记', value: `${storage?.note_count ?? 0} 篇`, icon: Activity, color: '#8b5cf6' },
+          { label: '评论', value: `${storage?.comment_count ?? 0} 条`, icon: MessageSquare, color: '#06b6d4' },
+          { label: 'AI 结构化', value: `${storage?.structured_count ?? 0} 条`, icon: CheckCircle2, color: '#f59e0b' },
+          { label: '任务', value: `${storage?.task_count ?? 0} 个`, icon: Loader2, color: '#f43f5e' },
+        ] as const"
+        :key="item.label"
+        style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 8px; background: hsl(var(--background-deep)); flex: 1; min-width: 0"
+      >
+        <component :is="item.icon" :style="{ width: 15, height: 15, color: item.color, flexShrink: 0 }" />
+        <div style="min-width: 0">
+          <div style="font-size: 10px; color: hsl(var(--muted-foreground))">{{ item.label }}</div>
+          <div style="font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: hsl(var(--foreground)); white-space: nowrap">
+            {{ item.value }}
           </div>
         </div>
       </div>

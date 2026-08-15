@@ -49,6 +49,17 @@ export namespace WorkbenchApi {
     summary: HomeSummary;
   }
 
+  /** 首页存储概览 */
+  export interface StorageStats {
+    db_size: number;
+    storage_size: number;
+    note_count: number;
+    comment_count: number;
+    structured_count: number;
+    report_count: number;
+    task_count: number;
+  }
+
   export interface TaskCenterResponse {
     running: Task[];
     completed: Task[];
@@ -58,6 +69,10 @@ export namespace WorkbenchApi {
 
 export async function getHomeApi() {
   return requestClient.get<WorkbenchApi.HomeResponse>('/home');
+}
+
+export async function getHomeStorageApi() {
+  return requestClient.get<WorkbenchApi.StorageStats>('/home/storage');
 }
 
 export async function getTasksCenterApi() {
