@@ -39,7 +39,12 @@ from app.xhs.services.spider import Data_Spider
 from app.xhs.services.utils.data_util import download_note, save_to_xlsx
 from app.xhs.services.xhs_errors import XhsAuthError, XhsError, XhsNotFoundError, XhsRateLimitError
 
-STORAGE_DIR = Path(__file__).resolve().parent.parent.parent / "storage" / "xhs_tasks"
+# 素材根目录必须与 config.BASE_DIR 统一（/app/storage，bind mount 到宿主机 ./storage）。
+# 坑：不要用 __file__ 逐级上溯（services → xhs → app → 多了一层 app，素材会写到
+# /app/app/storage，既不在挂载目录也不被存储监控统计到）。
+from app.core.config import BASE_DIR
+
+STORAGE_DIR = BASE_DIR / "storage" / "xhs_tasks"
 
 # 队列里放 (kind, id, payload) 而不是单纯的 task_id——追踪任务（app/xhs/tracking.py）的
 # 定时扫描、增量采集都要走这同一个单线程 worker（小红书对并发请求风控敏感，所有抓取
