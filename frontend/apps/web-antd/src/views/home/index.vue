@@ -242,6 +242,7 @@ onBeforeUnmount(() => {
   <Page :auto-content-height="false">
     <!-- 顶部：监控状态条 -->
     <div
+      class="home-status-bar"
       style="
         display: flex;
         align-items: center;
@@ -641,6 +642,14 @@ onBeforeUnmount(() => {
   .kpi-grid > div {
     padding: 12px !important;
     gap: 10px !important;
+  }
+  .kpi-grid > div > div > div:first-of-type:not(:has(i)) {
+    font-size: 20px !important;
+  }
+  /* 状态条换行（运行状态监控 / 每5秒刷新 / 时钟 在窄屏分两行） */
+  .home-status-bar {
+    flex-wrap: wrap;
+    row-gap: 6px;
   }
 }
 </style>

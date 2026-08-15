@@ -37,3 +37,23 @@ const tokenTheme = computed(() => {
     </App>
   </ConfigProvider>
 </template>
+
+<style>
+/* ========== 全局移动端适配（UI Designer 设计规范） ==========
+   手机端（<768px）统一压缩页面内容区内边距，让内容更充分利用屏幕：
+   页面级容器 p-6(24px) → 16px。桌面端不受影响。 */
+@media (max-width: 767px) {
+  /* 页面内容容器 */
+  .p-6 {
+    padding: 1rem !important;
+  }
+  /* 卡片/区块内边距 */
+  .p-5 {
+    padding: 1rem !important;
+  }
+  /* 图表卡标题区 */
+  .p-4 {
+    padding: 0.75rem !important;
+  }
+}
+</style>

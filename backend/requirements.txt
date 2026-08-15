@@ -23,3 +23,6 @@ PyYAML  # 解析 Skill 的 SKILL.md frontmatter 和 workbench.yaml
 # xhs 评论获取切换为 Playwright 页面级爬取（services/client/page_crawler.py）。
 # 安装后还需执行 `python -m playwright install chromium`（Docker 构建见 Dockerfile）
 playwright
+
+# ai_trending 热点聚合：RSS 2.0 / Atom 统一解析（InfoQ / 36氪 / arXiv）
+feedparser>=6.0
