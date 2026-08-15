@@ -9,7 +9,7 @@ FRONTEND_PORT="${1:-8090}"
 BACKEND_PORT="${2:-8020}"
 
 echo "==> 1/4 拉取最新代码"
-git pull
+git pull origin "$(git branch --show-current)"
 
 echo "==> 2/4 重新打包镜像（backend + frontend）"
 docker compose build backend
