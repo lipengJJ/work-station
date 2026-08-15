@@ -11,9 +11,32 @@ from app.xhs.services.utils.cookie_util import trans_cookies
 
 _STATIC_DIR = str(BASE_DIR / "static")
 
+# 签名脚本清单（平台逆向产物，不进 GitHub 版本库——见 README「部署须知」）。
+# clone 仓库后需自行放置到 backend/static/ 下，否则签名相关的搜索/详情接口不可用。
+REQUIRED_SIGNATURE_FILES = [
+    "xhs_main_260411.js",
+    "xhs_creator_260411.js",
+    "xhs_rap.js",
+    "xhs_xray.js",
+    "xhs_websectiga_env.js",
+]
+
+
+def missing_signature_files() -> list[str]:
+    """返回缺失的签名脚本名（供启动时检测/提示）"""
+    return [f for f in REQUIRED_SIGNATURE_FILES if not os.path.exists(os.path.join(_STATIC_DIR, f))]
+
 
 def _compile_static_js(filename):
-    with open(os.path.join(_STATIC_DIR, filename), 'r', encoding='utf-8') as f:
+    path = os.path.join(_STATIC_DIR, filename)
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"缺少小红书签名脚本 {filename}（后端 static 目录）。"
+            "部署须知：该脚本是平台逆向产物，不进 GitHub 版本库；"
+            "请从浏览器 DevTools 抓取或从开发者处获取后放入 backend/static/ 目录，"
+            "否则 xhs 搜索/详情接口不可用（评论等页面级功能不受影响）。"
+        )
+    with open(path, 'r', encoding='utf-8') as f:
         return execjs.compile(f.read())
 
 

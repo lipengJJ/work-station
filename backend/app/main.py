@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from loguru import logger
 
 from app.common.controllers import auth, chat, home, system, tasks_center
 from app.core.config import get_settings
@@ -39,6 +40,18 @@ async def lifespan(app: FastAPI):
     xhs_tasks.requeue_pending_tasks()
     xhs_tasks.start_worker()
     xhs_tracking.register_all_enabled_jobs()
+    # 签名脚本缺失检测：clone 仓库后 backend/static 没有逆向签名脚本时给出明确提示
+    # （不影响启动，评论等页面级功能正常；搜索/详情接口首次使用时会再次报错）
+    try:
+        from app.xhs.services.utils.xhs_util import missing_signature_files
+        _missing = missing_signature_files()
+        if _missing:
+            logger.warning(
+                f"检测到小红书签名脚本缺失（{len(_missing)} 个: {', '.join(_missing[:3])}{'…' if len(_missing) > 3 else ''}）。"
+                "部署须知：该脚本为平台逆向产物不进版本库，请放入 backend/static/ 后重启，否则 xhs 搜索/详情接口不可用（见 README）"
+            )
+    except Exception:
+        pass
     try:
         yield
     finally:

@@ -103,6 +103,15 @@ cp .env.example .env    # 把 WORKBENCH_SECRET_KEY 换成随机密钥，例如 o
 - `WORKBENCH_SECRET_KEY` 用于签 JWT，**生产环境必须设置强随机密钥**，否则 docker compose 会拒绝启动
 - 容器内 SQLite 数据库和素材产出分别挂载在 `backend_data` / `backend_storage` 卷，容器重建不丢数据
 
+## 部署须知：小红书签名脚本
+
+`backend/static/` 下的 `xhs_main_*.js` / `xhs_creator_*.js` / `xhs_rap.js` / `xhs_xray.js` / `xhs_websectiga_env.js`
+是小红书的**逆向签名脚本**（平台前端产物），**不进 GitHub 版本库**（公开分发存在合规风险）。
+
+- **影响范围**：缺失时仅影响 xhs 的**搜索 / 笔记详情**等依赖 `x-s` 签名的 API 接口；评论爬取（Playwright 页面级）、素材下载等**不受影响**
+- **获取方式**：浏览器 DevTools → Network 面板筛选 `xhs_main` / `xhs_rap` 等关键字，抓取当前页面加载的脚本，放入 `backend/static/` 后重启后端（或从开发者处获取）
+- **缺失提示**：后端启动时会打印缺失警告；对应接口调用时会抛出带指引的明确报错，而不是神秘的文件错误
+
 ## 资源搜索模块（夸克网盘）
 
 - **搜索**：聚合 Bing / DuckDuckGo 发现 `pan.quark.cn/s/` 分享链接，支持电影 / 剧集 / 电子书等分类；如需更稳定的第三方夸克搜索 API，设置环境变量 `WORKBENCH_QUARK_SEARCH_API`（GET `{url}?keyword=&page=`）后自动优先使用
