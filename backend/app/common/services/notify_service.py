@@ -1,0 +1,201 @@
+"""
+企业微信机器人消息通知服务。
+
+- NotificationConfig 存 webhook 地址/开关（单例配置，最多一行）；
+- NotificationLog 记录每次发送结果，失败也记（status='failed' + error_msg）；
+- notify_task_result() 是任务中心钩子入口：独立线程发送，发送失败只写日志，
+  绝不影响任务本身的主流程（任务完成/失败的通知不能反过来让任务报错）。
+"""
+from __future__ import annotations
+
+import threading
+from datetime import datetime, timezone
+from typing import Optional
+
+import requests
+from loguru import logger
+from sqlalchemy.orm import Session
+
+from app.core.database import SessionLocal
+from app.common.models import NotificationConfig, NotificationLog, Task
+
+# 企业微信机器人 webhook 发送地址：把配置里存的完整 webhook_url（含 key 参数）直接
+# POST 到这个地址即可，不需要自己拼 key。
+WECOM_WEBHOOK_BASE = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
+REQUEST_TIMEOUT = 8  # 秒：5-10s 区间内，既不让任务线程等太久，也给弱网留余量
+
+# 模块 / 任务类型的中文展示名（通知正文可读性；没有注册的 fallback 用原始值）
+_MODULE_LABELS = {
+    "xhs": "小红书",
+    "stock": "股票分析",
+    "analysis": "分析任务",
+    "resource": "资源中心",
+    "skills": "技能中心",
+}
+
+_TASK_TYPE_LABELS = {
+    "xhs_search": "笔记采集",
+    "xhs_tracking": "追踪扫描",
+    "analyze": "分析任务",
+}
+
+
+def _log_notification(
+    db: Session,
+    channel: str,
+    title: str,
+    content: Optional[str],
+    status: str,
+    error_msg: Optional[str],
+) -> None:
+    """写一条发送记录到 notification_log；落库失败只打日志，不影响主流程。"""
+    try:
+        db.add(
+            NotificationLog(
+                channel=channel or "wecom_webhook",
+                title=title or "",
+                content=content,
+                status=status,
+                error_msg=error_msg,
+            )
+        )
+        db.commit()
+    except Exception:
+        logger.exception("通知发送记录落库失败")
+        db.rollback()
+
+
+def log_notification(
+    db: Session,
+    channel: str,
+    title: str,
+    content: Optional[str],
+    status: str,
+    error_msg: Optional[str],
+) -> None:
+    """供 controller（测试发送/手动发送）复用：写一条发送记录。"""
+    _log_notification(db, channel, title, content, status, error_msg)
+
+
+def send_wecom_message(
+    webhook_url: str,
+    content: str,
+    msgtype: str = "text",
+    mentioned_list: Optional[list[str]] = None,
+) -> tuple[bool, str]:
+    """
+    向企业微信机器人 webhook 发送一条消息。
+
+    支持 text / markdown 两种 msgtype；text 可带 mentioned_list（["@all"] 即 @所有人）。
+    返回 (是否成功, 错误信息/成功提示)。任何异常都不向上抛——任务钩子不希望通知失败
+    影响主流程。
+    """
+    webhook_url = (webhook_url or "").strip()
+    if not webhook_url:
+        return False, "未配置 webhook 地址"
+    if msgtype not in ("text", "markdown"):
+        return False, f"不支持的 msgtype: {msgtype}"
+
+    payload: dict = {"msgtype": msgtype}
+    if msgtype == "markdown":
+        payload["markdown"] = {"content": content}
+    else:
+        text_body: dict = {"content": content}
+        if mentioned_list:
+            text_body["mentioned_list"] = mentioned_list
+        payload["text"] = text_body
+
+    try:
+        resp = requests.post(webhook_url, json=payload, timeout=REQUEST_TIMEOUT)
+    except Exception as e:
+        return False, f"请求企业微信接口失败：{e}"
+
+    try:
+        data = resp.json()
+    except Exception:
+        return False, f"响应解析失败（HTTP {resp.status_code}）：{resp.text[:200]}"
+
+    if data.get("errcode") == 0:
+        return True, data.get("errmsg") or "发送成功"
+    return False, f"企业微信返回错误：errcode={data.get('errcode')}, errmsg={data.get('errmsg')}"
+
+
+def _build_task_message(task: Task) -> tuple[str, str]:
+    """根据 Task 记录构建 (标题, 正文)。标题存 NotificationLog.title，正文发到企业微信。"""
+    module_label = _MODULE_LABELS.get(task.module, task.module or "未知模块")
+    task_type_label = _TASK_TYPE_LABELS.get(task.task_type, task.task_type or "任务")
+    is_success = task.status == "success"
+    status_label = "完成" if is_success else "失败"
+
+    title = f"任务{status_label}：{task_type_label}（{module_label}）"
+
+    duration_text = ""
+    if task.started_at and task.finished_at:
+        seconds = max(0, int((task.finished_at - task.started_at).total_seconds()))
+        if seconds < 60:
+            duration_text = f"{seconds} 秒"
+        else:
+            duration_text = f"{seconds // 60} 分 {seconds % 60} 秒"
+
+    content_lines = [
+        f"【统一工作台】任务{status_label}通知",
+        f"任务：{task_type_label}",
+        f"模块：{module_label}",
+        f"状态：{'成功' if is_success else '失败'}",
+        f"耗时：{duration_text or '-'}",
+    ]
+
+    # 采集/追踪类任务的 params 里通常带 keyword，拼进正文方便一眼看出是哪个关键词
+    params = task.params if isinstance(task.params, dict) else {}
+    keyword = params.get("keyword")
+    if keyword:
+        content_lines.insert(1, f"关键词：{keyword}")
+
+    if task.result_summary:
+        content_lines.append(f"摘要：{task.result_summary}")
+    content_lines.append(f"任务ID：{task.id}")
+
+    return title, "\n".join(content_lines)
+
+
+def _notify_task_result_sync(task_id: int) -> None:
+    """在独立线程里执行：读配置 → 读任务 → 发送 → 落发送记录。任何异常都不外抛。"""
+    db = SessionLocal()
+    try:
+        config = (
+            db.query(NotificationConfig).order_by(NotificationConfig.id.asc()).first()
+        )
+        # 未启用 / 未配置 webhook：静默跳过，不产生发送记录
+        if not config or not config.enabled or not (config.webhook_url or "").strip():
+            return
+
+        task = db.get(Task, task_id)
+        if not task or task.status not in ("success", "failed"):
+            return
+
+        title, content = _build_task_message(task)
+        mentioned = ["@all"] if config.mention_all else None
+        ok, err_msg = send_wecom_message(config.webhook_url, content, mentioned_list=mentioned)
+        if ok:
+            _log_notification(db, config.channel, title, content, "success", None)
+            logger.info(f"任务 {task_id} 微信通知发送成功：{title}")
+        else:
+            _log_notification(db, config.channel, title, content, "failed", err_msg)
+            logger.warning(f"任务 {task_id} 微信通知发送失败：{err_msg}")
+    except Exception:
+        logger.exception(f"任务 {task_id} 通知处理异常")
+    finally:
+        db.close()
+
+
+def notify_task_result(task_id: int) -> None:
+    """
+    任务到达终态（success/failed）后的通知入口：独立线程发送，不阻塞任务执行；
+    内部所有异常都被吞掉并记日志，保证通知失败不影响任务本身。
+    """
+    try:
+        threading.Thread(
+            target=_notify_task_result_sync, args=(task_id,), daemon=True
+        ).start()
+    except Exception:
+        logger.exception(f"任务 {task_id} 通知线程启动失败")

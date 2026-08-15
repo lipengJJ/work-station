@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.core.scheduler import get_scheduler
 from app.common.models import Task
+from app.common.services.notify_service import notify_task_result
 from app.xhs.models import XhsTrackingHit, XhsTrackingTask
 from app.xhs.services.xhs_errors import XhsAuthError
 from app.xhs.services import note_cache, note_preprocess, token_store
@@ -29,22 +30,24 @@ from app.xhs.services.spider import Data_Spider
 _JOB_ID_PREFIX = "xhs_tracking_"
 
 
-def _record_task(db: Session, tracking_task_id: int, keyword: str, status: str, summary: str) -> None:
+def _record_task(db: Session, tracking_task_id: int, keyword: str, status: str, summary: str) -> int:
     """追踪任务每次执行都记一条 Task——首页监控看板（任务总数/今日新增/趋势图/任务中心）
-    就能体现追踪扫描也是一次任务执行。失败也记，方便在任务中心看到失败原因。"""
+    就能体现追踪扫描也是一次任务执行。失败也记，方便在任务中心看到失败原因。
+    返回新建 Task 的 id，调用方 commit 后用它触发微信通知。"""
     now = datetime.now(timezone.utc)
-    db.add(
-        Task(
-            module="xhs",
-            task_type="xhs_tracking",
-            status=status,
-            params={"keyword": keyword, "tracking_task_id": tracking_task_id},
-            result_summary=summary,
-            created_at=now,
-            started_at=now,
-            finished_at=now,
-        )
+    row = Task(
+        module="xhs",
+        task_type="xhs_tracking",
+        status=status,
+        params={"keyword": keyword, "tracking_task_id": tracking_task_id},
+        result_summary=summary,
+        created_at=now,
+        started_at=now,
+        finished_at=now,
     )
+    db.add(row)
+    db.flush()  # 拿自增 id（在调用方 commit 之前 flush 即可，通知线程在 commit 后才触发）
+    return row.id
 
 
 def _job_id(tracking_task_id: int) -> str:
@@ -207,8 +210,9 @@ def run_scan(tracking_task_id: int) -> None:
             task.status = "failed"
             task.last_run_message = "未配置 token/cookie"
             task.last_run_at = datetime.now(timezone.utc)
-            _record_task(db, tracking_task_id, task.keyword, "failed", "追踪扫描失败：未配置 token/cookie")
+            new_task_id = _record_task(db, tracking_task_id, task.keyword, "failed", "追踪扫描失败：未配置 token/cookie")
             db.commit()
+            notify_task_result(new_task_id)
             return
 
         # 登录态心跳探测：失效时本轮扫描直接失败并提示重新登录
@@ -217,8 +221,9 @@ def run_scan(tracking_task_id: int) -> None:
             task.status = "failed"
             task.last_run_message = valid_msg
             task.last_run_at = datetime.now(timezone.utc)
-            _record_task(db, tracking_task_id, task.keyword, "failed", f"追踪扫描失败：{valid_msg}")
+            new_task_id = _record_task(db, tracking_task_id, task.keyword, "failed", f"追踪扫描失败：{valid_msg}")
             db.commit()
+            notify_task_result(new_task_id)
             return
 
         task.status = "running"
@@ -295,25 +300,28 @@ def run_scan(tracking_task_id: int) -> None:
             task.last_run_message = f"扫描完成，本次新增命中 {new_hit_count} 篇"
             task.last_hit_count = new_hit_count
             task.last_run_at = datetime.now(timezone.utc)
-            _record_task(
+            new_task_id = _record_task(
                 db, tracking_task_id, task.keyword, "success",
                 f"追踪扫描完成：关键词「{task.keyword}」新增命中 {new_hit_count} 篇",
             )
             db.commit()
+            notify_task_result(new_task_id)
         except XhsAuthError as e:
             logger.error(f"追踪任务 {tracking_task_id} 因登录态失效终止: {e}")
             task.status = "failed"
             task.last_run_message = f"登录态失效，请重新登录后再试（{e}）"
             task.last_run_at = datetime.now(timezone.utc)
-            _record_task(db, tracking_task_id, task.keyword, "failed", f"追踪扫描失败：登录态失效（{e}）")
+            new_task_id = _record_task(db, tracking_task_id, task.keyword, "failed", f"追踪扫描失败：登录态失效（{e}）")
             db.commit()
+            notify_task_result(new_task_id)
         except Exception as e:
             logger.exception(f"追踪任务 {tracking_task_id} 扫描失败")
             task.status = "failed"
             task.last_run_message = str(e)
             task.last_run_at = datetime.now(timezone.utc)
-            _record_task(db, tracking_task_id, task.keyword, "failed", f"追踪扫描失败：{str(e)[:120]}")
+            new_task_id = _record_task(db, tracking_task_id, task.keyword, "failed", f"追踪扫描失败：{str(e)[:120]}")
             db.commit()
+            notify_task_result(new_task_id)
     finally:
         db.close()
 
