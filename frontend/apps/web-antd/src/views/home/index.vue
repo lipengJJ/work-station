@@ -12,7 +12,6 @@ import {
   CheckCircle2,
   Database,
   HardDrive,
-  Loader2,
   PlusCircle,
   TrendingUp,
 } from 'lucide-vue-next';
@@ -83,8 +82,8 @@ async function loadStorage() {
 
 // ------------------------------------------- 存储趋势折线图（SVG）----
 const ST_W = 560;
-const ST_H = 150;
-const ST_PAD = { top: 12, right: 10, bottom: 20, left: 52 };
+const ST_H = 110;
+const ST_PAD = { top: 8, right: 10, bottom: 18, left: 48 };
 
 const storageChart = computed(() => {
   const points = storage.value?.trend ?? [];
@@ -126,17 +125,10 @@ function formatAxis(n: number): string {
   return `${(n / 1024).toFixed(0)}KB`;
 }
 
-const nowText = ref('');
-const lastRefreshText = ref('');
-
-function clockTick() {
-  nowText.value = new Date().toLocaleString('zh-CN', { hour12: false });
-}
 
 async function loadHome() {
   try {
     data.value = await getHomeApi();
-    lastRefreshText.value = new Date().toLocaleTimeString('zh-CN', { hour12: false });
   } catch {
     // 轮询失败静默
   } finally {
@@ -223,8 +215,6 @@ let timer: ReturnType<typeof setInterval> | undefined;
 let storageTimer: ReturnType<typeof setInterval> | undefined;
 
 onMounted(() => {
-  clockTick();
-  setInterval(clockTick, 1000);
   loadHome();
   timer = setInterval(loadHome, 5000);
   loadStorage();
@@ -239,46 +229,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Page :auto-content-height="false">
-    <!-- 顶部：监控状态条 -->
-    <div
-      class="home-status-bar"
-      style="
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 10px 16px;
-        margin-bottom: 14px;
-        border-radius: 12px;
-        border: 1px solid hsl(var(--border));
-        background: hsl(var(--card));
-      "
-    >
-      <div style="display: flex; align-items: center; gap: 10px">
-        <span
-          style="
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #22c55e;
-            box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
-            animation: pulse-dot 1.8s infinite;
-          "
-        ></span>
-        <span style="font-weight: 700; font-size: 14px; color: hsl(var(--foreground))">运行状态监控</span>
-        <span style="font-size: 12px; color: hsl(var(--muted-foreground))">上次刷新 {{ lastRefreshText || '--' }}</span>
-      </div>
-      <div style="display: flex; align-items: center; gap: 14px">
-        <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: hsl(var(--muted-foreground))">
-          <Loader2 style="width: 13px; height: 13px; animation: spin 2s linear infinite" />
-          每 5 秒自动刷新
-        </span>
-        <span style="font-family: ui-monospace, monospace; font-size: 14px; font-weight: 600; color: hsl(var(--foreground))">
-          {{ nowText }}
-        </span>
-      </div>
-    </div>
-
+  <Page :auto-content-height="true">
     <!-- KPI 卡片 -->
     <div class="kpi-grid">
       <div v-for="kpi in [
@@ -293,7 +244,7 @@ onBeforeUnmount(() => {
           display: flex;
           align-items: center;
           gap: 12px;
-          padding: 16px;
+          padding: 12px 14px;
           border-radius: 12px;
           border: 1px solid hsl(var(--border));
           background: hsl(var(--card));
@@ -304,22 +255,15 @@ onBeforeUnmount(() => {
         <div
           class="kpi-icon"
           :style="{
-            width: 44,
-            height: 44,
-            borderRadius: 12,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
             background: `color-mix(in srgb, ${kpi.color} 16%, transparent)`,
             color: kpi.color,
-            flexShrink: 0,
           }"
         >
           <component :is="kpi.icon" :style="{ width: 22, height: 22 }" />
         </div>
         <div style="min-width: 0">
           <div style="font-size: 12px; color: hsl(var(--muted-foreground))">{{ kpi.label }}</div>
-          <div style="font-size: 26px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; color: hsl(var(--foreground))">
+          <div style="font-size: 22px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; color: hsl(var(--foreground))">
             {{ kpi.value }}
           </div>
           <div style="font-size: 11px; color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">
@@ -347,7 +291,7 @@ onBeforeUnmount(() => {
             { label: '合计占用', value: formatBytes((storage?.db_size ?? 0) + (storage?.storage_size ?? 0)), color: '#f59e0b', note: '持久化总量' },
           ] as const"
           :key="item.label"
-          style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; background: hsl(var(--background-deep))"
+          style="display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; background: hsl(var(--background-deep))"
         >
           <i :style="{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0 }"></i>
           <span style="font-size: 12px; color: hsl(var(--muted-foreground))">{{ item.label }}</span>
@@ -416,7 +360,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 图表行：趋势 + 状态分布 -->
-    <div class="chart-row">
+    <div class="chart-row" style="margin-bottom: 10px">
       <div
         style="
           padding: 14px 16px;
@@ -508,14 +452,19 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 运行中任务 -->
+    <!-- 运行中任务：flex-1 占满剩余高度，首屏可见 -->
     <div
+      class="home-tasks"
       style="
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
         padding: 14px 16px;
-        margin-bottom: 14px;
         border-radius: 12px;
         border: 1px solid hsl(var(--border));
         background: hsl(var(--card));
+        overflow-y: auto;
       "
     >
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px">
@@ -604,6 +553,15 @@ onBeforeUnmount(() => {
   gap: 12px;
   margin-bottom: 14px;
 }
+.kpi-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
 .storage-panel {
   display: grid;
   grid-template-columns: 0.9fr 1.4fr;
@@ -645,11 +603,6 @@ onBeforeUnmount(() => {
   }
   .kpi-grid > div > div > div:first-of-type:not(:has(i)) {
     font-size: 20px !important;
-  }
-  /* 状态条换行（运行状态监控 / 每5秒刷新 / 时钟 在窄屏分两行） */
-  .home-status-bar {
-    flex-wrap: wrap;
-    row-gap: 6px;
   }
 }
 </style>
