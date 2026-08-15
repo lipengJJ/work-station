@@ -283,43 +283,67 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 存储概览 -->
+    <!-- 存储概览（监控表格） -->
     <div
       style="
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 12px 16px;
+        padding: 14px 16px;
         margin-bottom: 14px;
         border-radius: 12px;
         border: 1px solid hsl(var(--border));
         background: hsl(var(--card));
       "
     >
-      <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: hsl(var(--foreground)); margin-right: 10px; white-space: nowrap">
-        <HardDrive style="width: 14px; height: 14px" />
-        存储概览
-      </span>
-      <div
-        v-for="item in [
-          { label: '数据库', value: formatBytes(storage?.db_size ?? 0), icon: Database, color: '#3b82f6' },
-          { label: '笔记素材', value: formatBytes(storage?.storage_size ?? 0), icon: FolderArchive, color: '#22c55e' },
-          { label: '笔记', value: `${storage?.note_count ?? 0} 篇`, icon: Activity, color: '#8b5cf6' },
-          { label: '评论', value: `${storage?.comment_count ?? 0} 条`, icon: MessageSquare, color: '#06b6d4' },
-          { label: 'AI 结构化', value: `${storage?.structured_count ?? 0} 条`, icon: CheckCircle2, color: '#f59e0b' },
-          { label: '任务', value: `${storage?.task_count ?? 0} 个`, icon: Loader2, color: '#f43f5e' },
-        ] as const"
-        :key="item.label"
-        style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 8px; background: hsl(var(--background-deep)); flex: 1; min-width: 0"
-      >
-        <component :is="item.icon" :style="{ width: 15, height: 15, color: item.color, flexShrink: 0 }" />
-        <div style="min-width: 0">
-          <div style="font-size: 10px; color: hsl(var(--muted-foreground))">{{ item.label }}</div>
-          <div style="font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: hsl(var(--foreground)); white-space: nowrap">
-            {{ item.value }}
-          </div>
-        </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px">
+        <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: hsl(var(--foreground))">
+          <HardDrive style="width: 14px; height: 14px" />
+          存储概览
+        </span>
+        <span style="font-size: 11px; color: hsl(var(--muted-foreground))">每 30 秒刷新</span>
       </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px">
+        <thead>
+          <tr style="border-bottom: 1px solid hsl(var(--border)); text-align: left">
+            <th style="padding: 6px 10px; font-weight: 600; color: hsl(var(--muted-foreground))">数据项</th>
+            <th style="padding: 6px 10px; font-weight: 600; color: hsl(var(--muted-foreground)); text-align: right">数量</th>
+            <th style="padding: 6px 10px; font-weight: 600; color: hsl(var(--muted-foreground)); text-align: right">占用空间</th>
+            <th style="padding: 6px 10px; font-weight: 600; color: hsl(var(--muted-foreground))">说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="row in [
+              { label: '数据库', icon: Database, color: '#3b82f6', count: '—', size: formatBytes(storage?.db_size ?? 0), desc: 'SQLite 持久化（任务/配置/索引）' },
+              { label: '笔记素材', icon: FolderArchive, color: '#22c55e', count: '—', size: formatBytes(storage?.storage_size ?? 0), desc: 'Excel 产出 / 图文素材（storage 卷）' },
+              { label: '笔记', icon: Activity, color: '#8b5cf6', count: `${storage?.note_count ?? 0} 篇`, size: '—', desc: '已采集笔记缓存' },
+              { label: '评论', icon: MessageSquare, color: '#06b6d4', count: `${storage?.comment_count ?? 0} 条`, size: '—', desc: '已抓取评论数据' },
+              { label: 'AI 结构化', icon: CheckCircle2, color: '#f59e0b', count: `${storage?.structured_count ?? 0} 条`, size: '—', desc: 'AI 提取的结构化字段' },
+              { label: '分析报告', icon: TrendingUp, color: '#f43f5e', count: `${storage?.report_count ?? 0} 份`, size: '—', desc: 'AI 生成的报告' },
+              { label: '任务', icon: Loader2, color: '#94a3b8', count: `${storage?.task_count ?? 0} 个`, size: '—', desc: '采集任务记录' },
+            ] as const"
+            :key="row.label"
+            class="group"
+            style="border-bottom: 1px solid hsl(var(--border)); transition: background 0.15s"
+            @mouseover="($event.currentTarget as HTMLElement).style.background = 'hsl(var(--accent))'"
+            @mouseout="($event.currentTarget as HTMLElement).style.background = 'transparent'"
+          >
+            <td style="padding: 7px 10px; display: flex; align-items: center; gap: 8px; font-weight: 600; color: hsl(var(--foreground))">
+              <component :is="row.icon" :style="{ width: 14, height: 14, color: row.color, flexShrink: 0 }" />
+              {{ row.label }}
+            </td>
+            <td style="padding: 7px 10px; text-align: right; font-variant-numeric: tabular-nums; color: hsl(var(--foreground))">{{ row.count }}</td>
+            <td style="padding: 7px 10px; text-align: right; font-variant-numeric: tabular-nums; color: hsl(var(--foreground))">{{ row.size }}</td>
+            <td style="padding: 7px 10px; color: hsl(var(--muted-foreground))">{{ row.desc }}</td>
+          </tr>
+          <tr style="border-top: 1px solid hsl(var(--border)); background: hsl(var(--background-deep))">
+            <td style="padding: 8px 10px; font-weight: 700; color: hsl(var(--foreground))">合计占用</td>
+            <td style="padding: 8px 10px"></td>
+            <td style="padding: 8px 10px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: hsl(var(--foreground))">
+              {{ formatBytes((storage?.db_size ?? 0) + (storage?.storage_size ?? 0)) }}
+            </td>
+            <td style="padding: 8px 10px; color: hsl(var(--muted-foreground))">数据库 + 素材持久化总量</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- 图表行：趋势 + 状态分布 -->
