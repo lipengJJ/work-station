@@ -17,10 +17,11 @@ export namespace XhsApi {
     msg?: string;
     qr_id?: string;
     qr_image?: string;
+      expires_at: null | string;
   }
 
   export interface QrcodeStatusResult {
-    status: 'expired' | 'pending' | 'success';
+    status: 'expired' | 'pending' | 'scanned' | 'success';
     msg?: string;
     nickname?: string;
   }
@@ -299,7 +300,9 @@ export async function clearXhsTokenApi() {
 }
 
 export async function startXhsQrcodeLoginApi() {
-  return requestClient.post<XhsApi.QrcodeStartResult>('/xhs/login/qrcode/start');
+  return requestClient.post<XhsApi.QrcodeStartResult>('/xhs/login/qrcode/start', undefined, {
+    timeout: 60000,
+  });
 }
 
 export async function pollXhsQrcodeLoginApi(qrId: string) {
@@ -308,12 +311,22 @@ export async function pollXhsQrcodeLoginApi(qrId: string) {
   });
 }
 
+export async function cancelXhsQrcodeLoginApi(qrId: string) {
+  return requestClient.post<{ success: boolean }>('/xhs/login/qrcode/cancel', null, {
+    params: { qr_id: qrId },
+  });
+}
+
 export async function sendXhsPhoneCodeApi(phone: string, zone = '86') {
-  return requestClient.post<XhsApi.PhoneSendResult>('/xhs/login/phone/send_code', { phone, zone });
+  return requestClient.post<XhsApi.PhoneSendResult>('/xhs/login/phone/send_code', { phone, zone }, {
+    timeout: 60000,
+  });
 }
 
 export async function verifyXhsPhoneLoginApi(phone: string, code: string, zone = '86') {
-  return requestClient.post<XhsApi.PhoneVerifyResult>('/xhs/login/phone/verify', { phone, code, zone });
+  return requestClient.post<XhsApi.PhoneVerifyResult>('/xhs/login/phone/verify', { phone, code, zone }, {
+    timeout: 60000,
+  });
 }
 
 export async function createXhsCollectTaskApi(body: XhsApi.CollectTaskParams) {

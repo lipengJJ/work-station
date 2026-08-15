@@ -56,6 +56,7 @@ def start_qrcode_login() -> dict:
         "status": "ok",
         "qr_id": qr_id,
         "qr_image": _qrcode_to_data_uri(qr_data["qr_url"]),
+        "expires_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() + 300)),
     }
 
 
@@ -73,7 +74,7 @@ def poll_qrcode_login(db: Session, qr_id: str) -> dict:
             # 是它内部另发的第二个请求拿的，那个请求偶尔会慢一拍/失败而不影响这里的 success。
             # 这时候不能把不完整的 cookie 存下来（后面采集任务会报"无登录信息"），继续等
             # 下一轮轮询——status 还是 2，会自然重试那个内部请求，通常一两次就好了。
-            return {"status": "pending", "msg": "登录确认中，请稍候…"}
+            return {"status": "scanned", "msg": "已扫描，请在手机上确认"}
         _pending_qrcode.pop(qr_id, None)
         _, user_info, cookies = _login_api.get_user_info(cookies)
         cookies_str = _login_api.cookies_to_str(cookies)
@@ -85,6 +86,13 @@ def poll_qrcode_login(db: Session, qr_id: str) -> dict:
         return {"status": "expired", "msg": msg}
 
     return {"status": "pending", "msg": msg}
+
+
+def cancel_qrcode_login(qr_id: str) -> dict:
+    """关闭弹窗/切换 tab 时调用：释放该次扫码登录会话，避免堆积。"""
+    if qr_id and qr_id in _pending_qrcode:
+        _pending_qrcode.pop(qr_id, None)
+    return {"success": True}
 
 
 def send_phone_code(phone: str, zone: str = "86") -> dict:

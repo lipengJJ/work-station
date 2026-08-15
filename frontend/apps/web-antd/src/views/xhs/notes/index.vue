@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import type { XhsApi } from '#/api/core/xhs';
+import { getXhsTokenApi } from '#/api/core/xhs';
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -54,7 +55,6 @@ import { groupNotesByRecency } from '#/utils/note-grouping';
 
 import CreateCollectTaskModal from '../_shared/CreateCollectTaskModal.vue';
 import { phaseLabel, progressPercent } from '../_shared/xhs-collect';
-import XhsTokenManager from '../_shared/XhsTokenManager.vue';
 
 const router = useRouter();
 
@@ -561,11 +561,23 @@ async function submitIncremental() {
   }
 }
 
+// token 状态：未配置时「采集任务」按钮置灰（提示前往系统设置配置）
+const tokenReady = ref(true);
+async function refreshTokenReady() {
+  try {
+    const st = await getXhsTokenApi();
+    tokenReady.value = !!st.has_token;
+  } catch {
+    tokenReady.value = false;
+  }
+}
+
 onMounted(() => {
   fetchTasks();
   fetchRunningTasks();
   runningTasksTimer = setInterval(fetchRunningTasks, 3000);
   syncBackfillPolling();
+  refreshTokenReady();
 });
 
 onBeforeUnmount(() => {
@@ -577,10 +589,6 @@ onBeforeUnmount(() => {
 <template>
   <Page :auto-content-height="true" content-class="!p-0">
     <div class="custom-scrollbar flex h-full flex-1 flex-col overflow-y-auto bg-[hsl(var(--background-deep))] p-6 select-none">
-      <div class="mb-4 shrink-0">
-        <XhsTokenManager />
-      </div>
-
       <!-- ============================================== 一级：采集任务列表 -->
       <template v-if="!selectedTask">
         <div class="mb-6 shrink-0 flex items-start justify-between gap-3">
@@ -588,13 +596,24 @@ onBeforeUnmount(() => {
             <h1 class="text-xl font-extrabold text-[hsl(var(--foreground))]">笔记管理</h1>
             <p class="mt-1 text-xs text-[hsl(var(--muted-foreground))]">按采集主题浏览已经抓取的笔记，点击进入某个主题查看具体笔记</p>
           </div>
-          <button
-            class="flex shrink-0 items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500"
-            @click="newTaskModalOpen = true"
-          >
-            <Plus class="h-3.5 w-3.5" />
-            采集任务
-          </button>
+          <Tooltip :title="tokenReady ? '' : undefined">
+            <template v-if="!tokenReady" #title>
+              <div class="flex flex-col gap-1">
+                <span>需先在系统设置中配置小红书 token</span>
+                <button class="text-left text-indigo-300 underline underline-offset-2" @click="router.push('/settings/api-config')">
+                  前往配置 →
+                </button>
+              </div>
+            </template>
+            <button
+              :disabled="!tokenReady"
+              class="flex shrink-0 items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-indigo-600"
+              @click="newTaskModalOpen = true"
+            >
+              <Plus class="h-3.5 w-3.5" />
+              采集任务
+            </button>
+          </Tooltip>
         </div>
 
         <!-- 进行中的采集任务：新任务还没有笔记数据时不会出现在下面的正式列表里，
@@ -763,9 +782,15 @@ onBeforeUnmount(() => {
             <template v-else>
               <p class="text-sm font-semibold text-[hsl(var(--foreground))]">暂无已保存的笔记数据</p>
               <p class="text-xs text-[hsl(var(--muted-foreground))]">先发起一次采集吧</p>
-              <button class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500" @click="newTaskModalOpen = true">
-                新建采集任务
-              </button>
+              <Tooltip :title="tokenReady ? '' : '需先在系统设置中配置小红书 token，再创建采集任务'">
+                <button
+                  :disabled="!tokenReady"
+                  class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  @click="newTaskModalOpen = true"
+                >
+                  新建采集任务
+                </button>
+              </Tooltip>
             </template>
           </div>
         </div>

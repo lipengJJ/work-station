@@ -20,6 +20,8 @@ import {
   Switch,
   Tag,
 } from 'ant-design-vue';
+import XhsTokenManager from '../../xhs/_shared/XhsTokenManager.vue';
+
 
 import { getChatConfigApi, setChatConfigApi } from '#/api/core/chat';
 import { deleteApiConfigApi, listApiConfigsApi, upsertApiConfigApi } from '#/api/core/system';
@@ -169,11 +171,12 @@ const UPDATE_META: Record<
   },
 };
 
-function openUpdateModal(target: 'xhs' | 'zhipu') {
-  updateTarget.value = target;
+const tokenManagerRef = ref<InstanceType<typeof XhsTokenManager> | null>(null);
+
+function openUpdateModalZhipu() {
   updateForm.value = '';
   updateForm.zhipu_model = '';
-  const cfg = configByName(target === 'xhs' ? 'xhs_cookie' : 'zhipu_api_key');
+  const cfg = configByName('zhipu_api_key');
   updateUpdatedAt.value = cfg?.updated_at
     ? new Date(cfg.updated_at).toLocaleString('zh-CN', { hour12: false })
     : null;
@@ -183,32 +186,19 @@ function openUpdateModal(target: 'xhs' | 'zhipu') {
 async function submitUpdate() {
   const value = updateForm.value.trim();
   const model = updateForm.zhipu_model.trim();
-  if (updateTarget.value === 'xhs') {
-    if (!value) {
-      message.warning('没有输入新值，无需更新');
-      return;
-    }
-  } else if (!value && !model) {
+  if (!value && !model) {
     message.warning('没有输入新值，无需更新');
     return;
   }
   updateSaving.value = true;
   try {
-    if (updateTarget.value === 'xhs') {
-      await upsertApiConfigApi({
-        name: 'xhs_cookie',
-        value: value || undefined,
-        description: '小红书登录态 cookie',
-      });
-    } else {
-      await upsertApiConfigApi({
-        name: 'zhipu_api_key',
-        value: value || undefined,
-        description: '智谱开放平台 API Key',
-      });
-      if (model) {
-        await upsertApiConfigApi({ name: 'zhipu_model', value: model, description: '结构化预处理用的模型' });
-      }
+    await upsertApiConfigApi({
+      name: 'zhipu_api_key',
+      value: value || undefined,
+      description: '智谱开放平台 API Key',
+    });
+    if (model) {
+      await upsertApiConfigApi({ name: 'zhipu_model', value: model, description: '结构化预处理用的模型' });
     }
     message.success('已保存');
     updateModalOpen.value = false;
@@ -275,7 +265,7 @@ onMounted(() => {
             <span class="ac-item-desc">采集与追踪任务所需的登录态凭证</span>
           </div>
           <div class="ac-item-actions">
-            <Button type="text" size="small" class="ac-update-btn" @click="openUpdateModal('xhs')">更新</Button>
+            <Button type="text" size="small" class="ac-update-btn" @click="tokenManagerRef?.open()">更新</Button>
           </div>
         </div>
 
@@ -292,7 +282,7 @@ onMounted(() => {
             <span class="ac-item-desc">采集笔记时的结构化预处理，与 AI 模型独立配置</span>
           </div>
           <div class="ac-item-actions">
-            <Button type="text" size="small" class="ac-update-btn" @click="openUpdateModal('zhipu')">更新</Button>
+            <Button type="text" size="small" class="ac-update-btn" @click="openUpdateModalZhipu()">更新</Button>
           </div>
         </div>
       </div>
@@ -354,17 +344,21 @@ onMounted(() => {
       </Form>
     </Modal>
     <!-- ============================ 更新弹窗（小红书 token / 数据处理模型） ============================ -->
-    <Modal v-model:open="updateModalOpen" :title="UPDATE_META[updateTarget].title" :footer="null" width="520px">
-      <div class="ac-model-modal-desc">{{ UPDATE_META[updateTarget].desc }}</div>
+      <!-- 小红书 token：三 tab 登录弹窗（扫码/验证码/手动粘贴） -->
+      <XhsTokenManager ref="tokenManagerRef" />
+
+    <!-- ============================ 更新弹窗（数据处理模型） ============================ -->
+    <Modal v-model:open="updateModalOpen" title="更新数据处理模型" :footer="null" width="520px">
+      <div class="ac-model-modal-desc">采集笔记时的结构化预处理（智谱 GLM）。留空则不修改。</div>
       <Form layout="vertical">
         <FormItem label="凭证值">
           <Input.Password
             v-model:value="updateForm.value"
             class="ac-mono-input"
-            :placeholder="UPDATE_META[updateTarget].keyPlaceholder"
+            placeholder="粘贴新的智谱 API Key（留空则不修改）"
           />
         </FormItem>
-        <FormItem v-if="updateTarget === 'zhipu'" label="模型（可选）">
+        <FormItem label="模型（可选）">
           <Input
             v-model:value="updateForm.zhipu_model"
             class="ac-mono-input"

@@ -65,6 +65,11 @@ def qrcode_status(qr_id: str = Query(...), db: Session = Depends(get_db), _=Depe
     return login.poll_qrcode_login(db, qr_id)
 
 
+@router.post("/login/qrcode/cancel")
+def qrcode_cancel(qr_id: str = Query(...), _=Depends(get_current_user)):
+    return login.cancel_qrcode_login(qr_id)
+
+
 # ---------------------------------------------------------- login: phone ----
 
 @router.post("/login/phone/send_code")
