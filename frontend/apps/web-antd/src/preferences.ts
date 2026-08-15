@@ -23,10 +23,19 @@ export const overridesPreferences = defineOverridesPreferences({
     defaultHomePath: '/home',
   },
   copyright: appCopyrightPreferences,
-  // 保持中文：移除顶栏语言切换按钮（偏好设置面板里的语言下拉也一并移除）
+  // 顶栏收纳：只保留"偏好设置"（齿轮）入口，主题/时区/全屏/刷新/通知/锁屏/退出
+  // 等按钮默认都不显示（header.vue 已强制只渲染 preferences 槽，不受本地缓存偏好影响）
   widget: {
     languageToggle: false,
     languageToggleButtonPosition: 'none',
+    globalSearchButtonPosition: 'none',
+    themeToggleButtonPosition: 'none',
+    timezoneButtonPosition: 'none',
+    fullscreenButtonPosition: 'none',
+    refreshButtonPosition: 'none',
+    notificationButtonPosition: 'none',
+    lockScreenButtonPosition: 'none',
+    logoutButtonPosition: 'none',
   },
 });
 
