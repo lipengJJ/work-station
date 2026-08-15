@@ -9,14 +9,8 @@ const routes: RouteRecordRaw[] = [
     },
     name: 'Settings',
     path: '/settings',
-    redirect: '/settings/users',
+    redirect: '/settings/api-config',
     children: [
-      {
-        name: 'SettingsUsers',
-        path: 'users',
-        component: () => import('#/views/settings/users/index.vue'),
-        meta: { title: '用户与权限' },
-      },
       {
         name: 'SettingsApiConfig',
         path: 'api-config',
