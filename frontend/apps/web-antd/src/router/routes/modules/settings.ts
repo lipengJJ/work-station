@@ -8,20 +8,14 @@ const routes: RouteRecordRaw[] = [
       title: '系统设置',
     },
     name: 'Settings',
-    path: '/settings',
-    redirect: '/settings/api-config',
+    path: '/system',
+    redirect: '/system/settings',
     children: [
       {
-        name: 'SettingsApiConfig',
-        path: 'api-config',
-        component: () => import('#/views/settings/api-config/index.vue'),
-        meta: { title: 'API配置' },
-      },
-      {
-        name: 'SettingsNotify',
-        path: 'notify',
-        component: () => import('#/views/settings/notify/index.vue'),
-        meta: { title: '消息通知' },
+        name: 'SettingsSystem',
+        path: 'settings',
+        component: () => import('#/views/settings/system/index.vue'),
+        meta: { title: '系统设置' },
       },
       {
         name: 'SettingsTaskCenter',

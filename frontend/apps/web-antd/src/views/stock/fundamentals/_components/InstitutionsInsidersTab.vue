@@ -78,7 +78,7 @@ const institutionColumns = [
 ];
 
 function goToApiConfig() {
-  router.push('/settings/api-config');
+  router.push('/system/settings');
 }
 </script>
 

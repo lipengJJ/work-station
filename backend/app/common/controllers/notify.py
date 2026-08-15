@@ -8,15 +8,14 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user
 from app.core.database import get_db
 from app.common.models import NotificationConfig, NotificationLog
-from app.common.schemas.notify import (
-    ChannelList,
+from app.common.schemas.notify import (ChannelList,
     ManualSendIn,
     NotificationConfigIn,
     NotificationConfigOut,
     NotificationLogPage,
     SendResult,
     TestSendIn,
-)
+    TestAllResult,)
 from app.common.services.notify_service import (
     config_missing_hint,
     get_config_by_channel,
@@ -82,8 +81,73 @@ def list_channels(db: Session = Depends(get_db), _=Depends(get_current_user)):
 
 @router.get("/configs", response_model=list[NotificationConfigOut])
 def get_configs(db: Session = Depends(get_db), _=Depends(get_current_user)):
-    """全部通道配置（多通道化后按 channel 一行）。"""
+    """全部通道配置（多实例化后按实例一行，channel 可重复）。"""
     return list_configs(db)
+
+
+@router.post("/configs", response_model=NotificationConfigOut)
+def create_config(
+    body: NotificationConfigIn,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """新增通道实例（同类型可配多个，remark 备注名区分）。"""
+    if not body.channel:
+        raise HTTPException(400, "缺少渠道类型")
+    config = NotificationConfig(
+        channel=body.channel,
+        remark=body.remark,
+        webhook_url=body.webhook_url,
+        sendkey=body.sendkey,
+        token=body.token,
+        enabled=body.enabled,
+        mention_all=body.mention_all,
+    )
+    db.add(config)
+    db.commit()
+    db.refresh(config)
+    return config
+
+
+@router.put("/configs/{config_id}", response_model=NotificationConfigOut)
+def update_config(
+    config_id: int,
+    body: NotificationConfigIn,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """更新通道实例（字段留空 = 不修改）。"""
+    config = db.get(NotificationConfig, config_id)
+    if not config:
+        raise HTTPException(404, "通道实例不存在")
+    if body.webhook_url:
+        config.webhook_url = body.webhook_url
+    if body.sendkey:
+        config.sendkey = body.sendkey
+    if body.token:
+        config.token = body.token
+    if body.remark:
+        config.remark = body.remark
+    config.enabled = body.enabled
+    config.mention_all = body.mention_all
+    db.commit()
+    db.refresh(config)
+    return config
+
+
+@router.delete("/configs/{config_id}")
+def delete_config(
+    config_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """删除通道实例。"""
+    config = db.get(NotificationConfig, config_id)
+    if not config:
+        raise HTTPException(404, "通道实例不存在")
+    db.delete(config)
+    db.commit()
+    return {"success": True}
 
 
 @router.get("/config/{channel}", response_model=NotificationConfigOut)
@@ -116,34 +180,37 @@ def save_config(
     )
 
 
-@router.post("/test", response_model=SendResult)
-def test_send(
-    body: TestSendIn | None = None,
-    db: Session = Depends(get_db),
-    _=Depends(get_current_user),
-):
-    """手动触发一条测试消息到指定通道（不传 channel = 第一个启用通道；不要求已启用，方便先测后开）。"""
-    channel = (body.channel if body else None) or None
-    config = _pick_channel(db, channel)
-    if config is None:
-        return SendResult(success=False, message=_channel_unavailable_msg(channel))
-    missing = config_missing_hint(config)
-    if missing:
-        return SendResult(success=False, message=missing)
+@router.post("/test", response_model=TestAllResult)
+def test_send(db: Session = Depends(get_db), _=Depends(get_current_user)):
+    """手动发送：向所有已启用通道实例发送一条测试消息，逐条反馈成功/失败。"""
     content = (
         "【统一工作台】消息通知测试\n"
         "这是一条测试消息，如果你能收到，说明当前通知通道配置正确。"
     )
-    ok, msg = send_by_config(config, "测试消息", content, msgtype="text")
-    log_notification(
-        db,
-        config.channel,
-        "测试消息",
-        content,
-        "success" if ok else "failed",
-        None if ok else msg,
+    configs = [c for c in list_configs(db) if c.enabled]
+    if not configs:
+        return TestAllResult(success=False, total=0, success_count=0, message="还没有启用的通知渠道")
+    ok_count = 0
+    results = []
+    for cfg in configs:
+        missing = config_missing_hint(cfg)
+        if missing:
+            results.append({"channel": cfg.channel, "remark": cfg.remark, "success": False, "message": missing})
+            continue
+        ok, msg = send_by_config(cfg, "测试消息", content, msgtype="text")
+        results.append({"channel": cfg.channel, "remark": cfg.remark, "success": ok, "message": msg})
+        if ok:
+            ok_count += 1
+        log_notification(
+            db, cfg.channel, "测试消息", content, "success" if ok else "failed", None if ok else msg,
+        )
+    return TestAllResult(
+        success=ok_count == len(configs),
+        total=len(configs),
+        success_count=ok_count,
+        message=f"{ok_count}/{len(configs)} 个渠道发送成功",
+        results=results,
     )
-    return SendResult(success=ok, message=msg)
 
 
 @router.post("/send", response_model=SendResult)
@@ -172,20 +239,3 @@ def manual_send(
     return SendResult(success=ok, message=msg)
 
 
-@router.get("/logs", response_model=NotificationLogPage)
-def list_logs(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-    _=Depends(get_current_user),
-):
-    """发送记录（分页，最近的在前）。"""
-    total = db.query(NotificationLog).count()
-    rows = (
-        db.query(NotificationLog)
-        .order_by(NotificationLog.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
-    return NotificationLogPage(items=rows, total=total, page=page, page_size=page_size)

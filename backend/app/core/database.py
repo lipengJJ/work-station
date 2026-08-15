@@ -67,17 +67,52 @@ def _ensure_notification_config_schema() -> None:
                     )
                 )
                 logger.warning("notification_config 表已补充 token 列（PushPlus 预留通道）")
-        # channel 唯一索引（多通道化）；SQLite 老表单例一行，无重复值风险
-        index_names = {ix["name"] for ix in inspector.get_indexes("notification_config")}
-        if "ix_notification_config_channel" not in index_names:
-            with engine.begin() as conn:
+        # 多实例化：移除 channel 唯一索引（同类型可配多个实例）；老库补 remark 列；
+        # SQLite 老表内嵌 UNIQUE 约束生成的 autoindex 无法 DROP，只能重建表移除。
+        with engine.begin() as conn:
+            index_names = {ix["name"] for ix in inspector.get_indexes("notification_config")}
+            if "ix_notification_config_channel" in index_names:
+                conn.execute(text("DROP INDEX ix_notification_config_channel"))
+                logger.warning("notification_config 表已移除 channel 唯一索引（多实例化）")
+            if "remark" not in columns:
+                conn.execute(
+                    text("ALTER TABLE notification_config ADD COLUMN remark VARCHAR(64) DEFAULT ''")
+                )
+                logger.warning("notification_config 表已补充 remark 列（多实例备注名）")
+            auto_rows = conn.execute(
+                text(
+                    "SELECT name FROM sqlite_master WHERE type='index' "
+                    "AND tbl_name='notification_config' AND name LIKE 'sqlite_autoindex%'"
+                )
+            ).fetchall()
+            if auto_rows:
                 conn.execute(
                     text(
-                        "CREATE UNIQUE INDEX ix_notification_config_channel "
-                        "ON notification_config (channel)"
+                        "CREATE TABLE notification_config_new ("
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                        "channel VARCHAR(32) NOT NULL DEFAULT 'wecom_webhook', "
+                        "remark VARCHAR(64) DEFAULT '', "
+                        "webhook_url VARCHAR(512) DEFAULT '', "
+                        "sendkey VARCHAR(256) DEFAULT '', "
+                        "token VARCHAR(256) DEFAULT '', "
+                        "enabled BOOLEAN DEFAULT 0, "
+                        "mention_all BOOLEAN DEFAULT 0, "
+                        "created_at DATETIME, "
+                        "updated_at DATETIME)"
                     )
                 )
-            logger.warning("notification_config 表已补充 channel 唯一索引（多通道化）")
+                conn.execute(
+                    text(
+                        "INSERT INTO notification_config_new (id, channel, remark, webhook_url, "
+                        "sendkey, token, enabled, mention_all, created_at, updated_at) "
+                        "SELECT id, channel, COALESCE(remark, ''), webhook_url, sendkey, token, "
+                        "enabled, mention_all, created_at, updated_at FROM notification_config"
+                    )
+                )
+                conn.execute(text("DROP TABLE notification_config"))
+                conn.execute(text("ALTER TABLE notification_config_new RENAME TO notification_config"))
+                logger.warning("notification_config 表已重建（移除 channel 唯一约束，支持多实例）")
+
     except Exception:
         logger.exception("检查/补充 notification_config 表结构失败，部分通知通道可能不可用")
 

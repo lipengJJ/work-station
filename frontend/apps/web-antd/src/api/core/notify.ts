@@ -6,6 +6,7 @@ export namespace NotifyApi {
   export interface NotificationConfig {
     id: number;
     channel: string;
+    remark: string;
     webhook_url: string;
     sendkey: string;
     token: string;
@@ -17,6 +18,7 @@ export namespace NotifyApi {
 
   export interface NotificationConfigIn {
     channel?: string;
+    remark: string;
     webhook_url: string;
     sendkey: string;
     token: string;
@@ -92,6 +94,28 @@ export async function saveNotifyConfigApi(channel: string, body: NotifyApi.Notif
 }
 
 /** 测试发送：channel 可选（不传 = 第一个启用通道） */
+export async function createNotifyConfigApi(body: NotifyApi.NotificationConfigIn) {
+  return requestClient.post<NotifyApi.NotificationConfig>('/notify/configs', body);
+}
+
+export async function updateNotifyConfigApi(id: number, body: NotifyApi.NotificationConfigIn) {
+  return requestClient.put<NotifyApi.NotificationConfig>(`/notify/configs/${id}`, body);
+}
+
+export async function deleteNotifyConfigApi(id: number) {
+  return requestClient.delete<{ success: boolean }>(`/notify/configs/${id}`);
+}
+
+export async function testNotifyAllApi() {
+  return requestClient.post<{
+    success: boolean;
+    total: number;
+    success_count: number;
+    message: string;
+    results: { channel: string; remark: string; success: boolean; message: string }[];
+  }>('/notify/test');
+}
+
 export async function testNotifySendApi(channel?: string) {
   return requestClient.post<NotifyApi.SendResult>('/notify/test', channel ? { channel } : {});
 }

@@ -600,7 +600,7 @@ onBeforeUnmount(() => {
             <template v-if="!tokenReady" #title>
               <div class="flex flex-col gap-1">
                 <span>需先在系统设置中配置小红书 token</span>
-                <button class="text-left text-indigo-300 underline underline-offset-2" @click="router.push('/settings/api-config')">
+                <button class="text-left text-indigo-300 underline underline-offset-2" @click="router.push('/system/settings')">
                   前往配置 →
                 </button>
               </div>

@@ -8,6 +8,7 @@ class NotificationConfigOut(BaseModel):
 
     id: int
     channel: str
+    remark: str = ""
     webhook_url: str
     sendkey: str
     token: str
@@ -20,6 +21,7 @@ class NotificationConfigOut(BaseModel):
 class NotificationConfigIn(BaseModel):
     # 长度上限与 ORM 列保持一致（NotificationConfig.channel String(32) / webhook_url String(512) / sendkey|token String(256)）
     channel: str | None = Field(default=None, max_length=32)  # 路径携带时忽略；保留字段用于旧调用兼容
+    remark: str = Field(default="", max_length=64)  # 备注名（同类型多实例区分，如"研发群"）
     webhook_url: str = Field(default="", max_length=512)  # 企业微信机器人完整 webhook 地址（含 key 参数）
     sendkey: str = Field(default="", max_length=256)  # Server酱 SendKey
     token: str = Field(default="", max_length=256)  # PushPlus Token（预留）
@@ -67,6 +69,21 @@ class NotificationLogOut(BaseModel):
     status: str
     error_msg: str | None
     created_at: datetime
+
+
+class TestItemResult(BaseModel):
+    channel: str
+    remark: str = ""
+    success: bool
+    message: str = ""
+
+
+class TestAllResult(BaseModel):
+    success: bool
+    total: int
+    success_count: int
+    message: str = ""
+    results: list[TestItemResult] = []
 
 
 class NotificationLogPage(BaseModel):
