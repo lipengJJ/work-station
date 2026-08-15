@@ -1040,22 +1040,10 @@ body.dark {
 
 /* ================= 模块分类卡片 ================= */
 .ac-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* 与消息通知页通道列表一致：每个模块分组一行一个、等宽（100%），纵向排列 */
+  display: flex;
+  flex-direction: column;
   gap: 14px;
-  align-items: start;
-}
-
-@media (max-width: 1100px) {
-  .ac-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 720px) {
-  .ac-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .ac-card {
