@@ -18,6 +18,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'API配置' },
       },
       {
+        name: 'SettingsTaskCenter',
+        path: 'task-center',
+        component: () => import('#/views/task-center/index.vue'),
+        meta: { title: '任务中心' },
+      },
+      {
         name: 'SettingsLogs',
         path: 'logs',
         component: () => import('#/views/settings/logs/index.vue'),
