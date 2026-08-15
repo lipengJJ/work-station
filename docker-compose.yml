@@ -9,9 +9,13 @@ services:
       - WORKBENCH_SECRET_KEY=${WORKBENCH_SECRET_KEY:?请设置 WORKBENCH_SECRET_KEY 环境变量（生产环境必须使用随机的强密钥，不要用默认值）}
       - WORKBENCH_DATABASE_URL=sqlite:////app/data/workbench.db
     volumes:
-      # sqlite 数据库和 xhs 采集任务的产出（Excel/素材）分开挂载，容器重建/重启都不会丢
-      - backend_data:/app/data
-      - backend_storage:/app/storage
+      # 直接映射到宿主机目录（bind mount）：
+      #   ./data     → 数据库 workbench.db + 配置镜像 config.json（API key / cookie / token）
+      #   ./storage  → xhs 采集产出（Excel/素材）
+      # 好处：重启/重建容器、甚至 down -v 清卷，数据都在宿主机目录里，随时可查看/备份；
+      # 配置会自动从 config.json 恢复，不需要重新填 API key。
+      - ./data:/app/data
+      - ./storage:/app/storage
     ports:
       - "${BACKEND_PORT:-8010}:8010"
     restart: unless-stopped
@@ -25,7 +29,3 @@ services:
     ports:
       - "${FRONTEND_PORT:-80}:8080"
     restart: unless-stopped
-
-volumes:
-  backend_data:
-  backend_storage:

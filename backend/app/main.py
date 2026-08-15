@@ -35,6 +35,16 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # 配置自动恢复：容器重建/清卷后，从宿主机 bind mount 目录的 config.json 恢复 API 配置
+    try:
+        from app.core.database import SessionLocal
+        from app.common.services.config_file import restore_config_from_file
+        with SessionLocal() as _db:
+            _restored = restore_config_from_file(_db)
+            if _restored:
+                logger.info(f"已从 config.json 恢复 {_restored} 条 API 配置")
+    except Exception:
+        pass
     start_scheduler()
     skills_registry.scan_on_startup()
     xhs_tasks.requeue_pending_tasks()

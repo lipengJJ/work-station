@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.logging import LOG_FILE
 from app.common.models import ApiConfig, ScheduleConfig, User
 from app.common.schemas.system import ApiConfigIn, ApiConfigOut, ScheduleConfigIn, ScheduleConfigOut, UserOut
+from app.common.services.config_file import sync_config_to_file
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -41,6 +42,7 @@ def upsert_api_config(body: ApiConfigIn, db: Session = Depends(get_db), _=Depend
         db.add(existing)
     db.commit()
     db.refresh(existing)
+    sync_config_to_file(db)  # 同步镜像到宿主机可读的 config.json
     return existing
 
 
@@ -51,6 +53,7 @@ def delete_api_config(config_id: int, db: Session = Depends(get_db), _=Depends(g
         raise HTTPException(404, "配置不存在")
     db.delete(obj)
     db.commit()
+    sync_config_to_file(db)  # 同步镜像
     return {"success": True}
 
 

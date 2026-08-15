@@ -56,3 +56,8 @@ backend/static/xhs_*.js
 *.db-wal
 *.db-shm
 *.sqlite3
+
+# docker bind mount 挂载目录（宿主机持久化数据，不进版本库）
+/data/
+/storage/
+backend/config.json
