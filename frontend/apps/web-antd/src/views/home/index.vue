@@ -112,9 +112,10 @@ const storageChart = computed(() => {
   const labels: { x: number; t: string }[] = [];
   if (points.length) {
     const idxs = [0, Math.floor((points.length - 1) / 2), points.length - 1];
-    [...new Set(idxs)].forEach((i) =>
-      labels.push({ x: toXY(points[i].db, i).x, t: points[i].t }),
-    );
+    [...new Set(idxs)].forEach((i) => {
+      const pt = points[i]!;
+      labels.push({ x: toXY(pt.db, i).x, t: pt.t });
+    });
   }
   return { lineDb: linePath('db'), lineStorage: linePath('storage'), ticks, labels, count: points.length };
 });
