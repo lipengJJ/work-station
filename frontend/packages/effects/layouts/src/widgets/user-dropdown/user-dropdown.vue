@@ -3,20 +3,18 @@ import type { Component } from 'vue';
 
 import type { AnyFunction } from '@vben/types';
 
-import { computed, ref, useTemplateRef, watch } from 'vue';
+import { computed, useTemplateRef, watch } from 'vue';
 
-import { SUPPORT_LANGUAGES } from '@vben/constants';
 import { useHoverToggle, useRefresh } from '@vben/hooks';
 import {
   createIconifyIcon,
-  Languages,
   LockKeyhole,
   LogOut,
   RotateCw,
   Search,
   Settings,
 } from '@vben/icons';
-import { $t, loadLocaleMessages } from '@vben/locales';
+import { $t } from '@vben/locales';
 import {
   preferences,
   updatePreferences,
@@ -166,8 +164,6 @@ const showThemeToggleInDropdown = computed(
     preferences.widget.themeToggleButtonPosition === 'user-dropdown',
 );
 
-// 语言切换已整体移除（保持中文），无论偏好设置如何持久化都不再显示
-const showLanguageToggleInDropdown = computed(() => false);
 
 const showTimezoneInDropdown = computed(
   () =>
@@ -199,7 +195,6 @@ const hasAnyInDropdown = computed(
     showLogoutInDropdown.value ||
     showGlobalSearchInDropdown.value ||
     showThemeToggleInDropdown.value ||
-    showLanguageToggleInDropdown.value ||
     showTimezoneInDropdown.value ||
     showFullscreenInDropdown.value ||
     showNotificationInDropdown.value ||
@@ -271,21 +266,6 @@ function handleFullscreenSelect() {
 function handleNotificationSelect(event?: Event) {
   event?.preventDefault();
   refNotification.value?.toggle();
-}
-
-// 语言切换 - 阻止 Radix 默认关闭外层 dropdown，就地展开/收起 locale 列表
-const showLanguageList = ref(false);
-function handleLanguageToggleSelect(event?: Event) {
-  event?.preventDefault();
-  showLanguageList.value = !showLanguageList.value;
-}
-async function handleLocaleChange(event: Event, value: 'en-US' | 'zh-CN') {
-  // 阻止默认关闭，让用户能继续看到选择结果；选完手动收起
-  event.preventDefault();
-  updatePreferences({ app: { locale: value } });
-  await loadLocaleMessages(value);
-  showLanguageList.value = false;
-  openPopover.value = false;
 }
 
 if (preferences.shortcutKeys.enable) {
@@ -439,7 +419,6 @@ if (preferences.shortcutKeys.enable) {
           v-if="
             showGlobalSearchInDropdown ||
             showThemeToggleInDropdown ||
-            showLanguageToggleInDropdown ||
             showTimezoneInDropdown ||
             showFullscreenInDropdown ||
             showNotificationInDropdown ||
@@ -465,32 +444,6 @@ if (preferences.shortcutKeys.enable) {
             <ThemeToggle class="mr-2" />
             {{ $t('preferences.theme.title') }}
           </DropdownMenuItem>
-          <DropdownMenuItem
-            v-if="showLanguageToggleInDropdown"
-            class="mx-1 flex cursor-pointer items-center rounded-sm py-1 leading-8"
-            @select="handleLanguageToggleSelect"
-          >
-            <VbenIconButton class="mr-2" @click="handleLanguageToggleSelect">
-              <Languages class="size-4" />
-            </VbenIconButton>
-            {{ $t('preferences.widget.languageToggle') }}
-          </DropdownMenuItem>
-          <template v-if="showLanguageList">
-            <DropdownMenuItem
-              v-for="lang in SUPPORT_LANGUAGES"
-              :key="lang.value"
-              class="mx-1 flex cursor-pointer items-center rounded-sm py-1 pl-8 leading-8"
-              @select="(e: Event) => handleLocaleChange(e, lang.value)"
-            >
-              <span
-                :class="
-                  lang.value === preferences.app.locale ? 'bg-foreground' : ''
-                "
-                class="mr-2 size-1.5 rounded-full"
-              ></span>
-              {{ lang.label }}
-            </DropdownMenuItem>
-          </template>
           <DropdownMenuItem
             v-if="showTimezoneInDropdown"
             class="mx-1 flex cursor-pointer items-center rounded-sm py-1 leading-8"

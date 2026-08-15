@@ -180,9 +180,6 @@ const widgetGlobalSearchButtonPosition = defineModel<string>(
 const widgetFullscreenButtonPosition = defineModel<string>(
   'widgetFullscreenButtonPosition',
 );
-const widgetLanguageToggleButtonPosition = defineModel<string>(
-  'widgetLanguageToggleButtonPosition',
-);
 const widgetNotificationButtonPosition = defineModel<string>(
   'widgetNotificationButtonPosition',
 );
@@ -507,9 +504,6 @@ function handleCustomPreferencesUpdate(updates: CustomPreferencesRecord) {
                 "
                 v-model:widget-global-search-button-position="
                   widgetGlobalSearchButtonPosition
-                "
-                v-model:widget-language-toggle-button-position="
-                  widgetLanguageToggleButtonPosition
                 "
                 v-model:widget-lock-screen-button-position="
                   widgetLockScreenButtonPosition

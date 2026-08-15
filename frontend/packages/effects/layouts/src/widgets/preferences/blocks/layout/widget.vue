@@ -19,9 +19,6 @@ const widgetGlobalSearchButtonPosition = defineModel<string>(
 const widgetFullscreenButtonPosition = defineModel<string>(
   'widgetFullscreenButtonPosition',
 );
-const widgetLanguageToggleButtonPosition = defineModel<string>(
-  'widgetLanguageToggleButtonPosition',
-);
 const widgetNotificationButtonPosition = defineModel<string>(
   'widgetNotificationButtonPosition',
 );
@@ -91,7 +88,6 @@ const positionMap: Record<string, string> = {
   globalSearch: 'widgetGlobalSearchButtonPosition',
   preferences: 'appPreferencesButtonPosition',
   themeToggle: 'widgetThemeToggleButtonPosition',
-  languageToggle: 'widgetLanguageToggleButtonPosition',
   timezone: 'widgetTimezoneButtonPosition',
   fullscreen: 'widgetFullscreenButtonPosition',
   refresh: 'widgetRefreshButtonPosition',
@@ -104,7 +100,6 @@ const labelMap: Record<string, string> = {
   globalSearch: 'preferences.widget.globalSearch',
   preferences: 'preferences.title',
   themeToggle: 'preferences.widget.themeToggle',
-  languageToggle: 'preferences.widget.languageToggle',
   timezone: 'preferences.widget.timezone',
   fullscreen: 'preferences.widget.fullscreen',
   refresh: 'preferences.widget.refresh',
@@ -131,7 +126,6 @@ function getPosition(
   const modelMap: Record<string, any> = {
     widgetGlobalSearchButtonPosition,
     widgetFullscreenButtonPosition,
-    widgetLanguageToggleButtonPosition,
     widgetNotificationButtonPosition,
     widgetThemeToggleButtonPosition,
     widgetLockScreenButtonPosition,
@@ -156,7 +150,6 @@ function handleUpdatePosition(
   const modelMap: Record<string, any> = {
     widgetGlobalSearchButtonPosition,
     widgetFullscreenButtonPosition,
-    widgetLanguageToggleButtonPosition,
     widgetNotificationButtonPosition,
     widgetThemeToggleButtonPosition,
     widgetLockScreenButtonPosition,
