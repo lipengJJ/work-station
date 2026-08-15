@@ -67,14 +67,21 @@ def seed_config(
     webhook_url: str = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
     mention_all: bool = False,
     channel: str = "wecom_webhook",
+    sendkey: str = "",
+    token: str = "",
 ) -> NotificationConfig:
-    """写入/覆盖单例配置（id=1）。"""
-    cfg = db.get(NotificationConfig, 1)
+    """写入/覆盖指定 channel 的配置（多通道化：每通道一行，channel 唯一）。"""
+    cfg = (
+        db.query(NotificationConfig)
+        .filter(NotificationConfig.channel == channel)
+        .first()
+    )
     if cfg is None:
-        cfg = NotificationConfig(id=1)
+        cfg = NotificationConfig(channel=channel)
         db.add(cfg)
-    cfg.channel = channel
     cfg.webhook_url = webhook_url
+    cfg.sendkey = sendkey
+    cfg.token = token
     cfg.enabled = enabled
     cfg.mention_all = mention_all
     db.commit()

@@ -298,8 +298,10 @@ class TestBuildTaskMessage:
 class TestNotifyApi:
     def test_config_without_token_401(self, client, db):
         for method, path in [
-            ("get", "/api/notify/config"),
-            ("put", "/api/notify/config"),
+            ("get", "/api/notify/channels"),
+            ("get", "/api/notify/configs"),
+            ("get", "/api/notify/config/wecom_webhook"),
+            ("put", "/api/notify/config/wecom_webhook"),
             ("post", "/api/notify/test"),
             ("post", "/api/notify/send"),
             ("get", "/api/notify/logs"),
@@ -309,29 +311,30 @@ class TestNotifyApi:
             assert resp.status_code == 401, f"{method} {path} 应返回 401"
 
     def test_config_defaults(self, client, auth_headers):
-        resp = client.get("/api/notify/config", headers=auth_headers)
+        resp = client.get("/api/notify/config/wecom_webhook", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
-        assert data["id"] == 1
         assert data["channel"] == "wecom_webhook"
         assert data["webhook_url"] == ""
+        assert data["sendkey"] == ""
         assert data["enabled"] is False
         assert data["mention_all"] is False
 
     def test_config_put_get_roundtrip(self, client, auth_headers):
         put = client.put(
-            "/api/notify/config",
+            "/api/notify/config/wecom_webhook",
             headers=auth_headers,
             json={"webhook_url": "  https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abc  ",
                   "enabled": True, "mention_all": True},
         )
         assert put.status_code == 200
         put_data = put.json()
+        assert put_data["channel"] == "wecom_webhook"
         assert put_data["webhook_url"] == "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abc"  # 已 strip
         assert put_data["enabled"] is True
         assert put_data["mention_all"] is True
 
-        get = client.get("/api/notify/config", headers=auth_headers)
+        get = client.get("/api/notify/config/wecom_webhook", headers=auth_headers)
         assert get.status_code == 200
         get_data = get.json()
         assert get_data["webhook_url"] == "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abc"
@@ -343,16 +346,20 @@ class TestNotifyApi:
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is False
-        assert "webhook" in data["message"]
+        assert "通知通道" in data["message"]
 
     def test_test_send_success_logs(self, client, auth_headers, monkeypatch):
         client.put(
-            "/api/notify/config",
+            "/api/notify/config/wecom_webhook",
             headers=auth_headers,
             json={"webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abc", "enabled": False},
         )
         make_post(monkeypatch, result=FakeResponse({"errcode": 0, "errmsg": "ok"}))
-        resp = client.post("/api/notify/test", headers=auth_headers)
+        resp = client.post(
+            "/api/notify/test",
+            headers=auth_headers,
+            json={"channel": "wecom_webhook"},
+        )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
         # 发送记录已写入
@@ -364,12 +371,16 @@ class TestNotifyApi:
 
     def test_test_send_failure_logs(self, client, auth_headers, monkeypatch):
         client.put(
-            "/api/notify/config",
+            "/api/notify/config/wecom_webhook",
             headers=auth_headers,
             json={"webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bad", "enabled": False},
         )
         make_post(monkeypatch, result=FakeResponse({"errcode": 93000, "errmsg": "invalid key"}))
-        resp = client.post("/api/notify/test", headers=auth_headers)
+        resp = client.post(
+            "/api/notify/test",
+            headers=auth_headers,
+            json={"channel": "wecom_webhook"},
+        )
         assert resp.json()["success"] is False
         resp_logs = client.get("/api/notify/logs", headers=auth_headers)
         items = resp_logs.json()["items"]
@@ -378,7 +389,7 @@ class TestNotifyApi:
 
     def test_manual_send_markdown(self, client, auth_headers, monkeypatch):
         client.put(
-            "/api/notify/config",
+            "/api/notify/config/wecom_webhook",
             headers=auth_headers,
             json={"webhook_url": "https://x/webhook?key=abc", "enabled": False},
         )
@@ -386,7 +397,7 @@ class TestNotifyApi:
         resp = client.post(
             "/api/notify/send",
             headers=auth_headers,
-            json={"title": "联调通知", "content": "# 标题\n正文", "msgtype": "markdown"},
+            json={"channel": "wecom_webhook", "title": "联调通知", "content": "# 标题\n正文", "msgtype": "markdown"},
         )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
@@ -398,7 +409,7 @@ class TestNotifyApi:
         make_post(monkeypatch, result=FakeResponse({"errcode": 0}))
         resp = client.post("/api/notify/send", headers=auth_headers, json={"content": "hi"})
         assert resp.json()["success"] is False
-        assert "webhook" in resp.json()["message"]
+        assert "通知通道" in resp.json()["message"]
 
     def test_logs_pagination(self, client, auth_headers, db):
         # 直接造 3 条日志
@@ -421,8 +432,9 @@ class TestNotifyApi:
         assert resp.status_code == 422
 
     def test_config_save_channel_fallback(self, client, auth_headers):
+        # 路径决定通道：body 里的 channel 字段被忽略（保留用于旧调用兼容）
         resp = client.put(
-            "/api/notify/config",
+            "/api/notify/config/wecom_webhook",
             headers=auth_headers,
             json={"webhook_url": "", "channel": "", "enabled": True},
         )

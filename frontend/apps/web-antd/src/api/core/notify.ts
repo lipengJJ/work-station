@@ -1,6 +1,6 @@
 import { requestClient } from '#/api/request';
 
-// 消息通知：系统设置 > 消息通知 页面的 API 适配层。
+// 消息通知：系统设置 > 消息通知 页面的 API 适配层（多通道化）。
 // 后端接口统一挂在 /api/notify 下，走同一套 JWT 鉴权。
 export namespace NotifyApi {
   export interface NotificationConfig {
@@ -8,6 +8,7 @@ export namespace NotifyApi {
     channel: string;
     webhook_url: string;
     sendkey: string;
+    token: string;
     enabled: boolean;
     mention_all: boolean;
     created_at: string;
@@ -18,8 +19,33 @@ export namespace NotifyApi {
     channel?: string;
     webhook_url: string;
     sendkey: string;
+    token: string;
     enabled: boolean;
     mention_all: boolean;
+  }
+
+  /** 通道配置弹窗的字段定义（数据驱动渲染） */
+  export interface ChannelFieldDef {
+    key: string;
+    label: string;
+    type: 'text' | 'password' | 'textarea' | 'switch';
+    mono?: boolean;
+    placeholder?: null | string;
+    extra?: null | string;
+  }
+
+  /** 通道目录项：元信息 + 实时配置状态（其他模块查询可用通知方式的公共入口） */
+  export interface ChannelInfo {
+    channel: string;
+    label: string;
+    icon: string;
+    description: string;
+    configured: boolean;
+    enabled: boolean;
+    summary: string;
+    capabilities: string[];
+    fields: ChannelFieldDef[];
+    not_implemented: boolean;
   }
 
   export interface NotificationLog {
@@ -45,19 +71,38 @@ export namespace NotifyApi {
   }
 }
 
-export async function getNotifyConfigApi() {
-  return requestClient.get<NotifyApi.NotificationConfig>('/notify/config');
+/** 通道目录：全部已注册通道 + 配置/启用状态（前端通道列表 / 全局发送组件的数据源） */
+export async function getNotifyChannelsApi() {
+  return requestClient.get<{ channels: NotifyApi.ChannelInfo[] }>('/notify/channels');
 }
 
-export async function saveNotifyConfigApi(body: NotifyApi.NotificationConfigIn) {
-  return requestClient.put<NotifyApi.NotificationConfig>('/notify/config', body);
+/** 全部通道配置 */
+export async function listNotifyConfigsApi() {
+  return requestClient.get<NotifyApi.NotificationConfig[]>('/notify/configs');
 }
 
-export async function testNotifySendApi() {
-  return requestClient.post<NotifyApi.SendResult>('/notify/test');
+/** 单通道配置（未配置返回默认值） */
+export async function getNotifyConfigApi(channel: string) {
+  return requestClient.get<NotifyApi.NotificationConfig>(`/notify/config/${channel}`);
 }
 
-export async function manualNotifySendApi(body: { title: string; content: string; msgtype?: string }) {
+/** 保存单通道配置（upsert） */
+export async function saveNotifyConfigApi(channel: string, body: NotifyApi.NotificationConfigIn) {
+  return requestClient.put<NotifyApi.NotificationConfig>(`/notify/config/${channel}`, body);
+}
+
+/** 测试发送：channel 可选（不传 = 第一个启用通道） */
+export async function testNotifySendApi(channel?: string) {
+  return requestClient.post<NotifyApi.SendResult>('/notify/test', channel ? { channel } : {});
+}
+
+/** 手动发送：channel 可选（不传 = 第一个启用通道） */
+export async function manualNotifySendApi(body: {
+  channel?: string;
+  title: string;
+  content: string;
+  msgtype?: string;
+}) {
   return requestClient.post<NotifyApi.SendResult>('/notify/send', body);
 }
 

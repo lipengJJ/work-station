@@ -5,9 +5,14 @@ import { computed, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Table, Tabs, Tag } from 'ant-design-vue';
+import { Button, Table, Tabs, Tag } from 'ant-design-vue';
 
 import { getTasksCenterApi } from '#/api/core/workbench';
+
+import NotifySenderModal from '#/components/notify-sender/index.vue';
+import { useNotifySender } from '#/composables/use-notify-sender';
+
+const { state: notifyState, openNotifySender } = useNotifySender();
 
 const STATUS_COLOR: Record<string, string> = {
   pending: 'default',
@@ -72,6 +77,12 @@ const tabs = computed(() => [
 
 <template>
   <Page :auto-content-height="false">
+    <div class="mb-3 flex items-center justify-between">
+      <div />
+      <Button type="primary" size="small" @click="openNotifySender({ context: '任务中心' })">
+        通知我
+      </Button>
+    </div>
     <Tabs default-active-key="running">
       <Tabs.TabPane v-for="tab in tabs" :key="tab.key" :tab="tab.label">
         <Table row-key="id" :loading="loading" :data-source="tab.rows" :columns="columns">
@@ -86,5 +97,6 @@ const tabs = computed(() => [
         </Table>
       </Tabs.TabPane>
     </Tabs>
+    <NotifySenderModal v-model:open="notifyState.open" :context="notifyState.context" />
   </Page>
 </template>

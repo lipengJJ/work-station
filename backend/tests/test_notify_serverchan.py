@@ -91,12 +91,15 @@ def make_post(monkeypatch, result=None, exc=None):
 
 
 def seed_serverchan_config(db, *, enabled: bool = True, sendkey: str = "SCT123", mention_all: bool = False) -> NotificationConfig:
-    """写入/覆盖单例配置（id=1），channel='serverchan'。"""
-    cfg = db.get(NotificationConfig, 1)
+    """写入/覆盖 serverchan 通道配置（多通道化：每通道一行）。"""
+    cfg = (
+        db.query(NotificationConfig)
+        .filter(NotificationConfig.channel == "serverchan")
+        .first()
+    )
     if cfg is None:
-        cfg = NotificationConfig(id=1)
+        cfg = NotificationConfig(channel="serverchan")
         db.add(cfg)
-    cfg.channel = "serverchan"
     cfg.webhook_url = ""
     cfg.sendkey = sendkey
     cfg.enabled = enabled
@@ -265,17 +268,17 @@ class TestNotifyTaskResultServerchan:
 
 class TestServerchanConfigCrud:
     def test_default_get_contains_sendkey(self, client, auth_headers):
-        resp = client.get("/api/notify/config", headers=auth_headers)
+        resp = client.get("/api/notify/config/serverchan", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert data["sendkey"] == ""
-        assert data["channel"] == "wecom_webhook"
+        assert data["channel"] == "serverchan"
 
     def test_put_get_serverchan_roundtrip(self, client, auth_headers):
         put = client.put(
-            "/api/notify/config",
+            "/api/notify/config/serverchan",
             headers=auth_headers,
-            json={"channel": "serverchan", "sendkey": "  SCT789  ", "enabled": True, "mention_all": False},
+            json={"sendkey": "  SCT789  ", "enabled": True, "mention_all": False},
         )
         assert put.status_code == 200
         put_data = put.json()
@@ -283,7 +286,7 @@ class TestServerchanConfigCrud:
         assert put_data["sendkey"] == "SCT789"  # 已 strip
         assert put_data["enabled"] is True
 
-        get = client.get("/api/notify/config", headers=auth_headers)
+        get = client.get("/api/notify/config/serverchan", headers=auth_headers)
         assert get.status_code == 200
         get_data = get.json()
         assert get_data["channel"] == "serverchan"
@@ -291,29 +294,30 @@ class TestServerchanConfigCrud:
 
     def test_sendkey_too_long_422(self, client, auth_headers):
         resp = client.put(
-            "/api/notify/config",
+            "/api/notify/config/serverchan",
             headers=auth_headers,
-            json={"channel": "serverchan", "sendkey": "x" * 257, "enabled": True},
+            json={"sendkey": "x" * 257, "enabled": True},
         )
         assert resp.status_code == 422
 
     def test_sendkey_length_256_ok(self, client, auth_headers):
         resp = client.put(
-            "/api/notify/config",
+            "/api/notify/config/serverchan",
             headers=auth_headers,
-            json={"channel": "serverchan", "sendkey": "x" * 256, "enabled": True},
+            json={"sendkey": "x" * 256, "enabled": True},
         )
         assert resp.status_code == 200
         assert resp.json()["sendkey"] == "x" * 256
 
-    def test_channel_empty_falls_back_wecom(self, client, auth_headers):
+    def test_put_channel_field_ignored(self, client, auth_headers):
+        # 多通道化后通道由路径决定，body 里的 channel 字段被忽略
         resp = client.put(
-            "/api/notify/config",
+            "/api/notify/config/serverchan",
             headers=auth_headers,
             json={"channel": "", "sendkey": "SCT1", "enabled": True},
         )
         assert resp.status_code == 200
-        assert resp.json()["channel"] == "wecom_webhook"
+        assert resp.json()["channel"] == "serverchan"
 
 
 class TestServerchanApi:
@@ -327,13 +331,13 @@ class TestServerchanApi:
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is False
-        assert "webhook" in data["message"]
+        assert "通知通道" in data["message"]
 
     def test_test_send_serverchan_missing_sendkey_friendly(self, client, auth_headers, monkeypatch):
         client.put(
-            "/api/notify/config",
+            "/api/notify/config/serverchan",
             headers=auth_headers,
-            json={"channel": "serverchan", "sendkey": "", "enabled": True},
+            json={"sendkey": "", "enabled": True},
         )
         make_post(monkeypatch, result=FakeResponse({"code": 0}))
         resp = client.post("/api/notify/test", headers=auth_headers)
@@ -344,15 +348,15 @@ class TestServerchanApi:
 
     def test_test_send_serverchan_dispatch_and_log(self, client, auth_headers, monkeypatch):
         client.put(
-            "/api/notify/config",
+            "/api/notify/config/serverchan",
             headers=auth_headers,
-            json={"channel": "serverchan", "sendkey": "SCTABC", "enabled": False},
+            json={"sendkey": "SCTABC", "enabled": True},
         )
         calls = make_post(monkeypatch, result=FakeResponse({"code": 0, "message": "ok"}))
         resp = client.post("/api/notify/test", headers=auth_headers)
         assert resp.status_code == 200
         assert resp.json()["success"] is True
-        # 按 serverchan 分发：URL 指向 sctapi，form 含 title=测试消息
+        # 未传 channel：默认选第一个启用通道（serverchan），按 serverchan 分发
         assert len(calls) == 1
         assert calls[0]["url"] == "https://sctapi.ftqq.com/SCTABC.send"
         assert calls[0]["data"]["title"] == "测试消息"
@@ -366,9 +370,9 @@ class TestServerchanApi:
 
     def test_test_send_serverchan_failure_logs(self, client, auth_headers, monkeypatch):
         client.put(
-            "/api/notify/config",
+            "/api/notify/config/serverchan",
             headers=auth_headers,
-            json={"channel": "serverchan", "sendkey": "SCTBAD", "enabled": False},
+            json={"sendkey": "SCTBAD", "enabled": True},
         )
         make_post(monkeypatch, result=FakeResponse({"code": 1024, "message": "参数错误"}))
         resp = client.post("/api/notify/test", headers=auth_headers)
@@ -381,9 +385,9 @@ class TestServerchanApi:
 
     def test_manual_send_serverchan_dispatch(self, client, auth_headers, monkeypatch):
         client.put(
-            "/api/notify/config",
+            "/api/notify/config/serverchan",
             headers=auth_headers,
-            json={"channel": "serverchan", "sendkey": "SCTXYZ", "enabled": False},
+            json={"sendkey": "SCTXYZ", "enabled": True},
         )
         calls = make_post(monkeypatch, result=FakeResponse({"code": 0, "message": "ok"}))
         resp = client.post(
@@ -426,12 +430,12 @@ class TestConfigMissingHint:
 # ============================================================ 老库加列（迁移） ===
 
 class TestOldDbMigration:
-    def test_init_db_adds_sendkey_column_and_preserves_data(self, monkeypatch, tmp_path):
+    def test_init_db_migrates_legacy_singleton_table(self, monkeypatch, tmp_path):
         from sqlalchemy import create_engine, inspect, text
 
         from app.core import database
 
-        # 1) 独立临时库手工建「旧版」notification_config 表（无 sendkey 列）+ 旧数据
+        # 1) 独立临时库手工建「旧版」notification_config 表（无 sendkey/token 列、无 channel 唯一索引）+ 旧数据
         legacy_path = tmp_path / "legacy.db"
         legacy_engine = create_engine(f"sqlite:///{legacy_path}")
         with legacy_engine.begin() as conn:
@@ -463,13 +467,16 @@ class TestOldDbMigration:
         try:
             database.init_db()
 
-            # 3) 断言：sendkey 列被 ALTER 添加，旧数据保留
+            # 3) 断言：sendkey/token 列被 ALTER 添加，channel 唯一索引已建，旧数据保留
             inspector = inspect(legacy_engine)
             cols = {c["name"] for c in inspector.get_columns("notification_config")}
             assert "sendkey" in cols, "init_db 后应补上 sendkey 列"
+            assert "token" in cols, "init_db 后应补上 token 列"
+            idx_names = {ix["name"] for ix in inspector.get_indexes("notification_config")}
+            assert "ix_notification_config_channel" in idx_names, "应补上 channel 唯一索引"
             with legacy_engine.connect() as conn:
                 row = conn.execute(
-                    text("SELECT id, channel, webhook_url, sendkey FROM notification_config")
+                    text("SELECT id, channel, webhook_url, sendkey, token FROM notification_config")
                 ).fetchone()
                 assert row.id == 1
                 assert row.channel == "wecom_webhook"
@@ -478,11 +485,11 @@ class TestOldDbMigration:
 
             # 4) 幂等：复位标记后再跑一次，不报错、列集合不变
             database._schema_checked = False
-            database._ensure_notification_config_sendkey()
+            database._ensure_notification_config_schema()
             cols_after = {c["name"] for c in inspect(legacy_engine).get_columns("notification_config")}
             assert cols_after == cols, "重复调用不应重复加列或报错"
 
-            # 5) 新引擎下的 SQLAlchemy 模型也能正常读写 sendkey（模型与库结构对齐）
+            # 5) 新引擎下的 SQLAlchemy 模型也能正常读写（模型与库结构对齐）
             LegacySession = database.sessionmaker(bind=legacy_engine)
             with LegacySession() as session:
                 cfg = session.get(NotificationConfig, 1)
