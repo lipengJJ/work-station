@@ -46,11 +46,21 @@ def upsert_api_config(body: ApiConfigIn, db: Session = Depends(get_db), _=Depend
     return existing
 
 
+# 系统固定配置：AI 模型 / 小红书 token / 数据处理模型，禁止删除（前端也隐藏删除按钮）
+_FIXED_CONFIG_NAMES = {
+    "ai_provider", "gemini_api_key", "gemini_model", "gemini_thinking_enabled",
+    "deepseek_api_key", "deepseek_model",
+    "xhs_cookie", "zhipu_api_key", "zhipu_model",
+}
+
+
 @router.delete("/api-configs/{config_id}")
 def delete_api_config(config_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
     obj = db.get(ApiConfig, config_id)
     if not obj:
         raise HTTPException(404, "配置不存在")
+    if obj.name in _FIXED_CONFIG_NAMES:
+        raise HTTPException(400, f"「{obj.name}」为系统固定配置，不能删除")
     db.delete(obj)
     db.commit()
     sync_config_to_file(db)  # 同步镜像

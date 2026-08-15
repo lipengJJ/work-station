@@ -41,30 +41,29 @@ interface ConfigCategory {
 
 const CATEGORIES: ConfigCategory[] = [
   {
-    key: 'stock',
-    label: '股票分析',
-    description: '行情、财报等第三方数据源的凭证',
-    matchNames: ['finnhub_api_key', 'fmp_api_key', 'massive_api_key', 'sec_user_agent'],
-    icon: '<path d="M3 17l5-6 4 3 6-8" /><path d="M15 6h6v6" />',
-    accent: '#3b82f6',
-  },
-  {
     key: 'xhs',
-    label: '小红书分析',
-    description: '采集/追踪任务需要的登录态',
+    label: '小红书 token',
+    description: '采集/追踪任务需要的登录态凭证',
     matchNames: ['xhs_cookie'],
     icon: '<path d="M9 18V6l10-2v11" /><path d="M9 11l10-2" />',
     accent: '#ff2442',
   },
   {
     key: 'note_structuring',
-    label: '笔记结构化（智谱 GLM）',
-    description: '采集笔记时的结构化预处理用，GLM-4-Flash 官方免费，和 Gemini 是两套独立配置',
+    label: '数据处理模型',
+    description: '采集笔记时的结构化预处理用（智谱 GLM），与 AI 模型独立配置',
     matchNames: ['zhipu_api_key', 'zhipu_model'],
     icon: '<rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" />',
     accent: '#f59e0b',
   },
 ];
+
+// 系统固定配置：AI 模型 / 小红书 token / 数据处理模型，前端隐藏删除按钮 + 后端拒绝删除
+const FIXED_CONFIG_NAMES = new Set([
+  'ai_provider', 'gemini_api_key', 'gemini_model', 'gemini_thinking_enabled',
+  'deepseek_api_key', 'deepseek_model',
+  'xhs_cookie', 'zhipu_api_key', 'zhipu_model',
+]);
 
 // AI 模型（Gemini / DeepSeek）三个 key 及厂商标记从通用列表里摘出来，单独展示
 const AI_CONFIG_NAMES = new Set([
@@ -397,47 +396,32 @@ onMounted(() => {
       </div>
 
       <!-- ============================ AI 助手模型 Banner ============================ -->
-      <div v-if="!modelConfigLoading" class="ac-ai-card">
-        <div class="ac-ai-glow ac-ai-glow-1" />
-        <div class="ac-ai-glow ac-ai-glow-2" />
+      <!-- AI 模型：与下方配置项同一等高卡片格式 -->
+      <div v-if="!modelConfigLoading" class="ac-item ac-ai-item">
+        <span class="ac-status-dot" :class="modelConfig.configured ? 'ok' : 'no'" :title="modelConfig.configured ? '已配置' : '未配置'">
+          <svg v-if="!modelConfig.configured" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </span>
         <div class="ac-ai-icon">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
             <path d="M19 15l.9 2.4L22.3 18.3l-2.4.9L19 21.6l-.9-2.4-2.4-.9 2.4-.9L19 15z" opacity="0.7" />
           </svg>
         </div>
-        <div class="ac-ai-info">
-          <div class="ac-ai-title">
-            AI 模型 · {{ modelProviderLabel }}
-            <span class="ac-ai-status" :class="{ on: modelConfig.configured }">
-              <i class="ac-ai-dot" />
-              {{ modelConfig.configured ? '已配置' : '未配置' }}
-            </span>
-          </div>
-          <div class="ac-ai-meta">
-            <span class="ac-ai-chip">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="5" width="14" height="14" rx="2" /><path d="M9 9h6v6H9z" /></svg>
-              当前模型
-            </span>
-            <b class="ac-ai-model">{{ modelConfig.model || '未选择' }}</b>
+        <div class="ac-item-info">
+          <span class="ac-item-name">AI 模型 · {{ modelProviderLabel }}</span>
+          <span class="ac-item-desc">
+            当前模型 {{ modelConfig.model || '未选择' }}
             <template v-if="savedProviderMeta?.supports_thinking">
-              <span class="ac-ai-sep">·</span>
-              <span class="ac-ai-chip">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a4 4 0 0 0-4 4v3H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1V7a4 4 0 0 0-4-4z" /><path d="M9 12h6" /></svg>
-                思考模式
-              </span>
-              <b :class="{ 'ac-ai-on': modelConfig.thinking_enabled }">
-                {{ modelConfig.thinking_enabled ? '已开启' : '未开启' }}
-              </b>
+              · 思考模式 {{ modelConfig.thinking_enabled ? '已开启' : '未开启' }}
             </template>
-          </div>
-          <div class="ac-ai-note">
-            小红书 AI 分析、Skill 分析共用这份配置；Gemini / DeepSeek 的 Key 各自独立保存，随时切换
-          </div>
+            · 小红书 AI 分析 / Skill 分析共用
+          </span>
         </div>
-        <Button class="ac-ai-btn" @click="openModelModal">配置</Button>
+        <div class="ac-item-actions">
+          <Button type="text" size="small" class="ac-ai-btn" @click="openModelModal">配置</Button>
+        </div>
       </div>
-      <div v-else class="ac-ai-card ac-ai-loading">加载中…</div>
+      <div v-else class="ac-item ac-ai-item ac-ai-loading">加载中…</div>
 
       <!-- ============================ 模块分类卡片 ============================ -->
       <div class="ac-grid">
@@ -465,12 +449,8 @@ onMounted(() => {
             </Button>
           </div>
 
-          <div v-if="!loading && group.items.length === 0" class="ac-empty">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-              <rect x="4" y="4" width="16" height="16" rx="3" />
-              <path d="M8 10h8M8 14h5" />
-            </svg>
-            <span>暂无配置，点击右上角「新增」添加</span>
+          <div v-if="!loading && group.items.length === 0" class="ac-empty ac-empty--compact">
+            <span>暂无配置</span>
           </div>
 
           <div v-else class="ac-items" :class="{ 'is-loading': loading }">
@@ -480,6 +460,9 @@ onMounted(() => {
               class="ac-item"
               :title="item.description || item.name"
             >
+              <span class="ac-status-dot" :class="item.value ? 'ok' : 'no'" :title="item.value ? '已配置' : '未配置'">
+                <svg v-if="!item.value" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+              </span>
               <div class="ac-item-info">
                 <span class="ac-item-name">{{ item.name }}</span>
                 <span v-if="item.description" class="ac-item-desc">{{ item.description }}</span>
@@ -525,7 +508,7 @@ onMounted(() => {
                     <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                   </svg>
                 </button>
-                <button class="ac-icon-btn danger" title="删除" @click="removeConfig(item)">
+                <button v-if="!FIXED_CONFIG_NAMES.has(item.name)" class="ac-icon-btn danger" title="删除" @click="removeConfig(item)">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 6h18" />
                     <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
@@ -567,6 +550,9 @@ onMounted(() => {
         </div>
         <div class="ac-items">
           <div v-for="item in otherConfigs" :key="item.id" class="ac-item" :title="item.description || item.name">
+            <span class="ac-status-dot" :class="item.value ? 'ok' : 'no'" :title="item.value ? '已配置' : '未配置'">
+              <svg v-if="!item.value" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </span>
             <div class="ac-item-info">
               <span class="ac-item-name">{{ item.name }}</span>
               <span v-if="item.description" class="ac-item-desc">{{ item.description }}</span>
@@ -912,11 +898,12 @@ body.dark {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ac-primary, #4f6ef7) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ac-primary, #4f6ef7) 22%, transparent);
+  color: var(--ac-primary, #4f6ef7);
   backdrop-filter: blur(4px);
 }
 
@@ -1264,6 +1251,35 @@ body.dark {
   padding: 26px 12px 28px;
   color: var(--ac-text-3);
   font-size: 12.5px;
+}
+
+/* 紧凑空状态：单行提示，不占大片空白 */
+.ac-empty--compact {
+  padding: 9px 4px;
+  font-size: 12px;
+}
+
+/* 配置状态标识：绿点=已配置 / 红叉=未配置 */
+.ac-status-dot {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ac-status-dot.ok {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
+  margin: 0 5px;
+}
+.ac-status-dot.no {
+  width: 16px;
+  height: 16px;
+  margin: 0 1px;
+  color: #f43f5e;
+  opacity: 0.85;
 }
 
 /* ================= 其它卡片 ================= */
