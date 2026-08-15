@@ -543,8 +543,8 @@ body.dark {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  max-width: 960px;
-  margin: 0 auto;
+  /* 与其他设置页保持一致：全宽贴左（不居中、不缩窄），避免宽屏下两侧留白 */
+  width: 100%;
   padding: 4px 2px 24px;
   color: var(--nt-text);
 }
