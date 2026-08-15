@@ -16,6 +16,13 @@ const STATUS_COLOR: Record<string, string> = {
   failed: 'error',
 };
 
+// 任务类型中文名（xhs_tracking 由追踪任务每次扫描写入）
+const TASK_TYPE_LABEL: Record<string, string> = {
+  xhs_search: '笔记采集',
+  xhs_tracking: '追踪扫描',
+  analyze: '分析任务',
+};
+
 const data = ref<WorkbenchApi.TaskCenterResponse>();
 const loading = ref(true);
 
@@ -72,6 +79,9 @@ const tabs = computed(() => [
             <Tag v-if="column.key === 'status'" :color="STATUS_COLOR[text as string]">
               {{ text }}
             </Tag>
+            <span v-else-if="column.key === 'task_type'" class="text-[hsl(var(--foreground))]">
+              {{ TASK_TYPE_LABEL[text as string] ?? text }}
+            </span>
           </template>
         </Table>
       </Tabs.TabPane>

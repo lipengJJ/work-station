@@ -20,12 +20,31 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.core.scheduler import get_scheduler
+from app.common.models import Task
 from app.xhs.models import XhsTrackingHit, XhsTrackingTask
 from app.xhs.services.xhs_errors import XhsAuthError
 from app.xhs.services import note_cache, note_preprocess, token_store
 from app.xhs.services.spider import Data_Spider
 
 _JOB_ID_PREFIX = "xhs_tracking_"
+
+
+def _record_task(db: Session, tracking_task_id: int, keyword: str, status: str, summary: str) -> None:
+    """追踪任务每次执行都记一条 Task——首页监控看板（任务总数/今日新增/趋势图/任务中心）
+    就能体现追踪扫描也是一次任务执行。失败也记，方便在任务中心看到失败原因。"""
+    now = datetime.now(timezone.utc)
+    db.add(
+        Task(
+            module="xhs",
+            task_type="xhs_tracking",
+            status=status,
+            params={"keyword": keyword, "tracking_task_id": tracking_task_id},
+            result_summary=summary,
+            created_at=now,
+            started_at=now,
+            finished_at=now,
+        )
+    )
 
 
 def _job_id(tracking_task_id: int) -> str:
@@ -188,6 +207,7 @@ def run_scan(tracking_task_id: int) -> None:
             task.status = "failed"
             task.last_run_message = "未配置 token/cookie"
             task.last_run_at = datetime.now(timezone.utc)
+            _record_task(db, tracking_task_id, task.keyword, "failed", "追踪扫描失败：未配置 token/cookie")
             db.commit()
             return
 
@@ -197,6 +217,7 @@ def run_scan(tracking_task_id: int) -> None:
             task.status = "failed"
             task.last_run_message = valid_msg
             task.last_run_at = datetime.now(timezone.utc)
+            _record_task(db, tracking_task_id, task.keyword, "failed", f"追踪扫描失败：{valid_msg}")
             db.commit()
             return
 
@@ -274,18 +295,24 @@ def run_scan(tracking_task_id: int) -> None:
             task.last_run_message = f"扫描完成，本次新增命中 {new_hit_count} 篇"
             task.last_hit_count = new_hit_count
             task.last_run_at = datetime.now(timezone.utc)
+            _record_task(
+                db, tracking_task_id, task.keyword, "success",
+                f"追踪扫描完成：关键词「{task.keyword}」新增命中 {new_hit_count} 篇",
+            )
             db.commit()
         except XhsAuthError as e:
             logger.error(f"追踪任务 {tracking_task_id} 因登录态失效终止: {e}")
             task.status = "failed"
             task.last_run_message = f"登录态失效，请重新登录后再试（{e}）"
             task.last_run_at = datetime.now(timezone.utc)
+            _record_task(db, tracking_task_id, task.keyword, "failed", f"追踪扫描失败：登录态失效（{e}）")
             db.commit()
         except Exception as e:
             logger.exception(f"追踪任务 {tracking_task_id} 扫描失败")
             task.status = "failed"
             task.last_run_message = str(e)
             task.last_run_at = datetime.now(timezone.utc)
+            _record_task(db, tracking_task_id, task.keyword, "failed", f"追踪扫描失败：{str(e)[:120]}")
             db.commit()
     finally:
         db.close()
