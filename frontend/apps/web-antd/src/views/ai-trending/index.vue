@@ -570,80 +570,63 @@ onMounted(() => {
           </template>
         </Alert>
 
-        <!-- 主题卡片网格 -->
-        <div v-if="topicsLoading && !topics.length" class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+        <!-- 主题行式列表（一行一个，全宽） -->
+        <div v-if="topicsLoading && !topics.length" class="flex flex-col gap-3">
           <Skeleton
             v-for="i in 3"
             :key="i"
             active
-            :paragraph="{ rows: 4 }"
+            :paragraph="{ rows: 2 }"
             class="rounded-xl border border-slate-700/50 bg-slate-900/60 p-4"
           />
         </div>
 
-        <div
-          v-else-if="topics.length"
-          class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3"
-        >
+        <div v-else-if="topics.length" class="flex flex-col gap-3">
           <div
             v-for="topic in topics"
             :key="topic.id"
-            class="cursor-pointer rounded-xl border border-slate-700/50 bg-slate-900/60 p-4 shadow-lg backdrop-blur transition-colors hover:border-slate-500/60"
-            @click="openDetail(topic)"
+            class="topic-row group rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 shadow-lg backdrop-blur transition-colors hover:border-slate-500/60 hover:bg-slate-900/80"
+            :class="{ 'topic-row--off': !topic.enabled }"
           >
-            <div class="flex items-start justify-between gap-2">
-              <div class="flex min-w-0 items-center gap-2">
-                <span class="mt-1 inline-block size-2 shrink-0 rounded-full" :class="topicStatusInfo(topic).dot" />
-                <span class="min-w-0 flex-1 truncate font-medium text-[hsl(var(--foreground))]">
+            <!-- 左区：状态点 + 主题名 + 关键词（flex 不收缩） -->
+            <div class="topic-row__main">
+              <span class="size-2 shrink-0 rounded-full" :class="topicStatusInfo(topic).dot" />
+              <button
+                class="min-w-0 text-left"
+                :title="`查看「${topic.name}」详情`"
+                @click="openDetail(topic)"
+              >
+                <span class="block truncate font-medium text-[hsl(var(--foreground))] transition-colors group-hover:text-[hsl(var(--primary))]">
                   {{ topic.name }}
                 </span>
-              </div>
-              <Dropdown>
-                <Button size="small" type="text" class="!px-1" @click.stop>
-                  <MoreHorizontal class="size-4" />
-                </Button>
-                <template #overlay>
-                  <div class="rounded-lg border border-slate-700/50 bg-slate-900/90 p-1 shadow-xl">
-                    <Button size="small" type="text" block class="!text-left" @click.stop="openEditModal(topic)">
-                      编辑
-                    </Button>
-                    <Button size="small" type="text" danger block class="!text-left" @click.stop="deleteTopic(topic)">
-                      删除
-                    </Button>
-                  </div>
-                </template>
-              </Dropdown>
+                <span class="mt-0.5 flex flex-wrap items-center gap-1">
+                  <Tag v-for="kw in topic.keywords.slice(0, 3)" :key="kw" class="!py-0 !text-[10px]">
+                    {{ kw }}
+                  </Tag>
+                  <span
+                    v-if="topic.keywords.length > 3"
+                    class="text-[10px] text-[hsl(var(--muted-foreground))]"
+                  >
+                    +{{ topic.keywords.length - 3 }}
+                  </span>
+                </span>
+              </button>
             </div>
 
-            <!-- 关键词 tags -->
-            <div class="mt-2 flex flex-wrap gap-1">
-              <Tag v-for="kw in topic.keywords.slice(0, 5)" :key="kw" class="!text-[10px] !py-0">
-                {{ kw }}
-              </Tag>
-              <span
-                v-if="topic.keywords.length > 5"
-                class="text-[10px] text-[hsl(var(--muted-foreground))]"
-              >
-                +{{ topic.keywords.length - 5 }}
-              </span>
-            </div>
-
-            <!-- 元信息 -->
-            <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[hsl(var(--muted-foreground))]">
+            <!-- 中区：元信息（flex-1 弹性空间） -->
+            <div class="topic-row__meta">
               <span :class="topicStatusInfo(topic).text">{{ topicStatusInfo(topic).label }}</span>
-              <span>{{ frequencyLabel(topic.interval_minutes) }}</span>
+              <span>每{{ frequencyLabel(topic.interval_minutes) }}</span>
               <span>命中 {{ topic.hit_count }}</span>
-              <span v-if="topic.last_run_at">最近 {{ relTime(topic.last_run_at) }}</span>
               <span>下次 {{ nextRunText(topic) }}</span>
             </div>
 
-            <!-- 推送徽标 + 操作 -->
-            <div class="mt-3 flex items-center justify-between gap-2 border-t border-slate-700/50 pt-3">
-              <div class="flex items-center gap-2">
+            <!-- 右区：操作（flex 不收缩） -->
+            <div class="topic-row__actions">
+              <span class="flex items-center gap-1.5">
                 <Switch
                   size="small"
                   :checked="topic.enabled"
-                  @click.stop
                   @change="(v: string | number | boolean) => toggleEnabled(topic, Boolean(v))"
                 />
                 <span
@@ -656,17 +639,30 @@ onMounted(() => {
                 <span v-else class="text-xs text-[hsl(var(--muted-foreground))]">
                   {{ topic.enabled ? '已启用' : '已停用' }}
                 </span>
-              </div>
-              <div class="flex items-center gap-1">
-                <Button size="small" @click.stop="() => runNow(topic)">
-                  <RefreshCw class="mr-1 size-3" />
-                  立即抓取
+              </span>
+              <Button size="small" :disabled="!topic.enabled" @click="() => runNow(topic)">
+                <RefreshCw class="mr-1 size-3" />
+                立即抓取
+              </Button>
+              <Button size="small" @click="() => openPushConfig(topic)">
+                <Settings class="mr-1 size-3" />
+                推送配置
+              </Button>
+              <Dropdown>
+                <Button size="small" type="text" class="!px-1">
+                  <MoreHorizontal class="size-4" />
                 </Button>
-                <Button size="small" @click.stop="() => openPushConfig(topic)">
-                  <Settings class="mr-1 size-3" />
-                  推送配置
-                </Button>
-              </div>
+                <template #overlay>
+                  <div class="rounded-lg border border-slate-700/50 bg-slate-900/90 p-1 shadow-xl">
+                    <Button size="small" type="text" block class="!text-left" @click="openEditModal(topic)">
+                      编辑
+                    </Button>
+                    <Button size="small" type="text" danger block class="!text-left" @click="deleteTopic(topic)">
+                      删除
+                    </Button>
+                  </div>
+                </template>
+              </Dropdown>
             </div>
           </div>
         </div>
@@ -675,9 +671,9 @@ onMounted(() => {
         <Empty v-else-if="!topicsLoading" class="rounded-xl border border-slate-700/50 bg-slate-900/60 py-16">
           <template #description>
             <div class="flex flex-col items-center gap-3">
-              <span class="text-[hsl(var(--foreground))]">还没有跟踪主题</span>
+              <span class="text-[hsl(var(--foreground))]">还没有热点主题</span>
               <span class="text-xs text-[hsl(var(--muted-foreground))]">
-                新建主题后，系统会按关键词定向检索各源热点并自动汇总
+                创建主题后可按关键词定向跟踪各源热点
               </span>
               <Button type="primary" @click="openCreateModal">
                 <Plus class="mr-1 size-4" />
@@ -1061,3 +1057,100 @@ onMounted(() => {
     />
   </Page>
 </template>
+
+<style scoped>
+/* ============ 主题行式布局 ============
+   一行一个主题，全宽；三区：左=信息(不收缩) 中=元信息(弹性) 右=操作(不收缩) */
+.topic-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+  cursor: default; /* 行本身不可点击，仅按钮可点 */
+}
+.topic-row--off {
+  opacity: 0.6; /* 停用时整行降透明 */
+}
+.topic-row__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-width: 220px;
+  max-width: 34%;
+}
+.topic-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+.topic-row__meta > span {
+  white-space: nowrap;
+}
+.topic-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* 768~1200px：拆两行——第一行 信息+操作，第二行元信息 */
+@media (max-width: 1200px) and (min-width: 768px) {
+  .topic-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .topic-row__main {
+    flex: 1 1 60%;
+    min-width: 0;
+    max-width: none;
+  }
+  .topic-row__actions {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+  }
+  .topic-row__meta {
+    flex: 1 1 100%;
+    order: 3;
+    margin-top: -2px;
+    font-size: 12px;
+  }
+}
+
+/* <768px：完全竖向堆叠，操作等宽平铺，元信息换行标签组 */
+@media (max-width: 767px) {
+  .topic-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 14px;
+  }
+  .topic-row__main {
+    max-width: none;
+    min-width: 0;
+  }
+  .topic-row__meta {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    column-gap: 12px;
+    white-space: normal;
+  }
+  .topic-row__actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .topic-row__actions .ant-btn {
+    flex: 1;
+  }
+  .topic-row__actions > span {
+    flex: 1 1 100%;
+  }
+}
+</style>
