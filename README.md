@@ -4,6 +4,8 @@
 
 技术栈：**FastAPI**（后端，SQLite + SQLAlchemy + APScheduler + JWT）＋ **Vue Vben Admin / Vue 3 + Ant Design Vue**（前端，基于官方 monorepo 裁剪为单应用，只保留 `web-antd` 变体）。
 
+> ⚠️ **免责声明**：本项目仅供个人学习研究使用，禁止商用。使用前请阅读 [DISCLAIMER.md](DISCLAIMER.md)。
+
 ## 功能模块
 
 | 模块 | 说明 |

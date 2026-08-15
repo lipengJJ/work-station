@@ -1,0 +1,37 @@
+# 云端部署 compose（从 Docker Hub 拉取镜像，无需本地构建）
+# 用法：
+#   1. 先设置环境变量（可放 .env）：
+#      DOCKERHUB_USER=<你的 Docker Hub 用户名>
+#      WORKBENCH_SECRET_KEY=<openssl rand -hex 32 生成的随机密钥>
+#      FRONTEND_PORT=80 BACKEND_PORT=8010（可选，默认 80/8010）
+#   2. docker compose -f docker-compose.cloud.yml up -d
+#   3. docker compose -f docker-compose.cloud.yml exec backend python seed.py   （首次初始化管理员）
+#
+# 数据持久化：./data（数据库+配置镜像）、./storage（采集素材）挂在宿主机，
+# 升级/重建容器数据不丢；API 配置会自动从 data/config.json 恢复。
+# 小红书签名脚本：如需搜索/详情功能，把 backend/static 下的 xhs_*.js 放到
+# 宿主机 ./static/ 目录（不提供则仅评论等页面级功能不可用，详见 README）。
+
+services:
+  backend:
+    image: ${DOCKERHUB_USER}/workbench-backend:latest
+    container_name: workbench-backend
+    environment:
+      - WORKBENCH_SECRET_KEY=${WORKBENCH_SECRET_KEY:?请设置 WORKBENCH_SECRET_KEY 环境变量（生产环境必须使用随机的强密钥）}
+      - WORKBENCH_DATABASE_URL=sqlite:////app/data/workbench.db
+    volumes:
+      - ./data:/app/data
+      - ./storage:/app/storage
+      - ./static:/app/static
+    ports:
+      - "${BACKEND_PORT:-8010}:8010"
+    restart: unless-stopped
+
+  frontend:
+    image: ${DOCKERHUB_USER}/workbench-frontend:latest
+    container_name: workbench-frontend
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-80}:8080"
+    restart: unless-stopped
