@@ -1,0 +1,96 @@
+classDiagram
+    class AiTrendingPushConfig {
+        +int id PK  "恒为 1"
+        +bool enabled
+        +str webhook_url
+        +str|None webhook_secret
+        +str|None keyword
+        +str push_time  "HH:MM"
+        +int top_n
+        +str|None summary_prompt
+        +datetime updated_at
+    }
+
+    class AiTrendingPushLog {
+        +int id PK
+        +datetime pushed_at
+        +str status  "success|failed|degraded"
+        +str error
+        +int items_count
+        +str summary_preview
+        +datetime created_at
+    }
+
+    class AiTrendingItem {
+        <<既有模型>>
+        +int id
+        +str source
+        +str title
+        +str url
+        +str summary
+        +float heat_score
+        +str category
+        +datetime published_at
+        +datetime fetched_at
+    }
+
+    class PushWebhookClient {
+        +str webhook_url
+        +str|None secret
+        +send_markdown(content) dict
+        +build_sign(secret, timestamp) str
+        +mask_webhook_url(url) str
+        +validate_webhook_url(url) bool
+        +truncate_to_bytes(content, max_bytes=4096) str
+    }
+
+    class PushWebhookError {
+        <<exception>>
+        +int errcode
+        +str errmsg
+    }
+
+    class PushService {
+        +get_config(db) AiTrendingPushConfig
+        +run_push(db, force=False, config_override=None) PushLogOut|None
+        +_query_today_items(db, top_n) list[AiTrendingItem]
+        +_ai_summarize(db, items, prompt) dict|None
+        +_build_markdown(items, ai_result, cfg, date) str
+        +_send_with_retry(cfg, content) tuple[bool, str]
+        +_write_log(db, status, error, count, preview) AiTrendingPushLog
+    }
+
+    class SchedulerJobs {
+        +register_all_enabled_jobs() void
+        +register_push_job() void
+        +unregister_push_job() void
+        +reschedule_push_job(db) void
+        +_run_push_job() void
+    }
+
+    class PushController {
+        +get_config() PushConfigOut
+        +update_config(body) PushConfigOut
+        +get_latest() PushLogOut|None
+        +test_push(body) PushLogOut
+    }
+
+    class PushConfigIn
+    class PushConfigOut
+    class PushTestIn
+    class PushLogOut
+
+    PushService ..> AiTrendingPushConfig : 读取
+    PushService ..> AiTrendingPushLog : 写入
+    PushService ..> AiTrendingItem : 查询当日热点
+    PushService ..> PushWebhookClient : 发送
+    PushService ..> PushWebhookError : 捕获
+    PushService ..> ai_gateway_service : AI 总结(可降级)
+    PushService ..> ai_config : get_ai_credentials
+    PushController ..> PushService : 编排
+    PushController ..> SchedulerJobs : reschedule_push_job
+    SchedulerJobs ..> PushService : _run_push_job 调用 run_push
+    PushConfigOut --> AiTrendingPushConfig : from_attributes + URL 掩码
+    PushLogOut --> AiTrendingPushLog : from_attributes
+    PushConfigIn ..> PushController : PUT body
+    PushTestIn ..> PushController : POST test body(可选覆盖)

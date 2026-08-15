@@ -1,0 +1,62 @@
+sequenceDiagram
+    participant APS as APScheduler(cron 每日 push_time, 本地时区)
+    participant SJ as SchedulerJobs._run_push_job
+    participant PS as PushService
+    participant DB as SQLite
+    participant AI as ai_config + ai_gateway_service
+    participant WX as 企业微信 webhook API
+
+    APS->>SJ: 触发 ai_trending_push
+    SJ->>SJ: SessionLocal() 自开
+    SJ->>PS: run_push(db)
+    PS->>DB: get_config() 读单行配置
+    alt 未启用 或 webhook_url 为空
+        PS-->>SJ: return None（静默跳过）
+    else 正常
+        PS->>DB: 查当日热点 fetched_at >= 本地00:00(转UTC), heat_score DESC, limit top_n
+        alt 当日无热点
+            PS-->>SJ: 写 log(status=failed, error="当日无热点数据")
+        else 有热点
+            PS->>AI: get_ai_credentials(db) + AIRequest(system_instruction=prompt, messages=[热点JSON])
+            AI-->>PS: stream 事件(delta 累积 / error)
+            alt AI 成功且 JSON 合法
+                PS->>PS: 解析 {overview, summaries[]}
+            else AI 失败 / 未配置 / JSON 不合法（重试 2 次 5s/15s 后）
+                PS->>PS: 规则降级（DB summary[:80] + 规则综述）degraded=True
+            end
+            PS->>PS: _build_markdown（标题内嵌 keyword；≤4096B 截断）
+            loop 发送重试 ≤3 次（5s/15s 退避）
+                PS->>WX: POST webhook_url(+&timestamp=&sign=) markdown content
+                WX-->>PS: {errcode, errmsg} / 网络异常
+            end
+            alt 最终成功
+                PS->>DB: 写 push_log(status=success|degraded, items_count, summary_preview)
+            else 仍失败
+                PS->>DB: 写 push_log(status=failed, error=errcode/errmsg[:500])
+            end
+            PS-->>SJ: PushLogOut
+        end
+    end
+    SJ->>SJ: SessionLocal() 关闭
+
+    Note over V,DB: ===== 测试推送（前端触发）=====
+
+    participant V as views/ai-trending/index.vue 定时推送卡片
+    participant API as api/core/ai-trending.ts
+    participant C as controllers/push.py
+
+    V->>API: testPushApi(可选表单覆盖值)
+    API->>C: POST /api/ai-trending/push/test
+    C->>C: 5 分钟限频检查（内存锁，未过 → 429）
+    alt webhook_url 为空
+        C-->>API: 400 请先配置 webhook_url
+    else 通过
+        C->>PS: run_push(db, force=True, config_override=body)
+        PS->>DB: 查询当日热点
+        PS->>AI: AI 总结（失败 → 规则降级 degraded）
+        PS->>WX: 发送 markdown（失败重试 2 次）
+        PS->>DB: 写 push_log
+        PS-->>C: PushLogOut
+        C-->>API: PushLogOut(status, error, items_count, summary_preview)
+        API-->>V: 更新卡片状态（成功 Tag / 失败红色 Alert 带 error）+ message 提示
+    end

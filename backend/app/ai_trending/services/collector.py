@@ -14,7 +14,11 @@ from typing import Any
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from app.ai_trending.models import AiTrendingItem, AiTrendingSourceStatus
+from app.ai_trending.models import (
+    AiTrendingItem,
+    AiTrendingSourceStatus,
+    AiTrendingTopicHit,
+)
 from app.ai_trending.services.base import (
     RawItem,
     TrendingSource,
@@ -186,18 +190,22 @@ class Collector:
 
     # -------------------------------------------------------- 保留策略 ----
     def cleanup_old_items(self, db: Session | None = None) -> int:
-        """保留策略：先删超过 7 天的条目，再删至最多 2000 条（按发布时间保留最新）。"""
+        """保留策略：先删超过 7 天的条目，再删至最多 2000 条（按发布时间保留最新）。
+
+        删除 items 前先显式删关联 topic_hit（SQLite 外键默认不强制，不能依赖 DB 级
+        CASCADE），避免清理后主题命中悬空。
+        """
         if db is None:
             with SessionLocal() as local_db:
                 return self.cleanup_old_items(local_db)
         deleted = 0
         cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
-        deleted += (
-            db.query(AiTrendingItem)
+        expired_ids = [
+            row[0]
+            for row in db.query(AiTrendingItem.id)
             .filter(AiTrendingItem.published_at < cutoff)
-            .delete(synchronize_session=False)
-        )
-        db.commit()
+            .all()
+        ]
         total = db.query(AiTrendingItem).count()
         if total > MAX_ITEMS:
             excess = total - MAX_ITEMS
@@ -211,13 +219,18 @@ class Collector:
                 .limit(excess)
                 .all()
             ]
-            if old_ids:
-                deleted += (
-                    db.query(AiTrendingItem)
-                    .filter(AiTrendingItem.id.in_(old_ids))
-                    .delete(synchronize_session=False)
-                )
-                db.commit()
+            expired_ids = list(dict.fromkeys(expired_ids + old_ids))
+        if expired_ids:
+            # 先删主题命中，再删 items（SQLite 外键默认不强制，必须显式删）
+            db.query(AiTrendingTopicHit).filter(
+                AiTrendingTopicHit.item_id.in_(expired_ids)
+            ).delete(synchronize_session=False)
+            deleted += (
+                db.query(AiTrendingItem)
+                .filter(AiTrendingItem.id.in_(expired_ids))
+                .delete(synchronize_session=False)
+            )
+            db.commit()
         return deleted
 
 

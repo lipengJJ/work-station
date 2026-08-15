@@ -1,0 +1,153 @@
+classDiagram
+    class AiTrendingTopic {
+        +int id PK
+        +str name
+        +str keywords  "JSON list[str], OR 语义"
+        +int interval_minutes
+        +bool enabled
+        +str status  "idle|running|failed"
+        +datetime last_run_at
+        +str last_run_message
+        +int last_item_count
+        +bool push_enabled
+        +str push_channel  "wecom|dingtalk|feishu|email"
+        +str push_frequency  "P0: daily"
+        +str push_time  "HH:MM 本地时区"
+        +datetime created_at
+        +datetime updated_at
+    }
+
+    class AiTrendingTopicHit {
+        +int id PK
+        +int topic_id FK
+        +int item_id FK
+        +bool matched  "P0 恒 True"
+        +datetime first_seen_at
+        +datetime created_at
+        +UniqueConstraint(topic_id, item_id)
+    }
+
+    class AiTrendingItem {
+        <<既有模型>>
+        +int id PK
+        +str source
+        +str title
+        +str url
+        +str url_hash  "unique 去重键"
+        +float heat_score
+        +str category
+        +datetime published_at
+    }
+
+    class AiTrendingPushLog {
+        <<既有模型>>
+        +int id PK
+        +datetime pushed_at
+        +str status  "success|degraded|failed"
+        +int topic_id  "新增可空列（P1 主题推送记录）"
+    }
+
+    class RawItem {
+        <<既有>>
+        +str source
+        +str title
+        +str url
+        +str summary
+        +float heat_score
+    }
+
+    class TrendingSource {
+        <<abstract>>
+        +str source_id
+        +str source_name
+        +str category_type
+        +fetch() list[RawItem]
+        +search(keywords, page_size) list[RawItem]  "默认= fetch()+关键词过滤(OR)"
+    }
+
+    class HackerNewsSource {
+        +search(keywords, page_size)  "Algolia /search?query=kw"
+    }
+    class GitHubSource {
+        +search(keywords, page_size)  "Search API q=kw&sort=stars"
+    }
+    class ArxivSource {
+        +search(keywords, page_size)  "search_query=all:kw (Atom)"
+    }
+    class HuggingFaceSource {
+        +search(keywords, page_size)  "/api/models?search=kw"
+    }
+    class InfoQSource {
+        +search()  "继承默认降级（RSS 无检索）"
+    }
+    class Kr36Source {
+        +search()  "继承默认降级（RSS 无检索）"
+    }
+
+    class TopicService {
+        +list_topics(db) list[dict]
+        +get_topic(db, topic_id) AiTrendingTopic|None
+        +create_topic(db, params) dict
+        +update_topic(db, topic_id, params) dict|None
+        +delete_topic(db, topic_id) bool
+        +run_topic_scan(topic_id) void
+        +list_topic_items(db, topic_id, sort, page, page_size) dict
+        +get_push_config(db, topic_id) dict|None
+        +set_push_config(db, topic_id, params) dict|None
+        +serialize_topic(db, topic) dict
+        +_upsert_item(db, item) AiTrendingItem|None
+        +_sync_topic_job(topic) void
+    }
+
+    class SchedulerJobs {
+        +register_all_enabled_jobs() void
+        +register_topic_job(topic) void
+        +unregister_topic_job(topic_id) void
+        +_run_topic_job(topic_id) void
+    }
+
+    class Collector {
+        <<既有>>
+        +cleanup_old_items(db) int  "修改: 级联删 topic_hit"
+    }
+
+    class TopicController {
+        +list_topics() list[TopicOut]
+        +create_topic(body) TopicOut
+        +get_topic(topic_id) TopicOut
+        +update_topic(topic_id, body) TopicOut
+        +delete_topic(topic_id) dict
+        +run_topic_now(topic_id) dict
+        +list_topic_items(topic_id) TopicHitPage
+        +get_push_config(topic_id) TopicPushConfigOut
+        +update_push_config(topic_id, body) TopicPushConfigOut
+    }
+
+    class TopicIn
+    class TopicOut
+    class TopicPushConfigIn
+    class TopicPushConfigOut
+    class TopicHitPage
+
+    AiTrendingTopic "1" --> "0..*" AiTrendingTopicHit : 拥有命中
+    AiTrendingTopicHit "*" --> "1" AiTrendingItem : 引用条目
+    TrendingSource <|-- HackerNewsSource
+    TrendingSource <|-- GitHubSource
+    TrendingSource <|-- ArxivSource
+    TrendingSource <|-- HuggingFaceSource
+    TrendingSource <|-- InfoQSource
+    TrendingSource <|-- Kr36Source
+    TopicService ..> AiTrendingTopic : CRUD/状态/推送配置
+    TopicService ..> AiTrendingTopicHit : 记命中
+    TopicService ..> AiTrendingItem : upsert 引用
+    TopicService ..> TrendingSource : search() 定向检索
+    TopicService ..> SchedulerJobs : _sync_topic_job 懒加载
+    SchedulerJobs ..> TopicService : _run_topic_job 调用 run_topic_scan
+    SchedulerJobs ..> AiTrendingTopic : 读 enabled 主题
+    Collector ..> AiTrendingTopicHit : 清理级联删除
+    TopicController ..> TopicService : 编排
+    TopicController ..> SchedulerJobs : run-now 触发
+    TopicHitPage o-- TopicOut
+    TopicHitPage o-- "items" TrendingItemOut
+    TopicOut --> TopicPushConfigOut : 内嵌 push
+    TopicIn --> TopicPushConfigIn : 可选内嵌 push

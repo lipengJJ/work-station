@@ -1,0 +1,21 @@
+sequenceDiagram
+    participant V as 前端详情态
+    participant C as controllers/topic.py
+    participant TS as TopicService
+    participant DB as SQLite
+
+    V->>C: POST /topics/{id}/run-now
+    C->>C: threading.Lock 内检查每主题 60s 冷却
+    alt 限频未过 / status==running
+        C-->>V: 429「抓取过于频繁 / 正在扫描中」
+    else 通过
+        C->>DB: topic 存在性校验（不存在 → 404）
+        C->>TS: threading.Thread(run_topic_scan, args=[topic_id]).start()
+        Note over C: 立即返回，不阻塞请求
+        C-->>V: {success: true}
+        par 后台线程
+            TS->>TS: run_topic_scan(topic_id)（同主流程扫描）
+            TS->>DB: 更新主题状态 + 记 hits
+        end
+        V->>V: 延迟 ~3-5s 后重新拉取详情 items + 主题信息
+    end

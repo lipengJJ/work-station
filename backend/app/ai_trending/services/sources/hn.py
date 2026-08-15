@@ -1,13 +1,24 @@
-"""Hacker News 源：官方 Algolia API（front_page 榜单）。"""
+"""Hacker News 源：官方 Algolia API（front_page 榜单 + 关键词检索）。"""
 from __future__ import annotations
 
-from app.ai_trending.services.base import RawItem, TrendingSource, hn_heat, parse_datetime
+from urllib.parse import quote_plus
+
+from loguru import logger
+
+from app.ai_trending.services.base import (
+    RawItem,
+    TrendingSource,
+    TrendingSourceError,
+    hn_heat,
+    parse_datetime,
+)
 
 
 class HackerNewsSource(TrendingSource):
     """Hacker News 首页热榜（https://hn.algolia.com/api/v1/search?tags=front_page）。
 
     原始热度指标：points（HN 评分）+ num_comments（评论数），映射 category=news。
+    search() 覆写为 Algolia /search?query= 真检索（逐关键词请求，合并去重由 upsert 兜底）。
     """
 
     source_id = "hn"
@@ -16,11 +27,36 @@ class HackerNewsSource(TrendingSource):
     filter_keywords: list[str] | None = None  # HN 内容浓度高，不过滤
 
     API_URL = "https://hn.algolia.com/api/v1/search?tags=front_page"
+    SEARCH_API = "https://hn.algolia.com/api/v1/search"
 
     def fetch(self) -> list[RawItem]:
         data = self._http_get_json(self.API_URL)
+        return self._parse_hits(data.get("hits") or [])
+
+    def search(self, keywords: list[str], page_size: int = 30) -> list[RawItem]:
+        """Algolia 关键词检索：每关键词一次请求，tags=story 排除 job/comment。"""
         items: list[RawItem] = []
-        for hit in data.get("hits") or []:
+        for kw in keywords or []:
+            kw = str(kw).strip()
+            if not kw:
+                continue
+            url = (
+                f"{self.SEARCH_API}?query={quote_plus(kw)}"
+                f"&tags=story&hitsPerPage={page_size}"
+            )
+            try:
+                data = self._http_get_json(url)
+            except TrendingSourceError as exc:
+                logger.warning(f"hn search 关键词「{kw}」请求失败: {exc}")
+                continue
+            items.extend(self._parse_hits(data.get("hits") or []))
+        return items
+
+    # ------------------------------------------------------------ 解析 ----
+    def _parse_hits(self, hits: list[dict]) -> list[RawItem]:
+        """Algolia hit 列表 → RawItem 列表（fetch / search 共用）。"""
+        items: list[RawItem] = []
+        for hit in hits or []:
             title = (hit.get("title") or "").strip()
             if not title:
                 continue

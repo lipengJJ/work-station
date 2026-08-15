@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app.common.controllers import auth, chat, home, system, tasks_center
@@ -15,6 +17,8 @@ from app.core.scheduler import shutdown_scheduler, start_scheduler
 
 setup_logging()
 from app.analysis.controllers import analyses as analyses_api
+from app.ai_trending.controllers import push as ai_trending_push_api
+from app.ai_trending.controllers import topic as ai_trending_topic_api
 from app.ai_trending.controllers import trending as ai_trending_api
 from app.resource.controllers import resource as resource_api
 from app.skills.controllers import skills as skills_api
@@ -89,6 +93,19 @@ def create_app() -> FastAPI:
     def health() -> dict:
         return {"status": "ok", "service": "workbench-backend"}
 
+    @app.exception_handler(RequestValidationError)
+    async def _validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        """Pydantic 请求体/查询参数校验失败统一返回 400（对齐项目「400 参数错」语义）。"""
+        errors = exc.errors()
+        first = errors[0] if errors else {}
+        loc = ".".join(
+            str(x) for x in first.get("loc", []) if x not in ("body", "query", "path", "header", "cookie")
+        )
+        msg = first.get("msg", "参数校验失败")
+        return JSONResponse(status_code=400, content={"detail": f"参数校验失败: {loc} {msg}"})
+
     app.include_router(auth.router)
     app.include_router(chat.router)
     app.include_router(home.router)
@@ -107,6 +124,8 @@ def create_app() -> FastAPI:
     app.include_router(xhs_tracking_api.router)
     app.include_router(resource_api.router)
     app.include_router(ai_trending_api.router)
+    app.include_router(ai_trending_push_api.router)
+    app.include_router(ai_trending_topic_api.router)
     app.include_router(datacenter_router)
 
     return app

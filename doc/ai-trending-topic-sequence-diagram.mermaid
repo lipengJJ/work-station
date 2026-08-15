@@ -1,0 +1,53 @@
+sequenceDiagram
+    participant V as 前端 index.vue(列表态)
+    participant C as controllers/topic.py
+    participant TS as TopicService
+    participant DB as SQLite
+    participant SJ as SchedulerJobs
+    participant APS as APScheduler(interval)
+    participant REG as TrendingSourceRegistry
+    participant S as 各 TrendingSource
+    participant CL as Collector
+
+    V->>C: POST /topics {name, keywords[], interval_minutes, enabled, push?}
+    C->>TS: create_topic(db, params)
+    TS->>DB: INSERT ai_trending_topic (keywords json) + commit + refresh
+    alt enabled=True
+        TS->>SJ: register_topic_job(topic)  # interval minutes, id=ai_trending_topic_{id}
+        SJ->>APS: add_job(replace_existing=True)
+    end
+    TS->>DB: 统计 total_item_count + 读 next_run_at
+    TS-->>C: serialize_topic → dict
+    C-->>V: TopicOut（卡片出现：状态点/频率/推送徽标）
+
+    Note over APS: interval_minutes 后触发
+    APS->>SJ: 触发 ai_trending_topic_{id}
+    SJ->>TS: run_topic_scan(topic_id)  # SessionLocal 自开
+    TS->>DB: status=running + commit
+    loop 遍历 registry.list() 每个源（串行）
+        TS->>REG: list()
+        TS->>S: search(topic.keywords, page_size=30)
+        alt 有检索接口（HN/GitHub/arXiv/HF）
+            S->>S: 逐关键词请求检索 API → RawItems
+        else 无检索接口（InfoQ/36氪）
+            S->>S: fetch() 全量 → filter_ai_keywords(OR) → RawItems
+        end
+        loop 每条 RawItem
+            TS->>CL: _upsert_item 语义（url_hash 查重/热度覆盖）→ 拿 item.id
+            TS->>DB: 查 hit(topic_id, item_id)
+            alt 不存在
+                TS->>DB: INSERT AiTrendingTopicHit(matched=True, first_seen_at=now) new_hits+1
+            else 已存在
+                Note over TS,DB: 主题维度去重，跳过
+            end
+        end
+    end
+    TS->>DB: status=idle + last_run_at + last_item_count + last_run_message + commit
+    Note over TS: SessionLocal 关闭
+
+    V->>C: GET /topics/{id}/items?sort=heat&page=1&page_size=20
+    C->>TS: list_topic_items(db, topic_id, sort, page, page_size)
+    TS->>DB: join hits(matched=True) + items → order_by heat_score DESC → offset/limit
+    DB-->>TS: rows + total
+    TS-->>C: TopicHitPage(items, total, page, page_size)
+    C-->>V: 详情态渲染该主题热点列表

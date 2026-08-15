@@ -39,3 +39,8 @@ def init_db() -> None:
     from app.xhs import models as xhs_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    # AI 热点推送记录表轻量迁移：存量库 create_all 不会给已存在表加列，
+    # 这里幂等补 topic_id 列（新库 ORM 已建，函数内部自动跳过）
+    from app.ai_trending.models.push_log import ensure_push_log_topic_id
+
+    ensure_push_log_topic_id()

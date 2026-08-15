@@ -4,11 +4,13 @@
   用 lxml 解析（yfinance 已引入 lxml，不新增 beautifulsoup4）。
 - 兜底：https://api.github.com/search/repositories?q=created:>日期&sort=stars&order=desc
   （匿名限额 10 次/分，仅降级用，够用）。
+- search()：GitHub Search API 按关键词检索（sort=stars），403/429 匿名限额降级跳过不抛。
 """
 from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote_plus
 
 from lxml import html as lxml_html
 from loguru import logger
@@ -41,6 +43,32 @@ class GitHubSource(TrendingSource):
         except TrendingSourceError:
             logger.warning("github trending HTML 抓取失败，降级 GitHub Search API")
             return self._fetch_search_api()
+
+    def search(self, keywords: list[str], page_size: int = 30) -> list[RawItem]:
+        """GitHub Search API 关键词检索：q={kw}&sort=stars&order=desc。
+
+        匿名限额约 10 次/分：单关键词 403/429 时 logger.warning + 跳过该关键词
+        （返回空列表不抛错），不阻塞主题扫描其他源。
+        """
+        items: list[RawItem] = []
+        for kw in keywords or []:
+            kw = str(kw).strip()
+            if not kw:
+                continue
+            url = (
+                f"{self.SEARCH_API}?q={quote_plus(kw)}"
+                f"&sort=stars&order=desc&per_page={page_size}"
+            )
+            try:
+                data = self._http_get_json(
+                    url, headers={"Accept": "application/vnd.github+json"}
+                )
+            except TrendingSourceError as exc:
+                # 403 限额 / 429 限流统一降级：跳过该关键词，不阻塞整体
+                logger.warning(f"github search 关键词「{kw}」请求失败（匿名限额可能触发）: {exc}")
+                continue
+            items.extend(self._parse_repos(data.get("items") or []))
+        return items
 
     # ------------------------------------------------------------ 主通道 ----
     def _fetch_html(self) -> list[RawItem]:
@@ -89,8 +117,12 @@ class GitHubSource(TrendingSource):
         data = self._http_get_json(
             url, headers={"Accept": "application/vnd.github+json"}
         )
+        return self._parse_repos(data.get("items") or [])
+
+    def _parse_repos(self, repos: list[dict]) -> list[RawItem]:
+        """GitHub Search API item 列表 → RawItem 列表（fetch 兜底 / search 共用）。"""
         items: list[RawItem] = []
-        for repo in data.get("items") or []:
+        for repo in repos or []:
             full_name = repo.get("full_name") or ""
             html_url = repo.get("html_url") or ""
             if not full_name or not html_url:

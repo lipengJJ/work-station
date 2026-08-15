@@ -323,6 +323,22 @@ class TrendingSource(ABC):
     def fetch(self) -> list[RawItem]:
         """抓取并解析该源，返回标准化 RawItem 列表；失败抛 TrendingSourceError。"""
 
+    def search(self, keywords: list[str], page_size: int = 30) -> list[RawItem]:
+        """关键词定向检索（主题跟踪用）：默认降级实现 = fetch() 全量 + 关键词过滤。
+
+        - 有检索接口的源（HN / GitHub / arXiv / HF models）覆写为真检索；
+        - 无检索接口的源（InfoQ / 36氪 只有全量 RSS）直接用本实现，零代码降级；
+        - 关键词语义：OR（标题 + 摘要任一命中即保留，复用 filter_ai_keywords）。
+        """
+        items = self.fetch() or []
+        if not keywords:
+            return items
+        return [
+            it
+            for it in items
+            if filter_ai_keywords(it.title, it.summary, [str(k) for k in keywords])
+        ]
+
     # -------------------------------------------------- 子类公共工具 ----
     def _keep(self, item: RawItem) -> bool:
         """按 filter_keywords 决定是否保留该条目（标题 + 摘要命中即保留）。"""

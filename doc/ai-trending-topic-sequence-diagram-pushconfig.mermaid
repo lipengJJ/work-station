@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant V as 前端 TopicPushConfigModal
+    participant C as controllers/topic.py
+    participant TS as TopicService
+    participant DB as SQLite
+
+    V->>C: GET /topics/{id}/push-config
+    C->>TS: get_push_config(db, topic_id)
+    TS-->>C: {enabled, channel, frequency, time}
+    C-->>V: TopicPushConfigOut（弹窗回填）
+
+    V->>V: 选择 企业微信 + 每天 + 09:00 + 开启
+    V->>C: PUT /topics/{id}/push-config {enabled:true, channel:"wecom", frequency:"daily", time:"09:00"}
+    C->>C: 校验 channel ∈ {wecom,dingtalk,feishu,email} / frequency ∈ {daily} / time HH:MM
+    alt 校验失败
+        C-->>V: 400 参数错误
+    else 通过
+        C->>TS: set_push_config(db, topic_id, params)
+        TS->>DB: UPDATE push_enabled/push_channel/push_frequency/push_time + commit
+        TS-->>C: TopicPushConfigOut
+        C-->>V: TopicPushConfigOut
+        V->>V: message「推送配置已保存」，列表徽标刷新
+    end
+    Note over V: 本次仅落库（PRD 决策）；P1 由其他分支接入 mock Sender 执行

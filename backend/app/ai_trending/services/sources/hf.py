@@ -2,13 +2,20 @@
 
 - models：https://huggingface.co/api/models?sort=trendingScore&direction=-1&limit=50
   （id / likes / downloads / trendingScore），category=model
+  search() 覆写为 /api/models?search=kw 真检索（仅 models mode）；
 - papers：https://huggingface.co/api/daily_papers（paper.id 拼 arXiv 链接），category=paper
+  （daily_papers 无检索接口，search() 继承基类降级 = fetch 全量 + 关键词过滤）
 """
 from __future__ import annotations
+
+from urllib.parse import quote_plus
+
+from loguru import logger
 
 from app.ai_trending.services.base import (
     RawItem,
     TrendingSource,
+    TrendingSourceError,
     hf_models_heat,
     paper_heat,
     parse_datetime,
@@ -26,6 +33,7 @@ class HuggingFaceSource(TrendingSource):
     MODELS_URL = (
         "https://huggingface.co/api/models?sort=trendingScore&direction=-1&limit=50"
     )
+    SEARCH_MODELS_URL = "https://huggingface.co/api/models"
     PAPERS_URL = "https://huggingface.co/api/daily_papers"
 
     def __init__(self, mode: str = "models") -> None:
@@ -44,11 +52,37 @@ class HuggingFaceSource(TrendingSource):
             return self._fetch_papers()
         return self._fetch_models()
 
+    def search(self, keywords: list[str], page_size: int = 30) -> list[RawItem]:
+        """models mode 覆写为 /api/models?search=kw 真检索；papers mode 继承基类降级。"""
+        if self.mode != "models":
+            return super().search(keywords, page_size=page_size)
+        items: list[RawItem] = []
+        for kw in keywords or []:
+            kw = str(kw).strip()
+            if not kw:
+                continue
+            url = (
+                f"{self.SEARCH_MODELS_URL}?search={quote_plus(kw)}"
+                "&sort=trendingScore&direction=-1"
+                f"&limit={page_size}"
+            )
+            try:
+                data = self._http_get_json(url)
+            except TrendingSourceError as exc:
+                logger.warning(f"hf search 关键词「{kw}」请求失败: {exc}")
+                continue
+            items.extend(self._parse_models(data or []))
+        return items
+
     # ------------------------------------------------------------ models ----
     def _fetch_models(self) -> list[RawItem]:
         data = self._http_get_json(self.MODELS_URL)
+        return self._parse_models(data or [])
+
+    def _parse_models(self, models: list[dict]) -> list[RawItem]:
+        """HF models API 列表 → RawItem 列表（fetch / search 共用）。"""
         items: list[RawItem] = []
-        for model in data or []:
+        for model in models or []:
             model_id = model.get("id") or ""
             if not model_id:
                 continue
