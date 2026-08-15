@@ -15,8 +15,9 @@ ok()    { echo -e "${GREEN}[start]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[start]${NC} $*"; }
 die()   { echo -e "${RED}[start]${NC} $*" >&2; exit 1; }
 
-BACKEND_PORT="${BACKEND_PORT:-8010}"
-FRONTEND_PORT="${FRONTEND_PORT:-5666}"
+# workbench-notify 分支使用独立端口（避开主工作区 8010/5666、mobile 5676、docker 8090/8020）
+BACKEND_PORT="${BACKEND_PORT:-8012}"
+FRONTEND_PORT="${FRONTEND_PORT:-5668}"
 mkdir -p logs
 
 port_in_use() { lsof -ti tcp:"$1" >/dev/null 2>&1; }
