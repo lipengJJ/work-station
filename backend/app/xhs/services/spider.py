@@ -1,15 +1,24 @@
 import json
 import os
 import time
+from typing import Callable, Optional
+
 from loguru import logger
-from app.xhs.services.client.pc_apis import XHS_Apis
+
+from app.xhs.services.client.page_crawler import XhsPageCrawler
+from app.xhs.services.client.xhs_crawler_client import XhsCrawlerClient
 from app.xhs.services.utils.common_util import init
 from app.xhs.services.utils.data_util import handle_note_info, handle_comment_info, download_note, save_to_xlsx
+from app.xhs.services.xhs_errors import XhsError
 
 
 class Data_Spider():
     def __init__(self):
-        self.xhs_apis = XHS_Apis()
+        # 用新的爬取客户端（统一请求层 + 异常分类），属性名保持不变，调用方零改动
+        self.xhs_apis = XhsCrawlerClient()
+        # 评论获取已切换为 Playwright 页面级爬取（API 直连评论接口风控敏感，
+        # DOM 滚动方案请求形态与真人浏览一致，见 client/page_crawler.py）
+        self.page_crawler = XhsPageCrawler()
 
     def spider_note(self, note_url: str, cookies_str: str, proxies=None):
         """
@@ -25,6 +34,9 @@ class Data_Spider():
                 note_info = note_info['data']['items'][0]
                 note_info['url'] = note_url
                 note_info = handle_note_info(note_info)
+        except XhsError:
+            # 分类异常（登录失效/笔记不存在/网络重试耗尽）向上传播，由任务层按类型决策
+            raise
         except Exception as e:
             success = False
             msg = e
@@ -44,24 +56,58 @@ class Data_Spider():
                 continue
             sub_comments = comment.get('sub_comments') or []
             if sub_comments:
+                # 给二级评论打上父评论 id，展平后评论表能保留评论树结构
+                for sub in sub_comments:
+                    if isinstance(sub, dict):
+                        sub['parent_comment_id'] = comment.get('id', '')
+                        sub['note_id'] = note_id
+                        sub['note_url'] = note_url
                 flattened.extend(self._flatten_comments(sub_comments, note_id, note_url))
         return flattened
 
-    def spider_note_comments(self, note_info: dict, cookies_str: str, proxies=None, interval_seconds=None, max_comments=None):
+    def spider_note_comments(self, note_info: dict, cookies_str: str, proxies=None, interval_seconds=None,
+                             max_comments=None, on_batch: Optional[Callable[[str, list], None]] = None):
         """
         爬取一篇笔记的评论（一级 + 二级），已按无二级互动的短评论过滤规则清洗
+
+        实现说明：评论获取已从"Web API 直连"切换为"Playwright 页面级爬取"（DOM 滚动方案，
+        见 client/page_crawler.py，参考 wangjushi/XHS-Crawler）。interval_seconds 语义保留为
+        每轮滚动的最小间隔（秒，叠加随机抖动限速），max_comments 语义保留为最多保留的一级
+        评论数量；on_batch 流式回调与返回形状均与之前完全一致，调用方零改动。
         :param note_info: 经 handle_note_info 处理过的笔记信息，需要 note_id / note_url
-        :param interval_seconds: 评论翻页/展开请求的间隔（秒），用于限速
-        :param max_comments: 最多保留的一级评论数量，None 表示不限制（抓取全部，请求量会明显更大更容易被限流）
+        :param interval_seconds: 滚动间隔（秒），用于限速
+        :param max_comments: 最多保留的一级评论数量，None 表示不限制（抓取全部）
+        :param on_batch: 可选回调 on_batch(note_id, 本批已格式化的评论列表)，边滚动边触发（流式落库用）
         :return: success, msg, comment_list（已格式化，可直接用于 save_to_xlsx(type='comment')）
         """
         note_id = note_info['note_id']
         note_url = note_info['note_url']
         comment_list = []
+
+        def _on_page(_: str, raw_comments: list) -> None:
+            """page_crawler 每攒一批触发：结构化后回调上层（流式存储）"""
+            if on_batch is None or not raw_comments:
+                return
+            batch = self._flatten_comments(raw_comments, note_id, note_url)
+            if batch:
+                try:
+                    on_batch(note_id, batch)
+                except Exception as e:
+                    logger.warning(f"评论落库回调失败，跳过该批: {e}")
+
         try:
-            success, msg, comments = self.xhs_apis.get_note_all_comment(note_url, cookies_str, proxies, interval_seconds=interval_seconds, max_comments=max_comments)
-            if success:
-                comment_list = self._flatten_comments(comments, note_id, note_url)
+            # 页面级爬取：crawl_note_comments 内部已做滚动/去重/二级评论展开/异常分类，
+            # 输出原始结构，这里继续用 _flatten_comments + handle_comment_info 统一格式化
+            raw_comments = self.page_crawler.crawl_note_comments(
+                note_url, cookies_str, on_batch=_on_page,
+                max_comments=max_comments, proxies=proxies, scroll_pause=interval_seconds,
+            )
+            comment_list = self._flatten_comments(raw_comments, note_id, note_url)
+            success = True
+            msg = 'success'
+        except XhsError:
+            # 分类异常向上传播，由任务层按类型决策
+            raise
         except Exception as e:
             success = False
             msg = e

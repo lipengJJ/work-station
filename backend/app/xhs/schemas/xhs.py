@@ -39,10 +39,16 @@ class CollectTaskIn(BaseModel):
     fetch_comments: bool = False
     max_comments_per_note: int | None = None
     comment_interval_seconds: float | None = None
+    # 视频下载开关：默认 False（视频只抓取地址不下载到本地），勾选后随素材一起下载
+    download_video: bool = False
 
 
 class IncrementalCollectIn(BaseModel):
     increment_count: int = Field(50, ge=1, le=500)
+    # 视频下载开关：不传（None）= 沿用任务原有设置；false/true = 本次增量覆盖
+    download_video: bool | None = None
+    # 评论采集开关：不传（None）= 沿用任务原有设置；false/true = 本次增量覆盖
+    fetch_comments: bool | None = None
 
 
 class NoteAnalysisCreateIn(BaseModel):

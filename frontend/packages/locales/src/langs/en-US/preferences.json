@@ -153,6 +153,9 @@
       "neutral": "Neutral",
       "slate": "Slate",
       "gray": "Gray",
+      "nord": "Nord",
+      "dracula": "Dracula",
+      "tokyoNight": "Tokyo Night",
       "custom": "Custom"
     }
   },

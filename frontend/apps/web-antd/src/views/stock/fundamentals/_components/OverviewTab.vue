@@ -49,8 +49,8 @@ function cardValue(card: CardDef): any {
 
 function cardColorClass(card: CardDef): string {
   const raw = cardValue(card);
-  if (raw === null || raw === undefined) return 'text-slate-500';
-  if (card.polarity === 'neutral') return 'text-white';
+  if (raw === null || raw === undefined) return 'text-[hsl(var(--muted-foreground))]';
+  if (card.polarity === 'neutral') return 'text-[hsl(var(--foreground))]';
   const positive = card.polarity === 'higher-better' ? raw > 0 : raw < 0;
   return positive ? 'text-emerald-400' : 'text-rose-400';
 }
@@ -59,11 +59,11 @@ const hasOverview = computed(() => !!props.overview);
 </script>
 
 <template>
-  <div v-if="!hasOverview" class="py-12 text-center text-xs text-slate-500">{{ NO_DATA_TEXT }}</div>
+  <div v-if="!hasOverview" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
   <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-    <div v-for="card in CARDS" :key="card.key" class="space-y-1.5 rounded-xl border border-[#1E2433] bg-[#0F131C] p-3.5">
+    <div v-for="card in CARDS" :key="card.key" class="space-y-1.5 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-3.5">
       <Tooltip :title="card.tooltip">
-        <div class="flex cursor-help items-center gap-1 text-[11px] font-semibold text-slate-400">
+        <div class="flex cursor-help items-center gap-1 text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">
           {{ card.title }}
         </div>
       </Tooltip>

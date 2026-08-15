@@ -53,21 +53,21 @@ const columns = [
 </script>
 
 <template>
-  <div v-if="loading" class="py-12 text-center text-xs text-slate-500">正在加载 SEC 披露文件…</div>
+  <div v-if="loading" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">正在加载 SEC 披露文件…</div>
   <div v-else-if="errorMsg" class="py-12 text-center text-xs text-rose-400">{{ errorMsg }}</div>
-  <div v-else-if="!data" class="py-12 text-center text-xs text-slate-500">{{ NO_DATA_TEXT }}</div>
+  <div v-else-if="!data" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
   <div v-else class="space-y-3">
     <div class="flex flex-wrap gap-1.5">
       <button
         v-for="c in categories" :key="c"
-        class="rounded-lg border px-2.5 py-1 text-[11px] font-semibold" :class="activeCategory === c ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-[#232B3E] bg-[#121622] text-slate-400 hover:text-slate-200'"
+        class="rounded-lg border px-2.5 py-1 text-[11px] font-semibold" :class="activeCategory === c ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
         @click="activeCategory = c"
       >
         {{ c }} <span v-if="c !== '全部'" class="opacity-70">({{ data.grouped[c] }})</span>
       </button>
     </div>
 
-    <div class="overflow-hidden rounded-2xl border border-[#1E2433] bg-[#0F131C]">
+    <div class="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))]">
       <Table :columns="columns" :data-source="filteredFilings" :pagination="{ pageSize: 20 }" row-key="accession_number" size="small">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'filed_at'">{{ formatDate(record.filed_at) }}</template>
@@ -75,7 +75,7 @@ const columns = [
           <template v-else-if="column.key === 'event_categories'">
             <div class="flex flex-wrap gap-1">
               <Tag v-for="c in record.event_categories" :key="c" :color="record.is_material ? 'error' : 'default'">{{ c }}</Tag>
-              <span v-if="!record.event_categories?.length" class="text-slate-500">{{ record.description || '--' }}</span>
+              <span v-if="!record.event_categories?.length" class="text-[hsl(var(--muted-foreground))]">{{ record.description || '--' }}</span>
             </div>
           </template>
           <template v-else-if="column.key === 'is_amendment'">

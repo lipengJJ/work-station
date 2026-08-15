@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { chartColor } from '../../_shared/chart-theme';
 import type { EchartsUIType } from '@vben/plugins/echarts';
 import type { FundamentalsApi } from '#/api/core/fundamentals';
 
@@ -78,8 +79,8 @@ watch([activeSummary], () => {
   renderEcharts({
     grid: { left: 50, right: 20, top: 30, bottom: 40 },
     tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: series.map((p) => p.end), axisLabel: { color: '#64748b' } },
-    yAxis: { type: 'value', axisLabel: { color: '#64748b' } },
+    xAxis: { type: 'category', data: series.map((p) => p.end), axisLabel: { color: chartColor('--muted-foreground') } },
+    yAxis: { type: 'value', axisLabel: { color: chartColor('--muted-foreground') } },
     series: [
       { name: selectedMultiple.value.toUpperCase(), type: 'line', smooth: true, data: series.map((p) => p.val) },
       { name: '历史中位数', type: 'line', data: series.map(() => activeSummary.value.median), lineStyle: { type: 'dashed', color: '#f59e0b' }, symbol: 'none' },
@@ -89,17 +90,17 @@ watch([activeSummary], () => {
 </script>
 
 <template>
-  <div v-if="loading" class="py-12 text-center text-xs text-slate-500">正在加载估值数据…</div>
+  <div v-if="loading" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">正在加载估值数据…</div>
   <div v-else-if="errorMsg" class="py-12 text-center text-xs text-rose-400">{{ errorMsg }}</div>
-  <div v-else-if="!data" class="py-12 text-center text-xs text-slate-500">{{ NO_DATA_TEXT }}</div>
+  <div v-else-if="!data" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
   <div v-else class="space-y-4">
     <!-- 当前估值 -->
     <div>
-      <h3 class="mb-2 text-xs font-bold text-slate-300">当前估值</h3>
+      <h3 class="mb-2 text-xs font-bold text-[hsl(var(--muted-foreground))]">当前估值</h3>
       <div class="grid grid-cols-3 gap-3 sm:grid-cols-5">
-        <div v-for="c in CURRENT_CARDS" :key="c.key" class="rounded-xl border border-[#1E2433] bg-[#0F131C] p-3">
-          <div class="text-[10px] text-slate-500">{{ c.label }}</div>
-          <div class="font-mono text-base font-black text-white">
+        <div v-for="c in CURRENT_CARDS" :key="c.key" class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-3">
+          <div class="text-[10px] text-[hsl(var(--muted-foreground))]">{{ c.label }}</div>
+          <div class="font-mono text-base font-black text-[hsl(var(--foreground))]">
             {{ isYieldField(c.key) ? formatPercent(data.current[c.key] as number) : formatMultiple(data.current[c.key] as number) }}
           </div>
         </div>
@@ -107,50 +108,50 @@ watch([activeSummary], () => {
     </div>
 
     <!-- 历史估值 -->
-    <div class="rounded-2xl border border-[#1E2433] bg-[#0F131C] p-4">
+    <div class="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-4">
       <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h3 class="text-xs font-bold text-slate-300">历史估值区间（用季度 TTM 财务数据 × 披露后股价推导，避免未来数据泄漏）</h3>
+        <h3 class="text-xs font-bold text-[hsl(var(--muted-foreground))]">历史估值区间（用季度 TTM 财务数据 × 披露后股价推导，避免未来数据泄漏）</h3>
         <div class="flex items-center gap-2">
-          <div class="flex items-center gap-1 rounded-lg border border-[#232B3E] bg-[#121622] p-1 text-[11px] font-semibold">
-            <button v-for="k in (['pe', 'ps', 'pb'] as MultipleKey[])" :key="k" class="rounded px-2 py-1" :class="selectedMultiple === k ? 'bg-indigo-600 text-white' : 'text-slate-400'" @click="selectedMultiple = k">
+          <div class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-[11px] font-semibold">
+            <button v-for="k in (['pe', 'ps', 'pb'] as MultipleKey[])" :key="k" class="rounded px-2 py-1" :class="selectedMultiple === k ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="selectedMultiple = k">
               {{ k.toUpperCase() }}
             </button>
           </div>
-          <div class="flex items-center gap-1 rounded-lg border border-[#232B3E] bg-[#121622] p-1 text-[11px] font-semibold">
-            <button v-for="y in [1, 3, 5]" :key="y" class="rounded px-2 py-1" :class="windowYears === y ? 'bg-indigo-600 text-white' : 'text-slate-400'" @click="windowYears = y as 1 | 3 | 5">
+          <div class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-[11px] font-semibold">
+            <button v-for="y in [1, 3, 5]" :key="y" class="rounded px-2 py-1" :class="windowYears === y ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="windowYears = y as 1 | 3 | 5">
               {{ y }}年
             </button>
           </div>
         </div>
       </div>
 
-      <div v-if="activeSummary.series.length === 0" class="py-8 text-center text-xs text-slate-500">{{ NO_DATA_TEXT }}</div>
+      <div v-if="activeSummary.series.length === 0" class="py-8 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
       <template v-else>
         <div class="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-          <div class="rounded-lg bg-[#0B0E14] p-2"><div class="text-[10px] text-slate-500">当前</div><div class="font-mono text-sm font-bold text-white">{{ formatMultiple(activeSummary.current) }}</div></div>
-          <div class="rounded-lg bg-[#0B0E14] p-2"><div class="text-[10px] text-slate-500">历史中位数</div><div class="font-mono text-sm font-bold text-white">{{ formatMultiple(activeSummary.median) }}</div></div>
-          <div class="rounded-lg bg-[#0B0E14] p-2"><div class="text-[10px] text-slate-500">历史分位</div><div class="font-mono text-sm font-bold text-amber-400">{{ activeSummary.percentile }}%</div></div>
-          <div class="rounded-lg bg-[#0B0E14] p-2"><div class="text-[10px] text-slate-500">区间最低</div><div class="font-mono text-sm font-bold text-emerald-400">{{ formatMultiple(activeSummary.min) }}</div></div>
-          <div class="rounded-lg bg-[#0B0E14] p-2"><div class="text-[10px] text-slate-500">区间最高</div><div class="font-mono text-sm font-bold text-rose-400">{{ formatMultiple(activeSummary.max) }}</div></div>
+          <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">当前</div><div class="font-mono text-sm font-bold text-[hsl(var(--foreground))]">{{ formatMultiple(activeSummary.current) }}</div></div>
+          <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">历史中位数</div><div class="font-mono text-sm font-bold text-[hsl(var(--foreground))]">{{ formatMultiple(activeSummary.median) }}</div></div>
+          <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">历史分位</div><div class="font-mono text-sm font-bold text-amber-400">{{ activeSummary.percentile }}%</div></div>
+          <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">区间最低</div><div class="font-mono text-sm font-bold text-emerald-400">{{ formatMultiple(activeSummary.min) }}</div></div>
+          <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">区间最高</div><div class="font-mono text-sm font-bold text-rose-400">{{ formatMultiple(activeSummary.max) }}</div></div>
         </div>
         <EchartsUI ref="chartRef" height="280px" />
       </template>
-      <p class="mt-2 text-[10px] text-slate-500">同行业中位数对比：暂不可用（免费数据源没有可靠的同行分组接口，需要配置额外数据源）</p>
+      <p class="mt-2 text-[10px] text-[hsl(var(--muted-foreground))]">同行业中位数对比：暂不可用（免费数据源没有可靠的同行分组接口，需要配置额外数据源）</p>
     </div>
 
     <!-- 估值区间：悲观/基准/乐观 -->
-    <div class="rounded-2xl border border-[#1E2433] bg-[#0F131C] p-4">
-      <h3 class="mb-3 text-xs font-bold text-slate-300">估值区间（研究模型，不是目标价）</h3>
-      <div v-if="!data.scenarios" class="py-8 text-center text-xs text-slate-500">{{ NO_DATA_TEXT }}（历史 PE 序列或未来 EPS 预期不足）</div>
+    <div class="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-4">
+      <h3 class="mb-3 text-xs font-bold text-[hsl(var(--muted-foreground))]">估值区间（研究模型，不是目标价）</h3>
+      <div v-if="!data.scenarios" class="py-8 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}（历史 PE 序列或未来 EPS 预期不足）</div>
       <template v-else>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div v-for="(s, key) in { 悲观: data.scenarios.bear, 基准: data.scenarios.base, 乐观: data.scenarios.bull }" :key="key" class="rounded-xl border border-[#232B3E] bg-[#121622] p-3">
-            <div class="text-xs font-bold text-white">{{ key }}情景</div>
-            <div class="mt-1 font-mono text-xl font-black text-white">{{ formatUsdPerShare(s.implied_price) }}</div>
+          <div v-for="(s, key) in { 悲观: data.scenarios.bear, 基准: data.scenarios.base, 乐观: data.scenarios.bull }" :key="key" class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+            <div class="text-xs font-bold text-[hsl(var(--foreground))]">{{ key }}情景</div>
+            <div class="mt-1 font-mono text-xl font-black text-[hsl(var(--foreground))]">{{ formatUsdPerShare(s.implied_price) }}</div>
             <div class="font-mono text-[11px] font-bold" :class="s.vs_current_percent >= 0 ? 'text-rose-400' : 'text-emerald-400'">
               {{ formatPercent(s.vs_current_percent) }} vs 当前价
             </div>
-            <div class="mt-2 space-y-0.5 text-[10px] text-slate-500">
+            <div class="mt-2 space-y-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
               <div>PE 倍数假设: {{ s.pe_multiple }}x</div>
               <div>EPS 假设（未来一年一致预期）: {{ s.eps_assumption }}</div>
               <div>{{ s.growth_assumption_note }}</div>

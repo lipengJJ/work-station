@@ -200,7 +200,7 @@ function paginateUnits(units: HTMLElement[]): HTMLElement[][] {
 
 const PDF_HEADER_HTML = `<style>
   .pdf-root { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; font-size: 14px; line-height: 1.8; color: #1f2937; }
-  .pdf-kicker { font-size: 12px; font-weight: 600; color: #4f46e5; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .pdf-kicker { font-size: 12px; font-weight: 600; color: var(--primary); letter-spacing: 0.06em; margin-bottom: 6px; }
   .pdf-title { font-size: 24px; font-weight: 700; line-height: 1.4; margin: 0 0 10px; }
   .pdf-meta { font-size: 12px; color: #6b7280; margin-bottom: 16px; }
   .pdf-question { margin: 0 0 8px; padding: 10px 14px; border-left: 3px solid #4f46e5; background: #f5f5ff; color: #6b7280; font-style: italic; border-radius: 0 6px 6px 0; }
@@ -220,9 +220,9 @@ const PDF_HEADER_HTML = `<style>
   .pdf-body table { border-collapse: collapse; width: 100%; margin: 0 0 12px; font-size: 13px; }
   .pdf-body th, .pdf-body td { border: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; }
   .pdf-body th { background: #f9fafb; font-weight: 700; }
-  .pdf-body a { color: #4f46e5; text-decoration: none; }
+  .pdf-body a { color: var(--primary); text-decoration: none; }
   .pdf-body hr { border: none; border-top: 1px solid #e5e7eb; margin: 18px 0; }
-  .pdf-cite-badge { display: inline-block; min-width: 16px; height: 16px; line-height: 16px; padding: 0 3px; margin: 0 2px; border-radius: 999px; background: #eef2ff; color: #4f46e5; font-size: 11px; font-weight: 700; text-align: center; }
+  .pdf-cite-badge { display: inline-block; min-width: 16px; height: 16px; line-height: 16px; padding: 0 3px; margin: 0 2px; border-radius: 999px; background: #eef2ff; color: var(--primary); font-size: 11px; font-weight: 700; text-align: center; }
   .pdf-img-placeholder { margin: 8px 0; padding: 18px 0; border: 1px dashed #d1d5db; border-radius: 8px; color: #9ca3af; text-align: center; font-size: 12px; }
 </style>`;
 
@@ -437,9 +437,9 @@ onBeforeUnmount(() => {
 
 <template>
   <Page :auto-content-height="true" content-class="!p-0">
-    <div class="custom-scrollbar flex h-full flex-1 flex-col overflow-y-auto bg-[#0B0E14] p-6 select-none">
+    <div class="custom-scrollbar flex h-full flex-1 flex-col overflow-y-auto bg-[hsl(var(--background-deep))] p-6 select-none">
       <div class="mb-4 flex items-center justify-between">
-        <button class="flex w-fit items-center gap-1 rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-slate-300 hover:text-white" @click="backToList">
+        <button class="flex w-fit items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" @click="backToList">
           <ArrowLeft class="h-3.5 w-3.5" />
           返回报告列表
         </button>
@@ -457,7 +457,7 @@ onBeforeUnmount(() => {
       <div v-if="loadError" class="mx-auto w-full max-w-[960px] rounded-xl border border-rose-500/30 bg-rose-500/10 p-6 text-sm text-rose-300">
         {{ loadError }}
       </div>
-      <div v-else-if="loading" class="mx-auto w-full max-w-[960px] text-center text-sm text-slate-400">加载中…</div>
+      <div v-else-if="loading" class="mx-auto w-full max-w-[960px] text-center text-sm text-[hsl(var(--muted-foreground))]">加载中…</div>
 
       <div v-else-if="report" class="mx-auto flex w-full max-w-[1160px] items-start gap-8">
         <!-- 正文：博客式阅读栏 -->
@@ -466,9 +466,9 @@ onBeforeUnmount(() => {
             <Sparkles class="h-3.5 w-3.5" />
             <span>AI 分析报告</span>
           </div>
-          <h1 class="text-[28px] leading-snug font-extrabold text-white">{{ report.title }}</h1>
+          <h1 class="text-[28px] leading-snug font-extrabold text-[hsl(var(--foreground))]">{{ report.title }}</h1>
 
-          <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-400">
+          <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[hsl(var(--muted-foreground))]">
             <span class="flex items-center gap-1">
               <FileText class="h-3.5 w-3.5" />
               {{ report.project_name }}
@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
             </span>
           </div>
 
-          <div class="mt-6 rounded-xl border-l-2 border-indigo-500/50 bg-[#0F131C] px-4 py-3 text-xs text-slate-400 italic">
+          <div class="mt-6 rounded-xl border-l-2 border-indigo-500/50 bg-[hsl(var(--background-deep))] px-4 py-3 text-xs text-[hsl(var(--muted-foreground))] italic">
             {{ report.question }}
           </div>
 
@@ -498,22 +498,22 @@ onBeforeUnmount(() => {
             v-html="bodyHtml"
           ></div>
 
-          <p class="mt-6 border-t border-[#1E2433] pt-4 text-[11px] text-slate-600">
+          <p class="mt-6 border-t border-[hsl(var(--border))] pt-4 text-[11px] text-[hsl(var(--muted-foreground))]">
             证据编号对应报告生成时项目内笔记的展示顺序，点击正文中的编号徽标可在右侧查看对应笔记。
           </p>
         </article>
 
         <!-- 目录：吸顶，标题数量太少就不占地方了 -->
         <aside v-if="toc.length >= 2" class="sticky top-6 hidden w-[220px] shrink-0 lg:block">
-          <div class="mb-2 text-[11px] font-bold tracking-wide text-slate-500 uppercase">目录</div>
-          <nav class="flex flex-col gap-1 border-l border-[#1E2433] pl-3 text-xs">
+          <div class="mb-2 text-[11px] font-bold tracking-wide text-[hsl(var(--muted-foreground))] uppercase">目录</div>
+          <nav class="flex flex-col gap-1 border-l border-[hsl(var(--border))] pl-3 text-xs">
             <a
               v-for="item in toc"
               :key="item.id"
               class="truncate transition-colors"
               :class="[
                 item.level === 3 ? 'pl-3' : item.level === 4 ? 'pl-6' : '',
-                activeHeadingId === item.id ? 'font-semibold text-indigo-400' : 'text-slate-500 hover:text-slate-300',
+                activeHeadingId === item.id ? 'font-semibold text-indigo-400' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--muted-foreground))]',
               ]"
               @click="scrollToHeading(item.id)"
             >
@@ -527,18 +527,18 @@ onBeforeUnmount(() => {
     <!-- 来源证据抽屉 -->
     <Drawer v-model:open="evidenceDrawerOpen" title="来源证据" width="420px">
       <template v-if="evidenceNote">
-        <div class="mb-3 h-40 w-full overflow-hidden rounded-lg bg-[#181F30]">
+        <div class="mb-3 h-40 w-full overflow-hidden rounded-lg bg-[hsl(var(--muted))]">
           <img
             v-if="coverOf(evidenceNote)"
             :src="coverProxied(evidenceNote)"
             class="h-full w-full object-cover"
           />
-          <div v-else class="flex h-full items-center justify-center text-xs text-slate-600">无封面</div>
+          <div v-else class="flex h-full items-center justify-center text-xs text-[hsl(var(--muted-foreground))]">无封面</div>
         </div>
-        <div class="text-base font-bold text-white">{{ evidenceNote.title || '无标题' }}</div>
-        <div class="mt-1 text-xs text-slate-500">{{ evidenceNote.nickname }} · {{ evidenceNote.upload_time }}</div>
-        <p class="mt-3 text-xs whitespace-pre-wrap text-slate-300">{{ evidenceNote.desc }}</p>
-        <div class="mt-3 flex items-center gap-3 text-xs text-slate-400">
+        <div class="text-base font-bold text-[hsl(var(--foreground))]">{{ evidenceNote.title || '无标题' }}</div>
+        <div class="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{{ evidenceNote.nickname }} · {{ evidenceNote.upload_time }}</div>
+        <p class="mt-3 text-xs whitespace-pre-wrap text-[hsl(var(--muted-foreground))]">{{ evidenceNote.desc }}</p>
+        <div class="mt-3 flex items-center gap-3 text-xs text-[hsl(var(--muted-foreground))]">
           <span>♥ {{ evidenceNote.liked_count }}</span>
           <span>★ {{ evidenceNote.collected_count }}</span>
           <span>💬 {{ evidenceNote.comment_count }}</span>

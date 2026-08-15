@@ -44,6 +44,7 @@ _TTL_SECONDS: dict[str, int] = {
     "market_index_history_YTD": 3600,
     "market_index_history_1Y": 3600,
     "mag7_earnings": 6 * 3600,
+    "watchlist_earnings": 6 * 3600,
 }
 
 

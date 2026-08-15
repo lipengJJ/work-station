@@ -18,6 +18,10 @@ RUN npm install --omit=dev
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 评论页面级爬取（page_crawler.py）依赖 Playwright chromium；--with-deps 会顺带
+# apt 装齐 chromium 运行所需的系统库（Dockerfile 默认 root 执行，apt 可用）
+RUN python -m playwright install --with-deps chromium
+
 COPY . .
 
 EXPOSE 8010

@@ -76,6 +76,8 @@ onMounted(async () => {
 });
 
 // ----------------------------------------------------------------- 搜索 ----
+const searchError = ref('');
+
 async function doSearch() {
   const kw = keyword.value.trim();
   if (!kw) {
@@ -83,6 +85,7 @@ async function doSearch() {
     return;
   }
   loading.value = true;
+  searchError.value = '';
   linkStatus.value = {}; // 新结果集，清空旧校验状态
   try {
     result.value = await searchResourceApi({
@@ -95,7 +98,10 @@ async function doSearch() {
     searched.value = true;
     void checkResultLinks(result.value.items);
   } catch (e: any) {
-    message.error(`搜索失败：${e.message}`);
+    searched.value = false;
+    result.value = null;
+    searchError.value = e.message || '搜索失败，请稍后重试';
+    message.error(`搜索失败：${searchError.value}`);
   } finally {
     loading.value = false;
   }
@@ -199,6 +205,8 @@ async function confirmSave() {
 // --------------------------------------------------------- 粘贴链接直接转存 ----
 const pasteLink = ref('');
 const pasteSaving = ref(false);
+// 空态引导"粘贴链接转存"按钮控制 Collapse 展开
+const expanded = ref(false);
 
 async function savePastedLink() {
   const link = pasteLink.value.trim();
@@ -247,8 +255,8 @@ async function savePastedLink() {
       <div
         class="rounded-xl border border-slate-700/50 bg-slate-900/60 p-5 shadow-lg backdrop-blur"
       >
-        <div class="flex items-center gap-2 text-base font-semibold text-slate-200">
-          <Search class="size-5 text-[#665cff]" />
+        <div class="flex items-center gap-2 text-base font-semibold text-[hsl(var(--foreground))]">
+          <Search class="size-5 text-[hsl(var(--primary))]" />
           夸克网盘资源搜索
         </div>
         <div class="mt-4 flex flex-col gap-3">
@@ -272,14 +280,14 @@ async function savePastedLink() {
               class="!bg-slate-800"
               @change="onCategoryChange"
             />
-            <span v-if="result" class="text-xs text-slate-400">
+            <span v-if="result" class="text-xs text-[hsl(var(--muted-foreground))]">
               {{ result.message }}
             </span>
           </div>
         </div>
       </div>
 
-      <!-- Cookie 未配置提示 -->
+      <!-- Cookie 未配置提示：明确区分搜索可用/转存不可用 -->
       <Alert
         v-if="!cookieReady"
         type="warning"
@@ -289,7 +297,8 @@ async function savePastedLink() {
         <template #message>
           <div class="flex items-center justify-between gap-2">
             <span>
-              尚未配置夸克网盘 Cookie，转存功能不可用（搜索不受影响）。配置后即可一键转存到你的网盘。
+              <b class="text-[hsl(var(--foreground))]">搜索功能不受影响</b>；
+              未配置夸克网盘 Cookie 时「转存」不可用。配置后即可一键转存到你的网盘。
             </span>
             <Button size="small" @click="router.push('/resource/settings')">
               <Settings class="mr-1 size-3.5" />
@@ -299,8 +308,28 @@ async function savePastedLink() {
         </template>
       </Alert>
 
+      <!-- 搜索失败（渠道全挂）：明确提示，不白屏 -->
+      <Alert
+        v-if="searchError"
+        type="error"
+        show-icon
+        class="rounded-lg"
+      >
+        <template #message>
+          <div class="flex flex-col gap-2">
+            <span>搜索失败：{{ searchError }}</span>
+            <span class="text-xs text-[hsl(var(--muted-foreground))]">
+              可能是所有搜索渠道暂时不可用（网络受限或被限流），请稍后重试；也可直接粘贴夸克分享链接进行转存。
+            </span>
+            <div>
+              <Button size="small" :loading="loading" @click="onKeywordSearch">重试</Button>
+            </div>
+          </div>
+        </template>
+      </Alert>
+
       <!-- 粘贴链接直接转存 -->
-      <Collapse ghost class="!bg-transparent">
+      <Collapse ghost class="!bg-transparent" v-model:active-key="expanded ? ['paste'] : []">
         <Collapse.Panel key="paste" header="没有搜到？直接粘贴夸克分享链接一键转存">
           <div class="flex items-center gap-3 py-2">
             <Input
@@ -324,7 +353,7 @@ async function savePastedLink() {
       </Collapse>
 
       <!-- 结果列表 -->
-      <div v-if="loading" class="flex justify-center py-20 text-slate-400">
+      <div v-if="loading" class="flex justify-center py-20 text-[hsl(var(--muted-foreground))]">
         <Loader2 class="size-6 animate-spin" />
       </div>
 
@@ -349,12 +378,12 @@ async function savePastedLink() {
                     <Tag v-else-if="statusOf(item)?.status === 'needs_pwd'" color="orange">需提取码</Tag>
                     <Tag v-else color="default">未验证</Tag>
                   </Tooltip>
-                  <span v-if="item.category" class="text-xs text-slate-500">
+                  <span v-if="item.category" class="text-xs text-[hsl(var(--muted-foreground))]">
                     {{ categoryLabel }}
                   </span>
-                  <span class="truncate font-medium text-slate-200">{{ item.title }}</span>
+                  <span class="truncate font-medium text-[hsl(var(--foreground))]">{{ item.title }}</span>
                 </div>
-                <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
                   <span class="inline-flex items-center gap-1">
                     <Link2 class="size-3.5" />
                     <span class="font-mono">{{ item.url }}</span>
@@ -363,7 +392,7 @@ async function savePastedLink() {
                     <Button
                       type="text"
                       size="small"
-                      class="!text-slate-400"
+                      class="!text-[hsl(var(--muted-foreground))]"
                       @click="copyText(item.url)"
                     >
                       <ClipboardCopy class="size-3.5" />
@@ -371,7 +400,7 @@ async function savePastedLink() {
                   </Tooltip>
                   <Tag v-if="item.share_pwd" color="orange">提取码：{{ item.share_pwd }}</Tag>
                 </div>
-                <div v-if="item.snippet" class="mt-1.5 line-clamp-2 text-xs text-slate-500">
+                <div v-if="item.snippet" class="mt-1.5 line-clamp-2 text-xs text-[hsl(var(--muted-foreground))]">
                   {{ item.snippet }}
                 </div>
               </div>
@@ -393,8 +422,20 @@ async function savePastedLink() {
       <Empty
         v-else-if="searched && result && result.items.length === 0"
         class="rounded-xl border border-slate-700/50 bg-slate-900/60 py-16"
-        :description="result?.message || '未找到相关资源'"
-      />
+      >
+        <template #description>
+          <div class="flex flex-col items-center gap-3">
+            <span class="text-[hsl(var(--foreground))]">{{ result?.message || '未找到夸克网盘资源' }}</span>
+            <span class="text-xs text-[hsl(var(--muted-foreground))]">
+              可尝试更换关键词、切换分类；或在下方向上展开「直接粘贴夸克分享链接」进行转存
+            </span>
+            <Button size="small" ghost @click="expanded = true">
+              <FolderPlus class="mr-1 size-3.5" />
+              粘贴链接转存
+            </Button>
+          </div>
+        </template>
+      </Empty>
 
       <!-- 分页 -->
       <div v-if="result && result.total > pageSize" class="flex justify-center">
@@ -418,15 +459,15 @@ async function savePastedLink() {
       @ok="confirmSave"
     >
       <div class="flex flex-col gap-3 py-2">
-        <div class="rounded-lg bg-slate-800/70 px-3 py-2 text-sm text-slate-200">
+        <div class="rounded-lg bg-slate-800/70 px-3 py-2 text-sm text-[hsl(var(--foreground))]">
           {{ saveTarget?.title }}
         </div>
         <div>
-          <div class="mb-1 text-xs text-slate-400">提取码（该资源 {{ saveTarget?.share_pwd ? '已自动识别' : '无需提取码或需手动填写' }}）</div>
+          <div class="mb-1 text-xs text-[hsl(var(--muted-foreground))]">提取码（该资源 {{ saveTarget?.share_pwd ? '已自动识别' : '无需提取码或需手动填写' }}）</div>
           <Input v-model:value="savePwd" placeholder="如有提取码请填写，如：1234" allow-clear />
         </div>
         <div>
-          <div class="mb-1 text-xs text-slate-400">转存到目录（留空 = 网盘根目录）</div>
+          <div class="mb-1 text-xs text-[hsl(var(--muted-foreground))]">转存到目录（留空 = 网盘根目录）</div>
           <Input v-model:value="saveDir" placeholder="如：电影 / 电子书（自动创建）" allow-clear />
         </div>
       </div>

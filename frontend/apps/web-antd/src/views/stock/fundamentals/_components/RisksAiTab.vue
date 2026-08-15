@@ -84,18 +84,18 @@ watch(
   <div class="space-y-4">
     <!-- 风险项 -->
     <div>
-      <h3 class="mb-2 text-xs font-bold text-slate-300">结构化风险扫描</h3>
-      <div v-if="loading" class="py-8 text-center text-xs text-slate-500">正在加载风险数据…</div>
+      <h3 class="mb-2 text-xs font-bold text-[hsl(var(--muted-foreground))]">结构化风险扫描</h3>
+      <div v-if="loading" class="py-8 text-center text-xs text-[hsl(var(--muted-foreground))]">正在加载风险数据…</div>
       <div v-else-if="errorMsg" class="py-8 text-center text-xs text-rose-400">{{ errorMsg }}</div>
-      <div v-else-if="!risks" class="py-8 text-center text-xs text-slate-500">{{ NO_DATA_TEXT }}</div>
+      <div v-else-if="!risks" class="py-8 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
       <div v-else class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        <div v-for="item in risks.items" :key="item.key" class="rounded-xl border border-[#1E2433] bg-[#0F131C] p-3">
+        <div v-for="item in risks.items" :key="item.key" class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-3">
           <div class="mb-1 flex items-center justify-between">
-            <span class="text-xs font-bold text-white">{{ item.title }}</span>
+            <span class="text-xs font-bold text-[hsl(var(--foreground))]">{{ item.title }}</span>
             <Tag :color="LEVEL_COLOR[item.level]">{{ LEVEL_LABEL[item.level] }}</Tag>
           </div>
-          <p class="text-[11px] leading-relaxed text-slate-400">{{ item.trigger }}</p>
-          <div v-if="item.data_used" class="mt-1.5 space-y-0.5 text-[10px] text-slate-500">
+          <p class="text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">{{ item.trigger }}</p>
+          <div v-if="item.data_used" class="mt-1.5 space-y-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
             <div>数据: {{ item.data_used }}</div>
             <div v-if="item.source">来源: {{ item.source }}</div>
             <div v-if="item.invalidation">失效条件: {{ item.invalidation }}</div>
@@ -106,9 +106,9 @@ watch(
     </div>
 
     <!-- AI 综合研判 -->
-    <div class="rounded-2xl border border-[#1E2433] bg-[#0F131C] p-4">
+    <div class="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-4">
       <div class="mb-3 flex items-center justify-between">
-        <h3 class="text-xs font-bold text-slate-300">AI 综合研判</h3>
+        <h3 class="text-xs font-bold text-[hsl(var(--muted-foreground))]">AI 综合研判</h3>
         <button
           class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
           :disabled="aiLoading"
@@ -122,12 +122,12 @@ watch(
         {{ aiError }}
       </div>
 
-      <div v-if="!aiAnalysis && !aiLoading" class="py-8 text-center text-xs text-slate-500">
+      <div v-if="!aiAnalysis && !aiLoading" class="py-8 text-center text-xs text-[hsl(var(--muted-foreground))]">
         点击"生成 AI 研判"，基于上面已经拉到的真实财务/估值/预期/风险数据做综合整理，不会凭空编数据。
       </div>
-      <div v-else-if="aiLoading" class="py-8 text-center text-xs text-slate-500">正在生成，可能需要十几秒…</div>
+      <div v-else-if="aiLoading" class="py-8 text-center text-xs text-[hsl(var(--muted-foreground))]">正在生成，可能需要十几秒…</div>
       <!-- eslint-disable-next-line vue/no-v-html -- markdown-it 默认 html:false，裸 HTML 会被转义，和 xhs AI 分析页同一种用法 -->
-      <div v-else class="fundamentals-ai-markdown text-xs leading-relaxed text-slate-300" v-html="aiHtml"></div>
+      <div v-else class="fundamentals-ai-markdown text-xs leading-relaxed text-[hsl(var(--muted-foreground))]" v-html="aiHtml"></div>
     </div>
   </div>
 </template>

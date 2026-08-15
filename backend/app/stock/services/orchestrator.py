@@ -47,7 +47,14 @@ def _envelope(data: dict, sources: list[str], partial_failures: list[str], from_
 
 
 def _resolve_cik(db: Session, symbol: str) -> dict:
-    info = sec_client.get_cik(db, symbol)
+    """解析 SEC 备案主体（CIK）。找不到代码抛 FundamentalsNotFound；
+    SEC 网络失败（SecError）也统一转成 FundamentalsNotFound——各 build_* 都按
+    "部分数据源失败、降级 partial_failures"处理，不能让 SEC 超时把整个接口打成 500。"""
+    try:
+        info = sec_client.get_cik(db, symbol)
+    except sec_client.SecError as e:
+        logger.warning(f"{symbol} 的 SEC 备案查询失败: {e}")
+        raise FundamentalsNotFound(f"SEC 数据源暂时不可用: {e}") from e
     if not info:
         logger.warning(f"找不到股票代码 {symbol} 对应的 SEC 备案主体")
         raise FundamentalsNotFound(f"找不到股票代码 {symbol} 对应的 SEC 备案主体，请确认代码是否正确")

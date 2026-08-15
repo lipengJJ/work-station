@@ -28,3 +28,31 @@ frontend/**/.env.local
 # 临时验证脚本
 frontend/_tmp_*
 frontend/**/verify-logic.tmp.mjs
+
+# ---- 推 GitHub 前的补充规整 ----
+# 前端 .env（含 store 加密密钥占位符），每开发者本地不同，不提交（.env.development/.env.production 等配置保留）
+frontend/**/.env
+
+# 小红书逆向签名脚本：平台逆向产物，公开仓库有合规风险，不提交
+backend/static/xhs_*.js
+
+# 通用杂项
+.DS_Store
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3
+
+# ---- 推 GitHub 前的补充规整 ----
+# 前端 .env（含 store 加密密钥占位符），每开发者本地不同，不提交（.env.development/.env.production 等配置保留）
+frontend/**/.env
+
+# 小红书逆向签名脚本：平台逆向产物，公开仓库有合规风险，不提交
+backend/static/xhs_*.js
+
+# 通用杂项
+.DS_Store
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3

@@ -253,9 +253,10 @@ export async function searchFundamentalsSymbolApi(query: string) {
   );
 }
 
-export async function getFundamentalsOverviewApi(symbol: string) {
+export async function getFundamentalsOverviewApi(symbol: string, config?: Record<string, unknown>) {
   return requestClient.get<FundamentalsApi.Envelope<FundamentalsApi.OverviewData>>(
     `/stock/fundamentals/${upper(symbol)}/overview`,
+    config,
   );
 }
 

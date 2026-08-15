@@ -56,6 +56,10 @@ export const PHASE_LABEL: Record<string, string> = {
   exporting: '导出文件',
   done: '已完成',
   failed: '失败',
+  // 补抓评论（"更新评论"按钮）是独立后台线程
+  fetching_missing_comments: '补抓评论中',
+  comments_backfill_done: '补抓评论完成',
+  comments_backfill_failed: '补抓评论失败',
 };
 
 export function statusLabel(s: string): string {
@@ -80,10 +84,12 @@ export function defaultTaskForm(): XhsApi.CollectTaskParams {
     note_type: 0,
     note_time: 0,
     note_range: 0,
-    // 直接抓全部：Excel + 图文 + 视频素材，不再让用户选保存方式
+    // 直接抓全部：Excel + 图文素材，不再让用户选保存方式；
+    // 视频默认不下载（体积大），勾选"下载视频"后才随素材一起下
     save_choice: 'all',
     fetch_comments: false,
     max_comments_per_note: null,
     comment_interval_seconds: null,
+    download_video: false,
   };
 }

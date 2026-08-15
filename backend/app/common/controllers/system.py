@@ -56,21 +56,34 @@ def delete_api_config(config_id: int, db: Session = Depends(get_db), _=Depends(g
 
 # ---------------------------------------------------------------------- 日志 ----
 # 排查"AI 分析超时""采集任务失败"这类问题用：读 app/core/logging.py 配的落盘文件尾部，
-# 不用去 docker logs / ssh 到服务器上看。全量读文件再切尾部，文件本身按大小轮转封顶在
-# 20MB，作为一个偶尔才用的排查工具接口，没必要为这个再引入更复杂的读取方式。
+# 不用去 docker logs / ssh 到服务器上看。前端日志页支持 tail 跟随 + 5 秒自动刷新，
+# 接口用 seek 只读文件尾部（按行数估算读取字节），避免每次全量读 20MB 轮转文件。
+
+
+def _read_tail_lines(path, lines: int) -> tuple[list[str], int]:
+    """高效读取文件尾部 N 行，返回 (行列表, 文件总行数)。文件行数用换行符计数近似。"""
+    with open(path, "rb") as f:
+        f.seek(0, 2)
+        file_size = f.tell()
+        # 每行按 ~180 字节估算读取窗口，最少 64KB，最多整个文件
+        read_bytes = min(file_size, max(64 * 1024, int(lines * 180 * 1.2)))
+        f.seek(max(0, file_size - read_bytes))
+        chunk = f.read().decode("utf-8", errors="replace")
+    total = chunk.count("\n")
+    part = chunk.splitlines()
+    return part[-lines:], total
+
 
 @router.get("/logs")
 def get_logs(lines: int = 500, _=Depends(get_current_user)):
     lines = max(1, min(lines, 5000))
     if not LOG_FILE.exists():
         return {"lines": [], "file": str(LOG_FILE), "total_lines": 0}
-    with open(LOG_FILE, encoding="utf-8", errors="replace") as f:
-        all_lines = f.readlines()
-    tail = all_lines[-lines:]
+    tail, total_lines = _read_tail_lines(LOG_FILE, lines)
     return {
-        "lines": [line.rstrip("\n") for line in tail],
+        "lines": tail,
         "file": str(LOG_FILE),
-        "total_lines": len(all_lines),
+        "total_lines": total_lines,
     }
 
 

@@ -47,6 +47,8 @@ export namespace XhsApi {
     fetch_comments: boolean;
     max_comments_per_note: null | number;
     comment_interval_seconds: null | number;
+    /** 视频下载开关：默认 false（视频只保留地址不下载文件），勾选后随素材一起下载 */
+    download_video: boolean;
   }
 
   export interface CollectTaskFiles {
@@ -100,6 +102,26 @@ export namespace XhsApi {
     tags: string[];
     upload_time: string;
     ip_location: string;
+  }
+
+  export interface NoteComment {
+    comment_id: string;
+    note_id: string;
+    content: string;
+    like_count: number | null;
+    nickname: string | null;
+    user_id: string | null;
+    home_url: string | null;
+    parent_comment_id: string;
+    create_time: string | null;
+  }
+
+  export interface NoteCommentsResult {
+    items: NoteComment[];
+    total: number;
+    page: number;
+    page_size: number;
+    source: 'table' | 'task_json' | 'none';
   }
 
   export interface NoteStructured {
@@ -311,10 +333,25 @@ export async function deleteXhsCollectTaskApi(taskId: number) {
  * 小红书搜索接口没有翻页续搜的游标，后端会"多要一些再本地去重"，实际新增数量
  * 可能少于请求的 incrementCount（该关键词候选已接近用尽时）。
  */
-export async function incrementalCollectXhsTaskApi(taskId: number, incrementCount: number) {
+export async function incrementalCollectXhsTaskApi(
+  taskId: number,
+  incrementCount: number,
+  downloadVideo?: boolean,
+  fetchComments?: boolean,
+) {
   return requestClient.post<XhsApi.CollectTask>(`/xhs/collect-tasks/${taskId}/incremental`, {
     increment_count: incrementCount,
+    // 不传（undefined）= 沿用任务原有设置；显式传 = 本次增量覆盖
+    download_video: downloadVideo,
+    fetch_comments: fetchComments,
   });
+}
+
+/** "更新评论"：对任务里还没有评论的笔记补抓评论（后台执行）。 */
+export async function fetchMissingCommentsXhsTaskApi(taskId: number) {
+  return requestClient.post<{ message: string; stats: { total: number; already_have: number; to_fetch: number } }>(
+    `/xhs/collect-tasks/${taskId}/fetch-missing-comments`,
+  );
 }
 
 export async function deleteXhsNoteApi(taskId: number, noteId: string) {
@@ -370,6 +407,14 @@ export async function refreshXhsNoteApi(noteId: string) {
 /** 查看 AI 结构化预处理结果（智谱 GLM），笔记还没处理过时后端返回 404。 */
 export async function getXhsNoteStructuredApi(noteId: string) {
   return requestClient.get<XhsApi.NoteStructured>(`/xhs/notes/${noteId}/structured`);
+}
+
+/** 按笔记查看已获取的评论（笔记列表"评论"按钮，表数据优先、旧任务 JSON 兜底）。 */
+export async function getXhsNoteCommentsApi(
+  noteId: string,
+  params?: { page?: number; page_size?: number },
+) {
+  return requestClient.get<XhsApi.NoteCommentsResult>(`/xhs/notes/${noteId}/comments`, { params });
 }
 
 // ------------------------------------------------------------- AI 分析 ----

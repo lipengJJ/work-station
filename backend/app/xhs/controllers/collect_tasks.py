@@ -97,6 +97,7 @@ def create_collect_task(body: CollectTaskIn, db: Session = Depends(get_db), _=De
         "fetch_comments": body.fetch_comments,
         "max_comments_per_note": body.max_comments_per_note,
         "comment_interval_seconds": body.comment_interval_seconds,
+        "download_video": body.download_video,
     }
     task_id = tasks.create_task(db, params)
     return tasks.get_task(db, task_id)
@@ -124,11 +125,29 @@ def incremental_collect_task(
     实际抓取跑在后台 worker 线程（和全新采集共用同一个串行队列），这里只负责校验
     + 排队，立刻返回。
     """
-    ok, msg = tasks.start_incremental_task(db, task_id, body.increment_count)
+    ok, msg = tasks.start_incremental_task(
+        db, task_id, body.increment_count,
+        download_video=body.download_video, fetch_comments=body.fetch_comments,
+    )
     if not ok:
         status_code = 404 if msg == "任务不存在" else 400
         raise HTTPException(status_code, msg)
     return tasks.get_task(db, task_id)
+
+
+@router.post("/collect-tasks/{task_id}/fetch-missing-comments")
+def fetch_missing_comments_task(
+    task_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)
+):
+    """
+    "更新评论"按钮：对任务里还没有评论的小红书笔记尝试补抓评论（后台线程跑，
+    Playwright 页面级爬取，边爬边流式落库）。立即返回统计，进度看任务 phase。
+    """
+    ok, msg, stats = tasks.start_missing_comments_backfill(db, task_id)
+    if not ok:
+        status_code = 404 if msg == "任务不存在" else 400
+        raise HTTPException(status_code, msg)
+    return {"message": msg, "stats": stats}
 
 
 @router.delete("/collect-tasks/{task_id}")

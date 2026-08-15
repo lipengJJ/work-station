@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.core.scheduler import get_scheduler
 from app.xhs.models import XhsTrackingHit, XhsTrackingTask
+from app.xhs.services.xhs_errors import XhsAuthError
 from app.xhs.services import note_cache, note_preprocess, token_store
 from app.xhs.services.spider import Data_Spider
 
@@ -190,6 +191,15 @@ def run_scan(tracking_task_id: int) -> None:
             db.commit()
             return
 
+        # 登录态心跳探测：失效时本轮扫描直接失败并提示重新登录
+        valid, valid_msg = token_store.validate(db)
+        if not valid:
+            task.status = "failed"
+            task.last_run_message = valid_msg
+            task.last_run_at = datetime.now(timezone.utc)
+            db.commit()
+            return
+
         task.status = "running"
         db.commit()
 
@@ -263,6 +273,12 @@ def run_scan(tracking_task_id: int) -> None:
             task.status = "idle"
             task.last_run_message = f"扫描完成，本次新增命中 {new_hit_count} 篇"
             task.last_hit_count = new_hit_count
+            task.last_run_at = datetime.now(timezone.utc)
+            db.commit()
+        except XhsAuthError as e:
+            logger.error(f"追踪任务 {tracking_task_id} 因登录态失效终止: {e}")
+            task.status = "failed"
+            task.last_run_message = f"登录态失效，请重新登录后再试（{e}）"
             task.last_run_at = datetime.now(timezone.utc)
             db.commit()
         except Exception as e:

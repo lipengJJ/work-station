@@ -128,6 +128,11 @@ def get_or_fetch_note(
     try:
         ok, msg, note_info = data_spider.spider_note(note_url, cookies_str)
     except Exception as e:
+        from app.xhs.services.xhs_errors import XhsError
+        # 分类异常（风控/登录失效/网络重试耗尽）向上传播，由任务层熔断决策；
+        # 只有普通异常才降级为"标记失败/退回缓存"
+        if isinstance(e, XhsError):
+            raise
         ok, msg, note_info = False, str(e), None
 
     if ok and note_info:

@@ -76,37 +76,37 @@ const PERIOD_LABEL: Record<string, string> = { '0q': '本季度', '+1q': '下季
 </script>
 
 <template>
-  <div v-if="loading" class="py-12 text-center text-xs text-slate-500">正在加载财报与预期数据…</div>
+  <div v-if="loading" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">正在加载财报与预期数据…</div>
   <div v-else-if="errorMsg" class="py-12 text-center text-xs text-rose-400">{{ errorMsg }}</div>
-  <div v-else-if="!data" class="py-12 text-center text-xs text-slate-500">{{ NO_DATA_TEXT }}</div>
+  <div v-else-if="!data" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
   <div v-else class="space-y-4">
     <!-- 概览 -->
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <div class="rounded-xl border border-[#1E2433] bg-[#0F131C] p-3">
-        <div class="text-[10px] text-slate-500">最近财报日期</div>
-        <div class="font-mono text-sm font-bold text-white">{{ formatDate(lastReported?.report_date) }}</div>
+      <div class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-3">
+        <div class="text-[10px] text-[hsl(var(--muted-foreground))]">最近财报日期</div>
+        <div class="font-mono text-sm font-bold text-[hsl(var(--foreground))]">{{ formatDate(lastReported?.report_date) }}</div>
       </div>
-      <div class="rounded-xl border border-[#1E2433] bg-[#0F131C] p-3">
-        <div class="text-[10px] text-slate-500">下次预计财报日期</div>
-        <div class="font-mono text-sm font-bold text-white">{{ formatDate(overview?.next_earnings_date) }}</div>
+      <div class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-3">
+        <div class="text-[10px] text-[hsl(var(--muted-foreground))]">下次预计财报日期</div>
+        <div class="font-mono text-sm font-bold text-[hsl(var(--foreground))]">{{ formatDate(overview?.next_earnings_date) }}</div>
       </div>
-      <div class="rounded-xl border border-[#1E2433] bg-[#0F131C] p-3">
-        <div class="text-[10px] text-slate-500">下次 EPS 一致预期</div>
-        <div class="font-mono text-sm font-bold text-white">
+      <div class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-3">
+        <div class="text-[10px] text-[hsl(var(--muted-foreground))]">下次 EPS 一致预期</div>
+        <div class="font-mono text-sm font-bold text-[hsl(var(--foreground))]">
           {{ formatUsdPerShare(overview?.eps_estimate_avg ?? null) }}
-          <span class="text-[10px] text-slate-500">({{ formatUsdPerShare(overview?.eps_estimate_low ?? null) }} ~ {{ formatUsdPerShare(overview?.eps_estimate_high ?? null) }})</span>
+          <span class="text-[10px] text-[hsl(var(--muted-foreground))]">({{ formatUsdPerShare(overview?.eps_estimate_low ?? null) }} ~ {{ formatUsdPerShare(overview?.eps_estimate_high ?? null) }})</span>
         </div>
       </div>
-      <div class="rounded-xl border border-[#1E2433] bg-[#0F131C] p-3">
-        <div class="text-[10px] text-slate-500">下次营收一致预期</div>
-        <div class="font-mono text-sm font-bold text-white">{{ formatCompactUsd(overview?.revenue_estimate_avg ?? null) }}</div>
+      <div class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-3">
+        <div class="text-[10px] text-[hsl(var(--muted-foreground))]">下次营收一致预期</div>
+        <div class="font-mono text-sm font-bold text-[hsl(var(--foreground))]">{{ formatCompactUsd(overview?.revenue_estimate_avg ?? null) }}</div>
       </div>
     </div>
 
     <!-- EPS Surprise 历史 + 财报后价格反应 -->
-    <div class="rounded-2xl border border-[#1E2433] bg-[#0F131C] p-4">
-      <h3 class="mb-1 text-xs font-bold text-slate-300">EPS 预期差历史（Surprise = (实际-预期)/|预期|）</h3>
-      <p class="mb-3 text-[10px] text-slate-500">
+    <div class="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-4">
+      <h3 class="mb-1 text-xs font-bold text-[hsl(var(--muted-foreground))]">EPS 预期差历史（Surprise = (实际-预期)/|预期|）</h3>
+      <p class="mb-3 text-[10px] text-[hsl(var(--muted-foreground))]">
         营收 Surprise 历史需要"过去每期发布前的营收一致预期"，yfinance 免费接口只提供当前/未来周期的一致预期、不提供历史时点快照，这里暂时无法计算，标注为数据不足，不编造。
         盘后涨跌需要分钟级盘后行情，免费接口同样拿不到；下一交易日/5个交易日涨跌用真实日线收盘价计算。
       </p>
@@ -128,8 +128,8 @@ const PERIOD_LABEL: Record<string, string> = { '0q': '本季度', '+1q': '下季
     </div>
 
     <!-- 营收/EPS 一致预期 -->
-    <div class="rounded-2xl border border-[#1E2433] bg-[#0F131C] p-4">
-      <h3 class="mb-3 text-xs font-bold text-slate-300">分析师一致预期（营收）</h3>
+    <div class="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-4">
+      <h3 class="mb-3 text-xs font-bold text-[hsl(var(--muted-foreground))]">分析师一致预期（营收）</h3>
       <Table :columns="revenueEstimateColumns" :data-source="data.revenue_estimate" :pagination="false" row-key="period" size="small">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'period'">{{ PERIOD_LABEL[record.period] || record.period }}</template>
@@ -140,9 +140,9 @@ const PERIOD_LABEL: Record<string, string> = { '0q': '本季度', '+1q': '下季
     </div>
 
     <!-- 分析师评级变化 -->
-    <div class="rounded-2xl border border-[#1E2433] bg-[#0F131C] p-4">
+    <div class="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-4">
       <div class="mb-3 flex items-center justify-between">
-        <h3 class="text-xs font-bold text-slate-300">最近90天分析师评级变化</h3>
+        <h3 class="text-xs font-bold text-[hsl(var(--muted-foreground))]">最近90天分析师评级变化</h3>
         <div class="flex gap-2 text-xs font-mono">
           <Tag color="success">上调 {{ data.recent_90d_upgrades ?? NO_DATA_TEXT }}</Tag>
           <Tag color="error">下调 {{ data.recent_90d_downgrades ?? NO_DATA_TEXT }}</Tag>

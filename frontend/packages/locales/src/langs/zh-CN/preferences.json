@@ -153,6 +153,9 @@
       "neutral": "中性色",
       "slate": "石板灰",
       "gray": "中灰色",
+      "nord": "诺德冰蓝",
+      "dracula": "德古拉紫",
+      "tokyoNight": "东京夜",
       "custom": "自定义"
     }
   },

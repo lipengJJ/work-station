@@ -85,6 +85,15 @@ function typeView(name: BuiltinThemeType) {
     case 'zinc': {
       return $t('preferences.theme.builtin.zinc');
     }
+    case 'nord': {
+      return $t('preferences.theme.builtin.nord');
+    }
+    case 'dracula': {
+      return $t('preferences.theme.builtin.dracula');
+    }
+    case 'tokyo-night': {
+      return $t('preferences.theme.builtin.tokyoNight');
+    }
   }
 }
 

@@ -19,6 +19,7 @@ save_to_xlsx，但没有直接调用 Data_Spider.spider_some_search_note —— 
 import ast
 import json
 import queue
+import random
 import shutil
 import threading
 import time
@@ -36,6 +37,7 @@ from app.xhs.models import XhsCollectStats, XhsTaskExtra, XhsTaskPendingOp
 from app.xhs.services import note_cache, note_preprocess, note_structurer, token_store
 from app.xhs.services.spider import Data_Spider
 from app.xhs.services.utils.data_util import download_note, save_to_xlsx
+from app.xhs.services.xhs_errors import XhsAuthError, XhsError, XhsNotFoundError, XhsRateLimitError
 
 STORAGE_DIR = Path(__file__).resolve().parent.parent.parent / "storage" / "xhs_tasks"
 
@@ -107,7 +109,7 @@ def create_task(db: Session, params: dict) -> int:
     return task_id
 
 
-def start_incremental_task(db: Session, task_id: int, increment_count: int) -> tuple[bool, str]:
+def start_incremental_task(db: Session, task_id: int, increment_count: int, download_video: bool | None = None, fetch_comments: bool | None = None) -> tuple[bool, str]:
     """
     供 controller 调用：校验 + 把任务标成排队中 + 记下这是一次增量采集 + 入队。
     实际抓取逻辑在 _run_incremental_task，跑在 worker 线程里。
@@ -127,6 +129,17 @@ def start_incremental_task(db: Session, task_id: int, increment_count: int) -> t
         db.add(pending_op)
     pending_op.op_type = "incremental"
     pending_op.payload_json = json.dumps({"increment_count": increment_count}, ensure_ascii=False)
+    # 增量采集的覆盖开关（下载视频/抓取评论）：显式传了（非 None）就覆盖任务的持久化参数，
+    # _run_incremental_task 读 params 时即生效；不传沿用原设置。
+    # 注意必须 dict(...) 复制一份再赋值——直接原地改再赋回同一对象，SQLAlchemy
+    # 认为属性值未变化，不会生成 UPDATE，参数就静默丢掉了。
+    if download_video is not None or fetch_comments is not None:
+        params = dict(json.loads(task.params)) if isinstance(task.params, str) else dict(task.params or {})
+        if download_video is not None:
+            params["download_video"] = download_video
+        if fetch_comments is not None:
+            params["fetch_comments"] = fetch_comments
+        task.params = json.dumps(params, ensure_ascii=False) if isinstance(task.params, str) else params
     db.commit()
 
     enqueue_incremental_task(task_id, increment_count)
@@ -136,6 +149,161 @@ def start_incremental_task(db: Session, task_id: int, increment_count: int) -> t
 def _clear_pending_op(db: Session, task_id: int) -> None:
     db.query(XhsTaskPendingOp).filter(XhsTaskPendingOp.task_id == task_id).delete()
     db.commit()
+
+
+# ------------------------------------------------------------------ 补抓评论 ----
+# "更新评论"按钮：对任务里还没有评论的笔记尝试补抓（Playwright 页面级爬取）。
+# 用独立后台线程跑（与采集 worker 串行队列互不干扰），重复触发用 set 保护。
+
+_missing_comments_lock = threading.Lock()
+_missing_comments_running: set[int] = set()
+
+
+def _notes_with_existing_comments(db: Session, note_ids: list[str], task_id: int) -> set[str]:
+    """返回已有评论的 note_id 集合：评论表 + 任务 comments_json 里出现过的都算。"""
+    have = set()
+    if not note_ids:
+        return have
+    # 1) 评论写穿层（新链路）
+    from app.xhs.models.xhs_note_comment import XhsNoteComment
+    rows = (
+        db.query(XhsNoteComment.note_id)
+        .filter(XhsNoteComment.note_id.in_(note_ids))
+        .distinct()
+        .all()
+    )
+    have.update(r[0] for r in rows)
+    # 2) 任务 comments_json（旧链路）
+    extra = db.get(XhsTaskExtra, task_id)
+    if extra and extra.comments_json:
+        try:
+            comments = json.loads(extra.comments_json) or []
+            have.update(c.get("note_id") for c in comments if c.get("note_id"))
+        except (TypeError, ValueError):
+            pass
+    return have
+
+
+def _run_missing_comments_backfill(task_id: int) -> None:
+    """后台线程：对任务里没有评论的笔记逐篇补抓评论（流式落库 + 合并 comments_json）。"""
+    from app.xhs.services.client.xhs_crawler_client import COMMENT_PAGE_INTERVAL_SECONDS
+    from app.xhs.services.comment_store import save_comment_batch
+    from app.xhs.services.spider import Data_Spider
+    from app.xhs.services.xhs_errors import XhsAuthError, XhsRateLimitError
+
+    db = SessionLocal()
+    try:
+        task = db.get(Task, task_id)
+        extra = db.get(XhsTaskExtra, task_id)
+        if not task or not extra:
+            return
+        cookies_str = token_store.get_cookies_str(db)
+        if not cookies_str:
+            logger.warning(f"任务 {task_id} 补抓评论跳过：未配置 token/cookie")
+            return
+
+        notes = json.loads(extra.result_json) if extra.result_json else []
+        note_ids = [n.get("note_id") for n in notes if n.get("note_id")]
+        already = _notes_with_existing_comments(db, note_ids, task_id)
+        missing = [n for n in notes if n.get("note_id") not in already]
+        logger.info(f"任务 {task_id} 补抓评论：共 {len(note_ids)} 篇，已有评论 {len(already)} 篇，待补 {len(missing)} 篇")
+
+        if not missing:
+            extra.phase = "comments_backfill_done"
+            db.commit()
+            return
+
+        extra.phase = "fetching_missing_comments"
+        extra.progress_current = 0
+        extra.progress_total = len(missing)
+        db.commit()
+
+        spider = Data_Spider()
+        new_comments: list[dict] = []
+        seen_ids = {c.get("comment_id") for c in (json.loads(extra.comments_json) if extra.comments_json else []) if c.get("comment_id")}
+        rate_hits = 0
+        for i, note_info in enumerate(missing):
+            try:
+                def _on_batch(note_id: str, batch: list) -> None:
+                    try:
+                        save_comment_batch(db, batch)
+                    except Exception as e:
+                        logger.warning(f"补抓评论落库失败（note={note_id}）: {e}")
+                    fresh = [c for c in batch if c.get("comment_id") not in seen_ids]
+                    new_comments.extend(fresh)
+                    seen_ids.update(c.get("comment_id") for c in fresh)
+
+                _, _, comment_list = spider.spider_note_comments(
+                    note_info, cookies_str,
+                    interval_seconds=COMMENT_PAGE_INTERVAL_SECONDS,
+                    on_batch=_on_batch,
+                )
+                rate_hits = 0
+            except XhsAuthError as e:
+                logger.error(f"任务 {task_id} 补抓评论因登录态失效终止: {e}")
+                break
+            except XhsRateLimitError as e:
+                rate_hits += 1
+                if rate_hits >= 3:
+                    logger.error(f"任务 {task_id} 补抓评论连续触发风控，停止: {e}")
+                    break
+                logger.warning(f"补抓评论触发风控（{e}），冷却 90s")
+                time.sleep(90)
+            except Exception as e:
+                logger.warning(f"任务 {task_id} 笔记 {note_info.get('note_id')} 补抓评论失败，跳过: {e}")
+            extra.progress_current = i + 1
+            db.commit()
+            time.sleep(0.8 + random.uniform(0, 0.6))
+
+        # 合并进 comments_json（按 comment_id 去重），保持 Excel/预览一致
+        if new_comments:
+            existing = json.loads(extra.comments_json) if extra.comments_json else []
+            existing_ids = {c.get("comment_id") for c in existing if c.get("comment_id")}
+            merged = existing + [c for c in new_comments if c.get("comment_id") not in existing_ids]
+            extra.comments_json = json.dumps(merged, ensure_ascii=False)
+        extra.phase = "comments_backfill_done"
+        extra.progress_current = len(missing)
+        db.commit()
+        logger.info(f"任务 {task_id} 补抓评论完成：新增 {len(new_comments)} 条，涉及 {len(missing)} 篇笔记")
+    except Exception as e:
+        logger.exception(f"任务 {task_id} 补抓评论异常")
+        try:
+            extra = db.get(XhsTaskExtra, task_id)
+            if extra:
+                extra.phase = "comments_backfill_failed"
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        with _missing_comments_lock:
+            _missing_comments_running.discard(task_id)
+        db.close()
+
+
+def start_missing_comments_backfill(db: Session, task_id: int) -> tuple[bool, str, dict]:
+    """
+    "更新评论"入口：校验 + 统计待补数量 + 起后台线程补抓，立刻返回。
+    返回 (ok, msg, stats)，stats 含 total / already_have / to_fetch。
+    """
+    task = db.get(Task, task_id)
+    if not task or task.module != "xhs":
+        return False, "任务不存在", {}
+    if task.status == "running":
+        return False, "任务正在采集中，请等待完成后再操作", {}
+    with _missing_comments_lock:
+        if task_id in _missing_comments_running:
+            return False, "该任务正在补抓评论中，请稍候", {}
+        _missing_comments_running.add(task_id)
+
+    extra = db.get(XhsTaskExtra, task_id)
+    notes = json.loads(extra.result_json) if extra and extra.result_json else []
+    note_ids = [n.get("note_id") for n in notes if n.get("note_id")]
+    already = _notes_with_existing_comments(db, note_ids, task_id)
+    to_fetch = len(note_ids) - len(already)
+    stats = {"total": len(note_ids), "already_have": len(already), "to_fetch": to_fetch}
+
+    threading.Thread(target=_run_missing_comments_backfill, args=(task_id,), daemon=True).start()
+    return True, "已开始为没有评论的笔记补抓评论", stats
 
 
 def _list_files(task_id: int) -> dict:
@@ -449,6 +617,14 @@ def delete_notes(db: Session, task_id: int, note_ids: list):
     extra.note_count = len(remaining_notes)
     task.result_summary = f"完成，{len(remaining_notes)} 篇笔记"
     db.commit()
+
+    # 评论写穿层联动：同步删除这些笔记在 xhs_note_comments 表里的评论行
+    try:
+        from app.xhs.services.comment_store import delete_comments_for_notes
+        delete_comments_for_notes(db, list(note_id_set))
+    except Exception as e:
+        logger.warning(f"删除笔记时清理评论表失败（任务 {task_id}）: {e}")
+
     return True, "ok", ""
 
 
@@ -507,31 +683,66 @@ def _fetch_notes_from_candidates(
     low_content_count = 0
     total = len(raw_notes)
     _set_progress(db, extra, "fetching_notes", 0, total)
+
+    # 抓详情：并发 2 + 主线程按序收集（每篇之间随机间隔）。并发 2 是防封控与速度的
+    # 中间档——并发 >2 实测会提高风控触发概率，1 又偏慢。
+    # 每个 worker 用独立的 SessionLocal（SQLAlchemy session 非线程安全）。
+    import concurrent.futures
+    from app.core.database import SessionLocal as _SessionLocal
+
+    candidates: list[tuple[int, str, str]] = []  # (idx, note_id, note_url)
     for i, n in enumerate(raw_notes):
         note_id = n["id"]
         if note_id not in exclude_ids:
             note_url = f"https://www.xiaohongshu.com/explore/{note_id}?xsec_token={n['xsec_token']}"
-            try:
-                # 全局缓存命中且未过期就直接复用，不重复调用 spider_note()（TODO.md
-                # "小红书笔记数据全局去重缓存"）
-                ok, note_msg, note_info = note_cache.get_or_fetch_note(
-                    db, note_url, note_id, cookies_str, data_spider
-                )
-                if ok and note_info:
-                    # 求攻略/求推荐类没有实质内容的笔记，采集阶段直接过滤掉，不进
-                    # 结果列表——不消耗后面的媒体下载、结构化提炼、AI 分析 token
-                    # （《小红书笔记结构化预处理-技术方案.md》，用户明确要求"不用采集了"）
-                    if note_preprocess.is_low_content(note_info.get("title", ""), note_info.get("desc", "")):
-                        note_structurer.mark_skipped_low_content(db, note_info)
-                        low_content_count += 1
-                    else:
-                        new_notes.append(note_info)
-                        exclude_ids.add(note_id)
+            candidates.append((i, note_id, note_url))
+
+    def _fetch_one(args: tuple[int, str, str]) -> tuple[int, bool, str, Optional[dict]]:
+        idx, note_id, note_url = args
+        session = _SessionLocal()
+        try:
+            # 全局缓存命中且未过期就直接复用，不重复调用 spider_note()（TODO.md
+            # "小红书笔记数据全局去重缓存"）；未命中抓取，主线程按序收集
+            ok, note_msg, note_info = note_cache.get_or_fetch_note(
+                session, note_url, note_id, cookies_str, data_spider
+            )
+            return idx, ok, note_msg, note_info
+        finally:
+            session.close()
+
+    results: dict[int, tuple[bool, str, Optional[dict]]] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {
+            executor.submit(_fetch_one, c): c[0]
+            for c in candidates
+        }
+        for future in concurrent.futures.as_completed(futures):
+            idx, ok, note_msg, note_info = future.result()
+            # 收集节奏限速（带随机抖动），控制整体请求密度
+            time.sleep(0.3 + random.uniform(0, 0.4))
+            results[idx] = (ok, note_msg, note_info)
+
+    for i, n in enumerate(raw_notes):
+        note_id = n["id"]
+        if note_id in exclude_ids:
+            continue
+        ok, note_msg, note_info = results.get(i, (False, "未进入并发队列", None))
+        try:
+            if ok and note_info:
+                # 求攻略/求推荐类没有实质内容的笔记，采集阶段直接过滤掉，不进
+                # 结果列表——不消耗后面的媒体下载、结构化提炼、AI 分析 token
+                # （《小红书笔记结构化预处理-技术方案.md》，用户明确要求"不用采集了"）
+                if note_preprocess.is_low_content(note_info.get("title", ""), note_info.get("desc", "")):
+                    note_structurer.mark_skipped_low_content(db, note_info)
+                    low_content_count += 1
                 else:
-                    fetch_failed_count += 1
-            except Exception as e:
+                    new_notes.append(note_info)
+                    exclude_ids.add(note_id)
+            else:
                 fetch_failed_count += 1
-                logger.warning(f"任务 {task_id} 笔记详情抓取失败，跳过: {e}")
+        except Exception as e:
+            fetch_failed_count += 1
+            logger.warning(f"任务 {task_id} 笔记详情抓取失败，跳过: {e}")
         _set_progress(db, extra, "fetching_notes", i + 1, total)
         if limit is not None and len(new_notes) >= limit:
             break
@@ -587,6 +798,17 @@ def _run_task(task_id: int) -> None:
         if not cookies_str:
             task.status = "failed"
             task.result_summary = "未配置 token/cookie"
+            task.finished_at = datetime.now(timezone.utc)
+            extra.phase = "failed"
+            db.commit()
+            _clear_pending_op(db, task_id)
+            return
+
+        # 登录态心跳探测：cookie 失效时任务直接失败，提示重新登录，而不是跑到一半才发现
+        valid, valid_msg = token_store.validate(db)
+        if not valid:
+            task.status = "failed"
+            task.result_summary = valid_msg
             task.finished_at = datetime.now(timezone.utc)
             extra.phase = "failed"
             db.commit()
@@ -649,9 +871,11 @@ def _run_task(task_id: int) -> None:
             if save_choice == "all" or "media" in save_choice:
                 media_dir.mkdir(parents=True, exist_ok=True)
                 _set_progress(db, extra, "downloading_media", 0, len(parsed_notes))
+                # 视频下载开关：任务参数 download_video=False（默认）时视频只保留地址不下载文件
+                download_video = bool(params.get("download_video", False))
                 for i, note_info in enumerate(parsed_notes):
                     try:
-                        download_note(note_info, str(media_dir), save_choice)
+                        download_note(note_info, str(media_dir), save_choice, download_video=download_video)
                     except Exception as e:
                         logger.error(f"笔记 {note_info.get('note_id')} 素材下载失败，跳过: {e}")
                     _set_progress(db, extra, "downloading_media", i + 1, len(parsed_notes))
@@ -659,12 +883,38 @@ def _run_task(task_id: int) -> None:
             all_comments = []
             if fetch_comments:
                 _set_progress(db, extra, "fetching_comments", 0, len(parsed_notes))
+                # 风控熔断（保护账号/cookie 不被风控打上标记）：
+                # 连续 2 次风控信号 → 冷却 90s 再继续；连续 3 次 → 任务失败，让用户
+                # 歇一会儿再试，而不是继续请求把账号/登录态彻底搞坏。
+                rate_hits = 0
                 for i, note_info in enumerate(parsed_notes):
                     try:
+                        # 评论边爬边批量落库（写穿层），崩溃续采不丢已爬评论；
+                        # all_comments 继续累积，保证 comments_json / Excel 行为不变
+                        def _on_comment_batch(note_id: str, batch: list) -> None:
+                            from app.xhs.services.comment_store import save_comment_batch
+                            try:
+                                save_comment_batch(db, batch)
+                            except Exception as e:
+                                logger.warning(f"评论落库失败（note={note_id}）: {e}")
+
                         _, _, comment_list = data_spider.spider_note_comments(
-                            note_info, cookies_str, interval_seconds=comment_interval, max_comments=max_comments,
+                            note_info, cookies_str, interval_seconds=comment_interval,
+                            max_comments=max_comments, on_batch=_on_comment_batch,
                         )
                         all_comments.extend(comment_list)
+                        rate_hits = 0  # 成功一篇就清零风控计数
+                    except XhsNotFoundError as e:
+                        logger.warning(f"笔记 {note_info.get('note_id')} 评论不存在，跳过: {e}")
+                    except XhsRateLimitError as e:
+                        rate_hits += 1
+                        if rate_hits >= 3:
+                            raise
+                        logger.warning(
+                            f"笔记 {note_info.get('note_id')} 触发风控（{e}），"
+                            f"连续第 {rate_hits} 次，冷却 90s 后继续"
+                        )
+                        time.sleep(90)
                     except Exception as e:
                         logger.error(f"笔记 {note_info.get('note_id')} 评论抓取失败，跳过: {e}")
                     _set_progress(db, extra, "fetching_comments", i + 1, len(parsed_notes))
@@ -686,6 +936,24 @@ def _run_task(task_id: int) -> None:
             task.status = "success"
             task.result_summary = f"完成，{len(parsed_notes)} 篇笔记"
             task.finished_at = datetime.now(timezone.utc)
+            db.commit()
+            _clear_pending_op(db, task_id)
+        except XhsAuthError as e:
+            # 登录态失效是"确定性的"失败：重试没有意义，给出明确提示让用户重新登录
+            logger.error(f"任务 {task_id} 因登录态失效终止: {e}")
+            task.status = "failed"
+            task.result_summary = f"登录态失效，请重新登录后再试（{e}）"
+            task.finished_at = datetime.now(timezone.utc)
+            extra.phase = "failed"
+            db.commit()
+            _clear_pending_op(db, task_id)
+        except XhsRateLimitError as e:
+            # 风控熔断触发：任务失败保护账号/cookie，提示用户稍后再试
+            logger.error(f"任务 {task_id} 因连续触发风控终止: {e}")
+            task.status = "failed"
+            task.result_summary = "触发平台风控（连续多次），已自动停止以保护账号。建议等待一段时间（如 1-2 小时）后再试"
+            task.finished_at = datetime.now(timezone.utc)
+            extra.phase = "failed"
             db.commit()
             _clear_pending_op(db, task_id)
         except Exception as e:
@@ -728,6 +996,17 @@ def _run_incremental_task(task_id: int, increment_count: int) -> None:
             _clear_pending_op(db, task_id)
             return
 
+        # 登录态心跳探测：cookie 失效时任务直接失败，提示重新登录，而不是跑到一半才发现
+        valid, valid_msg = token_store.validate(db)
+        if not valid:
+            task.status = "failed"
+            task.result_summary = valid_msg
+            task.finished_at = datetime.now(timezone.utc)
+            extra.phase = "failed"
+            db.commit()
+            _clear_pending_op(db, task_id)
+            return
+
         task.status = "running"
         task.started_at = datetime.now(timezone.utc)
         db.commit()
@@ -761,11 +1040,14 @@ def _run_incremental_task(task_id: int, increment_count: int) -> None:
                 len(existing_notes) + increment_count * 3,
             ]
             for attempt, require_num in enumerate(attempt_targets, start=1):
+                # 增量采集固定按"最新发布"排序（sort_type_choice=1, time_descending）：
+                # 增量的语义就是补齐新发布的笔记，只有按最新排序才能把候选池里的新增内容
+                # 排到前面；沿用任务原排序（可能是综合/点赞）会漏掉新笔记甚至反复拿到旧的。
                 success, msg, raw_notes = data_spider.xhs_apis.search_some_note(
                     keyword,
                     min(require_num, 1000),
                     cookies_str,
-                    params.get("sort_type_choice", 0),
+                    1,
                     params.get("note_type", 0),
                     params.get("note_time", 0),
                     params.get("note_range", 0),
@@ -801,9 +1083,11 @@ def _run_incremental_task(task_id: int, increment_count: int) -> None:
             if new_notes and (save_choice == "all" or "media" in save_choice):
                 media_dir.mkdir(parents=True, exist_ok=True)
                 _set_progress(db, extra, "downloading_media", 0, len(new_notes))
+                # 视频下载开关（增量采集与全新采集一致）：默认不下载视频文件
+                download_video = bool(params.get("download_video", False))
                 for i, note_info in enumerate(new_notes):
                     try:
-                        download_note(note_info, str(media_dir), save_choice)
+                        download_note(note_info, str(media_dir), save_choice, download_video=download_video)
                     except Exception as e:
                         logger.error(f"笔记 {note_info.get('note_id')} 素材下载失败，跳过: {e}")
                     _set_progress(db, extra, "downloading_media", i + 1, len(new_notes))
@@ -811,12 +1095,24 @@ def _run_incremental_task(task_id: int, increment_count: int) -> None:
             all_comments = json.loads(extra.comments_json) if extra.comments_json else []
             if new_notes and fetch_comments:
                 _set_progress(db, extra, "fetching_comments", 0, len(new_notes))
+                # 风控熔断（与全新采集一致）：连续 2 次冷却 90s，连续 3 次任务失败保护账号
+                rate_hits = 0
                 for i, note_info in enumerate(new_notes):
                     try:
                         _, _, comment_list = data_spider.spider_note_comments(
                             note_info, cookies_str, interval_seconds=comment_interval, max_comments=max_comments,
                         )
                         all_comments.extend(comment_list)
+                        rate_hits = 0
+                    except XhsRateLimitError as e:
+                        rate_hits += 1
+                        if rate_hits >= 3:
+                            raise
+                        logger.warning(
+                            f"笔记 {note_info.get('note_id')} 触发风控（{e}），"
+                            f"连续第 {rate_hits} 次，冷却 90s 后继续"
+                        )
+                        time.sleep(90)
                     except Exception as e:
                         logger.error(f"笔记 {note_info.get('note_id')} 评论抓取失败，跳过: {e}")
                     _set_progress(db, extra, "fetching_comments", i + 1, len(new_notes))
@@ -843,6 +1139,23 @@ def _run_incremental_task(task_id: int, increment_count: int) -> None:
                 else f"增量采集完成，新增 {len(new_notes)} 篇，共 {len(merged_notes)} 篇笔记"
             )
             task.finished_at = datetime.now(timezone.utc)
+            db.commit()
+            _clear_pending_op(db, task_id)
+        except XhsAuthError as e:
+            logger.error(f"任务 {task_id} 因登录态失效终止: {e}")
+            task.status = "failed"
+            task.result_summary = f"登录态失效，请重新登录后再试（{e}）"
+            task.finished_at = datetime.now(timezone.utc)
+            extra.phase = "failed"
+            db.commit()
+            _clear_pending_op(db, task_id)
+        except XhsRateLimitError as e:
+            # 风控熔断触发：任务失败保护账号/cookie，提示用户稍后再试
+            logger.error(f"任务 {task_id} 因连续触发风控终止: {e}")
+            task.status = "failed"
+            task.result_summary = "触发平台风控（连续多次），已自动停止以保护账号。建议等待一段时间（如 1-2 小时）后再试"
+            task.finished_at = datetime.now(timezone.utc)
+            extra.phase = "failed"
             db.commit()
             _clear_pending_op(db, task_id)
         except Exception as e:

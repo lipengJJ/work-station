@@ -444,3 +444,81 @@
   --sidebar-deep: 224 71.4% 4.1%;
   --header: 224 71.4% 4.1%;
 }
+
+/* ============ Nord dark ============ */
+.dark[data-theme='nord'],
+[data-theme='nord'] .dark {
+  --background: 220 16% 22%;
+  --background-deep: 220 16% 16%;
+  --foreground: 218 27% 82%;
+  --card: 220 16% 22%;
+  --card-foreground: 218 27% 82%;
+  --popover: 220 16% 22%;
+  --popover-foreground: 218 27% 82%;
+  --muted: 220 16% 28%;
+  --muted-foreground: 218 16% 62%;
+  --primary-foreground: 0 0% 8%;
+  --secondary: 220 16% 28%;
+  --secondary-foreground: 218 27% 82%;
+  --accent: 220 16% 28%;
+  --accent-foreground: 218 27% 82%;
+  --border: 220 16% 33%;
+  --input: 220 16% 33%;
+  --ring: 200 39% 67%;
+  --sidebar: 220 16% 18%;
+  --sidebar-deep: 220 16% 14%;
+  --header: 220 16% 18%;
+  color-scheme: dark;
+}
+
+/* ============ Dracula dark ============ */
+.dark[data-theme='dracula'],
+[data-theme='dracula'] .dark {
+  --background: 231 15% 18%;
+  --background-deep: 231 18% 13%;
+  --foreground: 60 30% 96%;
+  --card: 231 15% 18%;
+  --card-foreground: 60 30% 96%;
+  --popover: 231 15% 18%;
+  --popover-foreground: 60 30% 96%;
+  --muted: 232 14% 24%;
+  --muted-foreground: 60 12% 70%;
+  --primary-foreground: 0 0% 8%;
+  --secondary: 232 14% 24%;
+  --secondary-foreground: 60 30% 96%;
+  --accent: 232 14% 26%;
+  --accent-foreground: 60 30% 96%;
+  --border: 232 14% 28%;
+  --input: 232 14% 28%;
+  --ring: 265 89% 78%;
+  --sidebar: 231 15% 16%;
+  --sidebar-deep: 231 18% 12%;
+  --header: 231 15% 16%;
+  color-scheme: dark;
+}
+
+/* ============ Tokyo Night dark ============ */
+.dark[data-theme='tokyo-night'],
+[data-theme='tokyo-night'] .dark {
+  --background: 234 18% 13%;
+  --background-deep: 240 15% 10%;
+  --foreground: 229 35% 75%;
+  --card: 234 18% 13%;
+  --card-foreground: 229 35% 75%;
+  --popover: 234 18% 13%;
+  --popover-foreground: 229 35% 75%;
+  --muted: 233 15% 20%;
+  --muted-foreground: 230 20% 60%;
+  --primary-foreground: 0 0% 8%;
+  --secondary: 233 15% 20%;
+  --secondary-foreground: 229 35% 75%;
+  --accent: 233 15% 22%;
+  --accent-foreground: 229 35% 75%;
+  --border: 233 15% 25%;
+  --input: 233 15% 25%;
+  --ring: 220 89% 72%;
+  --sidebar: 234 18% 11%;
+  --sidebar-deep: 240 15% 8%;
+  --header: 234 18% 11%;
+  color-scheme: dark;
+}

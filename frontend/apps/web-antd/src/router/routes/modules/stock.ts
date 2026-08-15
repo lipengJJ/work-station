@@ -27,7 +27,9 @@ const routes: RouteRecordRaw[] = [
         name: 'StockQuotes',
         path: 'quotes',
         component: () => import('#/views/stock/quotes/index.vue'),
-        meta: { title: '行情与K线' },
+        // K线查看已整合进自选股页内的抽屉，不再单独占一个菜单项；
+        // 路由保留，直接访问 /stock/quotes 仍可用完整版 K线分析页
+        meta: { title: '行情与K线', hideInMenu: true },
       },
       {
         name: 'StockFundamentals',

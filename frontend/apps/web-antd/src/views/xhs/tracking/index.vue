@@ -84,7 +84,7 @@ function frequencyLabel(minutes: number) {
 
 // 状态点：已暂停(enabled=false) / 扫描中(running) / 失败(failed) / 运行中(idle 且 enabled)
 function statusInfo(task: XhsApi.TrackingTask) {
-  if (!task.enabled) return { label: '已暂停', dot: 'bg-slate-500', text: 'text-slate-400' };
+  if (!task.enabled) return { label: '已暂停', dot: 'bg-slate-500', text: 'text-[hsl(var(--muted-foreground))]' };
   if (task.status === 'running') return { label: '扫描中', dot: 'bg-amber-400 animate-pulse', text: 'text-amber-300' };
   if (task.status === 'failed') return { label: '失败', dot: 'bg-rose-500', text: 'text-rose-400' };
   return { label: '运行中', dot: 'bg-emerald-400', text: 'text-emerald-400' };
@@ -311,13 +311,13 @@ fetchTasks();
 
 <template>
   <Page :auto-content-height="true" content-class="!p-0">
-    <div class="custom-scrollbar flex h-full flex-1 flex-col overflow-y-auto bg-[#0B0E14] p-6 select-none">
+    <div class="custom-scrollbar flex h-full flex-1 flex-col overflow-y-auto bg-[hsl(var(--background-deep))] p-6 select-none">
       <!-- ============================================== 追踪任务列表 -->
       <template v-if="!selectedTask">
         <div class="mb-6 shrink-0 flex items-center justify-between">
           <div>
-            <h1 class="text-xl font-extrabold text-white">追踪任务</h1>
-            <p class="mt-1 text-xs text-slate-400">按关键词周期性搜索，命中符合条件的新笔记会自动记录下来</p>
+            <h1 class="text-xl font-extrabold text-[hsl(var(--foreground))]">追踪任务</h1>
+            <p class="mt-1 text-xs text-[hsl(var(--muted-foreground))]">按关键词周期性搜索，命中符合条件的新笔记会自动记录下来</p>
           </div>
           <button class="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500" @click="openCreateModal">
             <Plus class="h-3.5 w-3.5" />
@@ -325,14 +325,14 @@ fetchTasks();
           </button>
         </div>
 
-        <div class="shrink-0 overflow-hidden rounded-2xl border border-[#1E2433] bg-[#0F131C] shadow-xl">
+        <div class="shrink-0 overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] shadow-xl">
           <div v-if="!tasksLoading && tasks.length === 0" class="flex flex-col items-center justify-center gap-2 p-12 text-center">
-            <p class="text-sm font-semibold text-white">还没有追踪任务</p>
-            <p class="text-xs text-slate-400">新建一个吧，比如「新加坡二手显示器」</p>
+            <p class="text-sm font-semibold text-[hsl(var(--foreground))]">还没有追踪任务</p>
+            <p class="text-xs text-[hsl(var(--muted-foreground))]">新建一个吧，比如「新加坡二手显示器」</p>
           </div>
           <div v-else class="overflow-x-auto">
             <table class="w-full text-left text-xs">
-              <thead class="border-b border-[#1E2433] bg-[#121622] font-mono text-[11px] text-slate-400 uppercase">
+              <thead class="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] font-mono text-[11px] text-[hsl(var(--muted-foreground))] uppercase">
                 <tr>
                   <th class="px-4 py-3">主题 / 关键词 / 状态</th>
                   <th class="px-4 py-3">本次新增</th>
@@ -342,11 +342,11 @@ fetchTasks();
                   <th class="px-4 py-3 text-right">操作</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-[#1E2433]">
-                <tr v-for="task in tasks" :key="task.id" class="transition-colors hover:bg-[#161C2A]">
+              <tbody class="divide-y divide-[hsl(var(--border))]">
+                <tr v-for="task in tasks" :key="task.id" class="transition-colors hover:bg-[hsl(var(--accent))]">
                   <td class="cursor-pointer px-4 py-3" @click="openTask(task)">
-                    <div class="font-semibold text-white">{{ task.name }}</div>
-                    <div class="mt-0.5 flex items-center gap-2 text-[11px] text-slate-500">
+                    <div class="font-semibold text-[hsl(var(--foreground))]">{{ task.name }}</div>
+                    <div class="mt-0.5 flex items-center gap-2 text-[11px] text-[hsl(var(--muted-foreground))]">
                       <span>{{ task.keyword }}</span>
                     </div>
                     <div class="mt-1 flex items-center gap-1.5">
@@ -357,9 +357,9 @@ fetchTasks();
                       </span>
                     </div>
                   </td>
-                  <td class="px-4 py-3 font-mono text-slate-200">{{ task.last_hit_count }}</td>
-                  <td class="px-4 py-3 font-mono text-slate-200">{{ task.total_hit_count }}</td>
-                  <td class="px-4 py-3 text-slate-400">
+                  <td class="px-4 py-3 font-mono text-[hsl(var(--foreground))]">{{ task.last_hit_count }}</td>
+                  <td class="px-4 py-3 font-mono text-[hsl(var(--foreground))]">{{ task.total_hit_count }}</td>
+                  <td class="px-4 py-3 text-[hsl(var(--muted-foreground))]">
                     <template v-if="task.next_run_at">
                       {{ formatDateTime(task.next_run_at) }}
                     </template>
@@ -367,7 +367,7 @@ fetchTasks();
                       <Tooltip title="调度器暂未返回下次执行时间">—</Tooltip>
                     </template>
                     <template v-else>—</template>
-                    <div class="text-[11px] text-slate-600">{{ frequencyLabel(task.interval_minutes) }}</div>
+                    <div class="text-[11px] text-[hsl(var(--muted-foreground))]">{{ frequencyLabel(task.interval_minutes) }}</div>
                   </td>
                   <td class="px-4 py-3">
                     <Switch
@@ -388,7 +388,7 @@ fetchTasks();
                         {{ task.status === 'running' ? '扫描中…' : task.status === 'failed' ? '重试' : '立即运行' }}
                       </button>
                       <Dropdown :trigger="['click']">
-                        <button class="rounded-lg p-1.5 text-slate-400 hover:bg-[#1A2030] hover:text-white" aria-label="更多操作">
+                        <button class="rounded-lg p-1.5 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--foreground))]" aria-label="更多操作">
                           <MoreHorizontal class="h-4 w-4" />
                         </button>
                         <template #overlay>
@@ -411,25 +411,25 @@ fetchTasks();
       <!-- ============================================== 命中笔记 -->
       <template v-else>
         <div class="mb-4 shrink-0 flex flex-wrap items-center gap-3">
-          <button class="flex items-center gap-1 rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-slate-300 hover:text-white" @click="backToList">
+          <button class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" @click="backToList">
             <ArrowLeft class="h-3.5 w-3.5" />
             返回列表
           </button>
-          <div class="text-xs text-slate-500">
-            追踪任务 / <span class="text-white">{{ selectedTask.name }}</span>
+          <div class="text-xs text-[hsl(var(--muted-foreground))]">
+            追踪任务 / <span class="text-[hsl(var(--foreground))]">{{ selectedTask.name }}</span>
           </div>
           <Tag color="blue">{{ selectedTask.keyword }}</Tag>
           <Tag>{{ hits.length }} 篇命中</Tag>
         </div>
 
-        <div class="shrink-0 overflow-hidden rounded-2xl border border-[#1E2433] bg-[#0F131C] shadow-xl">
+        <div class="shrink-0 overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] shadow-xl">
           <div v-if="!hitsLoading && hits.length === 0" class="flex flex-col items-center justify-center gap-2 p-12 text-center">
-            <p class="text-sm font-semibold text-white">还没有命中的笔记</p>
-            <p class="text-xs text-slate-400">等下一次扫描，或者返回列表点「立即运行」试试</p>
+            <p class="text-sm font-semibold text-[hsl(var(--foreground))]">还没有命中的笔记</p>
+            <p class="text-xs text-[hsl(var(--muted-foreground))]">等下一次扫描，或者返回列表点「立即运行」试试</p>
           </div>
           <div v-else class="overflow-x-auto">
             <table class="w-full text-left text-xs">
-              <thead class="border-b border-[#1E2433] bg-[#121622] font-mono text-[11px] text-slate-400 uppercase">
+              <thead class="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] font-mono text-[11px] text-[hsl(var(--muted-foreground))] uppercase">
                 <tr>
                   <th class="px-4 py-3">笔记信息</th>
                   <th class="px-4 py-3">发布时间</th>
@@ -439,14 +439,14 @@ fetchTasks();
                 </tr>
               </thead>
               <template v-for="group in hitGroups" :key="group.label">
-                <tbody class="divide-y divide-[#1E2433]">
+                <tbody class="divide-y divide-[hsl(var(--border))]">
                   <tr>
-                    <td colspan="5" class="bg-[#121622] px-4 py-2 text-[11px] font-bold text-slate-400">{{ group.label }}</td>
+                    <td colspan="5" class="bg-[hsl(var(--card))] px-4 py-2 text-[11px] font-bold text-[hsl(var(--muted-foreground))]">{{ group.label }}</td>
                   </tr>
-                  <tr v-for="note in group.notes" :key="note.note_id" class="cursor-pointer transition-colors hover:bg-[#161C2A]" @click="openDetail(note)">
+                  <tr v-for="note in group.notes" :key="note.note_id" class="cursor-pointer transition-colors hover:bg-[hsl(var(--accent))]" @click="openDetail(note)">
                     <td class="px-4 py-3">
                       <div class="flex items-center gap-2.5">
-                        <div class="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-[#181F30]">
+                        <div class="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-[hsl(var(--muted))]">
                           <Image
                             :src="coverProxied(note)"
                             :preview="false"
@@ -457,16 +457,16 @@ fetchTasks();
                           />
                         </div>
                         <div class="min-w-0">
-                          <div class="truncate font-semibold text-white">{{ note.title || '无标题' }}</div>
-                          <div class="text-[11px] text-slate-500">{{ note.nickname }}</div>
+                          <div class="truncate font-semibold text-[hsl(var(--foreground))]">{{ note.title || '无标题' }}</div>
+                          <div class="text-[11px] text-[hsl(var(--muted-foreground))]">{{ note.nickname }}</div>
                         </div>
                       </div>
                     </td>
-                    <td class="px-4 py-3 text-slate-400">{{ note.upload_time }}</td>
-                    <td class="px-4 py-3 font-mono text-slate-300">{{ note.liked_count }}</td>
-                    <td class="px-4 py-3 font-mono text-slate-300">{{ note.comment_count }}</td>
+                    <td class="px-4 py-3 text-[hsl(var(--muted-foreground))]">{{ note.upload_time }}</td>
+                    <td class="px-4 py-3 font-mono text-[hsl(var(--muted-foreground))]">{{ note.liked_count }}</td>
+                    <td class="px-4 py-3 font-mono text-[hsl(var(--muted-foreground))]">{{ note.comment_count }}</td>
                     <td class="px-4 py-3 text-right" @click.stop>
-                      <button class="text-[11px] text-slate-500 hover:text-rose-400" @click="ignoreHit(note)">忽略</button>
+                      <button class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-rose-400" @click="ignoreHit(note)">忽略</button>
                     </td>
                   </tr>
                 </tbody>

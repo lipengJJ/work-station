@@ -62,7 +62,8 @@ function isTaskFormDirty() {
     taskForm.note_type !== d.note_type ||
     taskForm.note_time !== d.note_time ||
     taskForm.note_range !== d.note_range ||
-    taskForm.fetch_comments !== d.fetch_comments
+    taskForm.fetch_comments !== d.fetch_comments ||
+    taskForm.download_video !== d.download_video
   );
 }
 
@@ -139,7 +140,7 @@ async function submitTask() {
     @cancel="handleCancel"
   >
     <Form layout="vertical" @submit.prevent="submitTask">
-      <div class="mb-1 text-xs font-bold text-slate-400">基础信息</div>
+      <div class="mb-1 text-xs font-bold text-[hsl(var(--muted-foreground))]">基础信息</div>
       <FormItem label="关键词" required>
         <Input v-model:value="taskForm.keyword" placeholder="例如：普吉岛酒店推荐" />
       </FormItem>
@@ -156,7 +157,7 @@ async function submitTask() {
         </div>
       </FormItem>
 
-      <div class="mt-4 mb-1 text-xs font-bold text-slate-400">采集范围</div>
+      <div class="mt-4 mb-1 text-xs font-bold text-[hsl(var(--muted-foreground))]">采集范围</div>
       <Row :gutter="12">
         <Col :span="12">
           <FormItem label="采集数量">
@@ -185,11 +186,11 @@ async function submitTask() {
         </Col>
       </Row>
 
-      <div class="mt-2 mb-3 rounded-lg border border-dashed border-[#232B3E] bg-[#121622] px-3 py-2 text-xs text-slate-500">
+      <div class="mt-2 mb-3 rounded-lg border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs text-[hsl(var(--muted-foreground))]">
         点赞 / 收藏范围过滤：需要爬虫和后端支持结果内互动量过滤后才能开放，当前版本暂不提供，避免展示不生效的假筛选项。
       </div>
 
-      <div class="mb-1 text-xs font-bold text-slate-400">评论采集</div>
+      <div class="mb-1 text-xs font-bold text-[hsl(var(--muted-foreground))]">评论采集</div>
       <FormItem>
         <Switch v-model:checked="taskForm.fetch_comments" /> 同时抓取评论
       </FormItem>
@@ -201,13 +202,21 @@ async function submitTask() {
           @update:value="(v) => (taskForm.max_comments_per_note = v == null ? null : Number(v))"
         />
       </FormItem>
+
+      <div class="mt-4 mb-1 text-xs font-bold text-[hsl(var(--muted-foreground))]">素材下载</div>
+      <FormItem>
+        <Switch v-model:checked="taskForm.download_video" /> 下载视频
+        <div class="mt-1 text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+          默认不下载（视频体积大，只保留播放地址）；图片素材始终会保存到本地，勾选后视频一并下载。
+        </div>
+      </FormItem>
     </Form>
 
     <template #footer>
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
           <Button size="small" @click="resetTaskForm">重置</Button>
-          <span class="text-xs text-slate-500">{{ taskFormSummary }}</span>
+          <span class="text-xs text-[hsl(var(--muted-foreground))]">{{ taskFormSummary }}</span>
         </div>
         <div class="flex items-center gap-2">
           <Button @click="handleCancel">取消</Button>

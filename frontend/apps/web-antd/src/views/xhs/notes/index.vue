@@ -9,6 +9,7 @@ import { Page } from '@vben/common-ui';
 import {
   Carousel,
   Checkbox,
+  Drawer,
   Dropdown,
   Empty,
   Image,
@@ -19,6 +20,7 @@ import {
   Radio,
   RadioGroup,
   Spin,
+  Switch,
   Tag,
   Tooltip,
 } from 'ant-design-vue';
@@ -37,6 +39,8 @@ import {
   createXhsAnalysisProjectApi,
   deleteXhsCollectTaskApi,
   downloadXhsCollectTaskApi,
+  fetchMissingCommentsXhsTaskApi,
+  getXhsNoteCommentsApi,
   getXhsNoteStructuredApi,
   getXhsNoteTaskNotesApi,
   incrementalCollectXhsTaskApi,
@@ -99,10 +103,34 @@ async function fetchTasks() {
     aiProcessingIds.value = new Set(
       data.items.filter((task) => task.phase === 'ai_processing').map((task) => task.id),
     );
+    // 补抓评论进行中的任务同步进本地集合（按钮显示"补抓评论中…"并禁用）
+    commentBackfillIds.value = new Set(
+      data.items.filter((task) => task.phase === 'fetching_missing_comments').map((task) => task.id),
+    );
   } catch (e: any) {
     message.error(`加载失败：${e.message}`);
   } finally {
     tasksLoading.value = false;
+  }
+}
+
+// 补抓评论期间自动刷新任务列表（5s），让"补抓评论中 x/y"进度实时可见；
+// 所有补抓结束后自动停止轮询
+let backfillTimer: ReturnType<typeof setInterval> | undefined;
+
+function syncBackfillPolling() {
+  const anyBackfilling = tasks.value.some((t) => t.phase === 'fetching_missing_comments') || commentBackfillIds.value.size > 0;
+  if (anyBackfilling && !backfillTimer) {
+    backfillTimer = setInterval(async () => {
+      await fetchTasks();
+      if (!tasks.value.some((t) => t.phase === 'fetching_missing_comments')) {
+        if (backfillTimer) clearInterval(backfillTimer);
+        backfillTimer = undefined;
+      }
+    }, 5000);
+  } else if (!anyBackfilling && backfillTimer) {
+    clearInterval(backfillTimer);
+    backfillTimer = undefined;
   }
 }
 
@@ -327,6 +355,53 @@ async function exportTask(kind: 'archive' | 'comments' | 'excel') {
   }
 }
 
+// ------------------------------------------------------------- 查看评论 ----
+
+const commentsOpen = ref(false);
+const commentsLoading = ref(false);
+const commentsError = ref('');
+const commentsNote = ref<XhsApi.Note | null>(null);
+const commentsData = ref<XhsApi.NoteComment[]>([]);
+const commentsTotal = ref(0);
+const commentsPage = ref(1);
+const COMMENTS_PAGE_SIZE = 50;
+
+async function loadComments(page = 1) {
+  if (!commentsNote.value) return;
+  commentsLoading.value = true;
+  commentsError.value = '';
+  try {
+    const result = await getXhsNoteCommentsApi(commentsNote.value.note_id, {
+      page,
+      page_size: COMMENTS_PAGE_SIZE,
+    });
+    commentsData.value = result.items;
+    commentsTotal.value = result.total;
+    commentsPage.value = result.page;
+  } catch (e: any) {
+    commentsError.value = e.message || '评论加载失败';
+    commentsData.value = [];
+    commentsTotal.value = 0;
+  } finally {
+    commentsLoading.value = false;
+  }
+}
+
+function openComments(note: XhsApi.Note) {
+  commentsNote.value = note;
+  commentsData.value = [];
+  commentsTotal.value = 0;
+  commentsPage.value = 1;
+  commentsOpen.value = true;
+  loadComments(1);
+}
+
+function goCommentsPage(page: number) {
+  loadComments(page);
+}
+
+const commentsTotalPages = computed(() => Math.max(1, Math.ceil(commentsTotal.value / COMMENTS_PAGE_SIZE)));
+
 // ------------------------------------------------------------- 批量加入 AI 分析 ----
 
 const addToAnalysisOpen = ref(false);
@@ -407,6 +482,31 @@ function deleteTask(task: XhsApi.CollectTask) {
   });
 }
 
+// ------------------------------------------------------------- 更新评论（补抓） ----
+
+const commentBackfillIds = ref<Set<number>>(new Set());
+
+async function updateComments(task: XhsApi.CollectTask) {
+  try {
+    commentBackfillIds.value = new Set(commentBackfillIds.value).add(task.id);
+    const result = await fetchMissingCommentsXhsTaskApi(task.id);
+    const stats = result.stats ?? { total: 0, already_have: 0, to_fetch: 0 };
+    if (stats.to_fetch === 0) {
+      message.success(`该任务 ${stats.total} 篇笔记均已有关联评论，无需补抓`);
+    } else {
+      message.success(
+        `已开始补抓评论：共 ${stats.total} 篇，${stats.already_have} 篇已有评论跳过，${stats.to_fetch} 篇待补抓（后台进行中，状态列可见进度）`,
+      );
+    }
+    await fetchTasks();
+    syncBackfillPolling();
+  } catch (e: any) {
+    message.error(`补抓评论失败：${e.message}`);
+  } finally {
+    commentBackfillIds.value = new Set([...commentBackfillIds.value].filter((id) => id !== task.id));
+  }
+}
+
 async function processAiData(task: XhsApi.CollectTask) {
   try {
     aiProcessingIds.value = new Set(aiProcessingIds.value).add(task.id);
@@ -427,11 +527,16 @@ async function processAiData(task: XhsApi.CollectTask) {
 const incrementalModalOpen = ref(false);
 const incrementalTarget = ref<XhsApi.CollectTask>();
 const incrementalCount = ref(50);
+const incrementalDownloadVideo = ref(false);
+const incrementalFetchComments = ref(false);
 const incrementalSubmitting = ref(false);
 
 function openIncrementalModal(task: XhsApi.CollectTask) {
   incrementalTarget.value = task;
   incrementalCount.value = 50;
+  // 默认取任务原设置，用户可在此次增量时覆盖
+  incrementalDownloadVideo.value = task.params?.download_video ?? false;
+  incrementalFetchComments.value = task.params?.fetch_comments ?? false;
   incrementalModalOpen.value = true;
 }
 
@@ -440,7 +545,12 @@ async function submitIncremental() {
   if (!task || incrementalCount.value < 1) return;
   incrementalSubmitting.value = true;
   try {
-    await incrementalCollectXhsTaskApi(task.id, incrementalCount.value);
+    await incrementalCollectXhsTaskApi(
+      task.id,
+      incrementalCount.value,
+      incrementalDownloadVideo.value,
+      incrementalFetchComments.value,
+    );
     message.success('已开始增量采集，可在下方进度面板查看');
     incrementalModalOpen.value = false;
     fetchRunningTasks();
@@ -455,16 +565,18 @@ onMounted(() => {
   fetchTasks();
   fetchRunningTasks();
   runningTasksTimer = setInterval(fetchRunningTasks, 3000);
+  syncBackfillPolling();
 });
 
 onBeforeUnmount(() => {
   if (runningTasksTimer) clearInterval(runningTasksTimer);
+  if (backfillTimer) clearInterval(backfillTimer);
 });
 </script>
 
 <template>
   <Page :auto-content-height="true" content-class="!p-0">
-    <div class="custom-scrollbar flex h-full flex-1 flex-col overflow-y-auto bg-[#0B0E14] p-6 select-none">
+    <div class="custom-scrollbar flex h-full flex-1 flex-col overflow-y-auto bg-[hsl(var(--background-deep))] p-6 select-none">
       <div class="mb-4 shrink-0">
         <XhsTokenManager />
       </div>
@@ -473,8 +585,8 @@ onBeforeUnmount(() => {
       <template v-if="!selectedTask">
         <div class="mb-6 shrink-0 flex items-start justify-between gap-3">
           <div>
-            <h1 class="text-xl font-extrabold text-white">笔记管理</h1>
-            <p class="mt-1 text-xs text-slate-400">按采集主题浏览已经抓取的笔记，点击进入某个主题查看具体笔记</p>
+            <h1 class="text-xl font-extrabold text-[hsl(var(--foreground))]">笔记管理</h1>
+            <p class="mt-1 text-xs text-[hsl(var(--muted-foreground))]">按采集主题浏览已经抓取的笔记，点击进入某个主题查看具体笔记</p>
           </div>
           <button
             class="flex shrink-0 items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500"
@@ -491,16 +603,16 @@ onBeforeUnmount(() => {
           <div
             v-for="task in runningTasks"
             :key="task.id"
-            class="rounded-xl border border-[#1E2433] bg-[#0F131C] px-4 py-3"
+            class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] px-4 py-3"
           >
             <div class="mb-1.5 flex items-center justify-between text-xs">
-              <span class="font-semibold text-white">{{ task.keyword }}</span>
-              <span class="text-slate-400">
+              <span class="font-semibold text-[hsl(var(--foreground))]">{{ task.keyword }}</span>
+              <span class="text-[hsl(var(--muted-foreground))]">
                 {{ phaseLabel(task.phase) }}
                 <template v-if="task.progress_total">（{{ task.progress_current }} / {{ task.progress_total }}）</template>
               </span>
             </div>
-            <div class="h-1.5 w-full overflow-hidden rounded-full bg-[#1E2433]">
+            <div class="h-1.5 w-full overflow-hidden rounded-full bg-[hsl(var(--muted))]">
               <div
                 class="h-full rounded-full bg-indigo-500 transition-all"
                 :style="{ width: `${progressPercent(task)}%` }"
@@ -511,16 +623,16 @@ onBeforeUnmount(() => {
 
         <div class="mb-4 shrink-0 flex flex-wrap items-center gap-2">
           <div class="relative">
-            <Search class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+            <Search class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-[hsl(var(--muted-foreground))]" />
             <input
               v-model="searchQuery"
               placeholder="搜索主题或关键词"
-              class="w-64 rounded-lg border border-[#232B3E] bg-[#121622] py-1.5 pr-3 pl-8 text-xs text-white outline-none focus:border-indigo-500"
+              class="w-64 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-1.5 pr-3 pl-8 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
             />
           </div>
           <select
             v-model="statusFilter"
-            class="rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-white outline-none focus:border-indigo-500"
+            class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
           >
             <option value="">全部状态</option>
             <option value="running">运行中</option>
@@ -529,10 +641,10 @@ onBeforeUnmount(() => {
           </select>
         </div>
 
-        <div class="shrink-0 overflow-hidden rounded-2xl border border-[#1E2433] bg-[#0F131C] shadow-xl">
+        <div class="shrink-0 overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] shadow-xl">
           <div class="overflow-x-auto">
             <table class="w-full text-left text-xs">
-              <thead class="border-b border-[#1E2433] bg-[#121622] font-mono text-[11px] text-slate-400 uppercase">
+              <thead class="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] font-mono text-[11px] text-[hsl(var(--muted-foreground))] uppercase">
                 <tr>
                   <th class="px-4 py-3.5">采集主题与关键词</th>
                   <th class="px-4 py-3.5">状态</th>
@@ -555,37 +667,53 @@ onBeforeUnmount(() => {
                   <th class="px-4 py-3.5 text-right">操作</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-[#1E2433]">
+              <tbody class="divide-y divide-[hsl(var(--border))]">
                 <tr
                   v-for="task in tasks"
                   :key="task.id"
                   tabindex="0"
-                  class="group cursor-pointer transition-colors hover:bg-[#161C2A] focus:bg-[#161C2A] focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500"
+                  class="group cursor-pointer transition-colors hover:bg-[hsl(var(--accent))] focus:bg-[hsl(var(--accent))] focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500"
                   @click="openTask(task)"
                   @keyup.enter="openTask(task)"
                 >
                   <td class="px-4 py-4">
-                    <div class="font-semibold text-white">{{ task.keyword }}</div>
-                    <div class="mt-0.5 text-[11px] text-slate-500">关键词：{{ task.keyword }}</div>
+                    <div class="font-semibold text-[hsl(var(--foreground))]">{{ task.keyword }}</div>
+                    <div class="mt-0.5 text-[11px] text-[hsl(var(--muted-foreground))]">关键词：{{ task.keyword }}</div>
                   </td>
                   <td class="px-4 py-4">
                     <span
-class="inline-flex items-center gap-1.5 font-semibold" :class="[
-                      task.status === 'success' ? 'text-emerald-400' : task.status === 'failed' ? 'text-rose-400' : task.status === 'running' ? 'text-amber-300' : 'text-slate-400',
-                    ]"
->
+                      v-if="task.phase === 'fetching_missing_comments'"
+                      class="inline-flex items-center gap-1.5 font-semibold text-amber-300"
+                    >
+                      <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400"></span>
+                      补抓评论中 {{ task.progress_current }}/{{ task.progress_total }}
+                    </span>
+                    <span
+                      v-else-if="task.phase === 'comments_backfill_done'"
+                      class="inline-flex items-center gap-1.5 font-semibold text-emerald-400/80"
+                    >
+                      <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                      评论已补抓
+                    </span>
+                    <span
+                      v-else
+                      class="inline-flex items-center gap-1.5 font-semibold"
+                      :class="[
+                        task.status === 'success' ? 'text-emerald-400' : task.status === 'failed' ? 'text-rose-400' : task.status === 'running' ? 'text-amber-300' : 'text-[hsl(var(--muted-foreground))]',
+                      ]"
+                    >
                       <span class="h-1.5 w-1.5 rounded-full" :class="STATUS_DOT[task.status]"></span>
                       {{ STATUS_LABEL[task.status] || task.status }}
                     </span>
                   </td>
-                  <td class="px-4 py-4 font-mono text-slate-200">{{ task.note_count }}</td>
-                  <td class="px-4 py-4 font-mono text-slate-200">{{ task.collect_stats?.collected_count ?? '—' }}</td>
-                  <td class="px-4 py-4 text-slate-600">—</td>
-                  <td class="px-4 py-4 text-slate-400">{{ formatDateTime(task.created_at) }}（创建时间）</td>
+                  <td class="px-4 py-4 font-mono text-[hsl(var(--foreground))]">{{ task.note_count }}</td>
+                  <td class="px-4 py-4 font-mono text-[hsl(var(--foreground))]">{{ task.collect_stats?.collected_count ?? '—' }}</td>
+                  <td class="px-4 py-4 text-[hsl(var(--muted-foreground))]">—</td>
+                  <td class="px-4 py-4 text-[hsl(var(--muted-foreground))]">{{ formatDateTime(task.created_at) }}（创建时间）</td>
                   <td class="px-4 py-4 text-right">
                     <div class="flex items-center justify-end gap-3">
                       <button
-                        class="text-[11px] text-slate-500 hover:text-indigo-400 disabled:opacity-40"
+                        class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-indigo-400 disabled:opacity-40"
                         :disabled="task.status === 'running' || task.status === 'pending'"
                         @click.stop="openIncrementalModal(task)"
                       >
@@ -593,7 +721,7 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
                       </button>
                       <Tooltip title="使用智谱补齐缺失、失败或正文已变化的 AI 结构化数据；已成功且内容未变化的笔记会自动跳过">
                         <button
-                          class="text-[11px] text-slate-500 hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-40"
+                          class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-40"
                           :disabled="task.status === 'running' || task.status === 'pending' || aiProcessingIds.has(task.id)"
                           @click.stop="processAiData(task)"
                         >
@@ -603,7 +731,17 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
                           <template v-else>AI 数据处理</template>
                         </button>
                       </Tooltip>
-                      <button class="text-[11px] text-slate-500 hover:text-rose-400" @click.stop="deleteTask(task)">删除</button>
+                      <Tooltip title="对还没有评论的笔记补抓评论（后台执行，边爬边入库）">
+                        <button
+                          class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                          :disabled="task.status === 'running' || task.status === 'pending' || commentBackfillIds.has(task.id)"
+                          @click.stop="updateComments(task)"
+                        >
+                          <template v-if="commentBackfillIds.has(task.id)">补抓评论中…</template>
+                          <template v-else>更新评论</template>
+                        </button>
+                      </Tooltip>
+                      <button class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-rose-400" @click.stop="deleteTask(task)">删除</button>
                       <span class="inline-flex items-center gap-1 font-semibold text-indigo-400 group-hover:text-indigo-300">
                         查看笔记
                         <ChevronRight class="h-3.5 w-3.5" />
@@ -617,14 +755,14 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
 
           <div v-if="!tasksLoading && tasks.length === 0" class="flex flex-col items-center justify-center gap-3 p-12 text-center">
             <template v-if="searchQuery || statusFilter">
-              <p class="text-sm font-semibold text-white">没有匹配的采集任务</p>
-              <button class="rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-slate-300 hover:text-white" @click="clearTaskFilters">
+              <p class="text-sm font-semibold text-[hsl(var(--foreground))]">没有匹配的采集任务</p>
+              <button class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" @click="clearTaskFilters">
                 清除筛选条件
               </button>
             </template>
             <template v-else>
-              <p class="text-sm font-semibold text-white">暂无已保存的笔记数据</p>
-              <p class="text-xs text-slate-400">先发起一次采集吧</p>
+              <p class="text-sm font-semibold text-[hsl(var(--foreground))]">暂无已保存的笔记数据</p>
+              <p class="text-xs text-[hsl(var(--muted-foreground))]">先发起一次采集吧</p>
               <button class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500" @click="newTaskModalOpen = true">
                 新建采集任务
               </button>
@@ -632,12 +770,12 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
           </div>
         </div>
 
-        <div v-if="tasksTotal > tasksPageSize" class="mt-4 shrink-0 flex items-center justify-between text-xs text-slate-400">
+        <div v-if="tasksTotal > tasksPageSize" class="mt-4 shrink-0 flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))]">
           <span>共 {{ tasksTotal }} 个采集主题</span>
           <div class="flex items-center gap-2">
-            <button class="rounded-lg border border-[#232B3E] bg-[#121622] px-2 py-1 disabled:opacity-40" :disabled="tasksPage <= 1" @click="goTasksPage(tasksPage - 1)">上一页</button>
+            <button class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 py-1 disabled:opacity-40" :disabled="tasksPage <= 1" @click="goTasksPage(tasksPage - 1)">上一页</button>
             <span>{{ tasksPage }} / {{ tasksTotalPages }}</span>
-            <button class="rounded-lg border border-[#232B3E] bg-[#121622] px-2 py-1 disabled:opacity-40" :disabled="tasksPage >= tasksTotalPages" @click="goTasksPage(tasksPage + 1)">下一页</button>
+            <button class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 py-1 disabled:opacity-40" :disabled="tasksPage >= tasksTotalPages" @click="goTasksPage(tasksPage + 1)">下一页</button>
           </div>
         </div>
       </template>
@@ -645,46 +783,46 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
       <!-- ============================================== 二级：任务笔记 -->
       <template v-else>
         <div class="mb-4 shrink-0 flex flex-wrap items-center gap-3">
-          <button class="flex items-center gap-1 rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-slate-300 hover:text-white" @click="backToList">
+          <button class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" @click="backToList">
             <ArrowLeft class="h-3.5 w-3.5" />
             返回列表
           </button>
-          <div class="text-xs text-slate-500">
-            采集主题 / <span class="text-white">{{ selectedTask.keyword }}</span>
+          <div class="text-xs text-[hsl(var(--muted-foreground))]">
+            采集主题 / <span class="text-[hsl(var(--foreground))]">{{ selectedTask.keyword }}</span>
           </div>
           <Tag color="blue">{{ selectedTask.note_count }} 篇笔记</Tag>
         </div>
 
         <div class="mb-4 shrink-0 flex flex-wrap items-center gap-2">
           <div class="relative">
-            <Search class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+            <Search class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-[hsl(var(--muted-foreground))]" />
             <input
               v-model="noteSearchQuery"
               placeholder="搜索标题、内容或作者"
-              class="w-56 rounded-lg border border-[#232B3E] bg-[#121622] py-1.5 pr-3 pl-8 text-xs text-white outline-none focus:border-indigo-500"
+              class="w-56 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-1.5 pr-3 pl-8 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
             />
           </div>
-          <select v-model="noteTypeFilter" class="rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-white outline-none focus:border-indigo-500">
+          <select v-model="noteTypeFilter" class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500">
             <option value="">全部类型</option>
             <option value="图集">图集</option>
             <option value="视频">视频</option>
           </select>
-          <select v-model="dateRangeFilter" class="rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-white outline-none focus:border-indigo-500">
+          <select v-model="dateRangeFilter" class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500">
             <option value="">全部时间</option>
             <option value="7d">最近一周</option>
             <option value="30d">最近一个月</option>
             <option value="180d">最近半年</option>
           </select>
           <Tooltip title="后端暂未支持互动量筛选">
-            <button disabled class="cursor-not-allowed rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-slate-600">互动量筛选</button>
+            <button disabled class="cursor-not-allowed rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))]">互动量筛选</button>
           </Tooltip>
           <Tooltip title="后端暂未支持更多筛选条件">
-            <button disabled class="cursor-not-allowed rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-slate-600">更多筛选</button>
+            <button disabled class="cursor-not-allowed rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))]">更多筛选</button>
           </Tooltip>
 
           <span class="flex-1"></span>
 
-          <span v-if="selectedNoteIds.size > 0" class="text-xs text-slate-400">已选择 {{ selectedNoteIds.size }} 项</span>
+          <span v-if="selectedNoteIds.size > 0" class="text-xs text-[hsl(var(--muted-foreground))]">已选择 {{ selectedNoteIds.size }} 项</span>
           <button
             class="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
             :disabled="selectedNoteIds.size === 0"
@@ -693,13 +831,13 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
             批量加入 AI 分析
           </button>
           <Tooltip title="后端暂未支持给笔记添加标签">
-            <button disabled class="flex cursor-not-allowed items-center gap-1 rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-slate-600">
+            <button disabled class="flex cursor-not-allowed items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))]">
               <TagsIcon class="h-3.5 w-3.5" />
               添加标签
             </button>
           </Tooltip>
           <Dropdown :trigger="['click']">
-            <button class="flex items-center gap-1 rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-slate-300 hover:text-white">
+            <button class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]">
               <Download class="h-3.5 w-3.5" />
               导出
             </button>
@@ -713,15 +851,15 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
           </Dropdown>
         </div>
 
-        <div class="shrink-0 overflow-hidden rounded-2xl border border-[#1E2433] bg-[#0F131C] shadow-xl">
+        <div class="shrink-0 overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] shadow-xl">
           <div v-if="!notesLoading && notes.length === 0" class="flex flex-col items-center justify-center gap-2 p-12 text-center">
-            <p class="text-sm font-semibold text-white">
+            <p class="text-sm font-semibold text-[hsl(var(--foreground))]">
               {{ noteSearchQuery || noteTypeFilter || dateRangeFilter ? '没有匹配的笔记' : '该任务暂无笔记数据' }}
             </p>
           </div>
           <div v-else class="overflow-x-auto">
             <table class="w-full text-left text-xs">
-              <thead class="border-b border-[#1E2433] bg-[#121622] font-mono text-[11px] text-slate-400 uppercase">
+              <thead class="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] font-mono text-[11px] text-[hsl(var(--muted-foreground))] uppercase">
                 <tr>
                   <th class="px-3 py-3">
                     <Checkbox :checked="allOnPageSelected" @change="toggleSelectAllOnPage" />
@@ -737,14 +875,14 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
                 </tr>
               </thead>
               <template v-for="group in noteGroups" :key="group.label">
-                <tbody class="divide-y divide-[#1E2433]">
+                <tbody class="divide-y divide-[hsl(var(--border))]">
                   <tr>
-                    <td colspan="9" class="bg-[#121622] px-4 py-2 text-[11px] font-bold text-slate-400">{{ group.label }}</td>
+                    <td colspan="9" class="bg-[hsl(var(--card))] px-4 py-2 text-[11px] font-bold text-[hsl(var(--muted-foreground))]">{{ group.label }}</td>
                   </tr>
                   <tr
                     v-for="note in group.notes"
                     :key="note.note_id"
-                    class="cursor-pointer transition-colors hover:bg-[#161C2A]"
+                    class="cursor-pointer transition-colors hover:bg-[hsl(var(--accent))]"
                     @click="openDetail(note)"
                   >
                     <td class="px-3 py-3" @click.stop="toggleNoteSelect(note.note_id)">
@@ -752,7 +890,7 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
                     </td>
                     <td class="px-4 py-3">
                       <div class="flex items-center gap-2.5">
-                        <div class="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-[#181F30]">
+                        <div class="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-[hsl(var(--muted))]">
                           <Image
                             :src="coverProxied(note)"
                             :preview="false"
@@ -763,28 +901,36 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
                           />
                         </div>
                         <div class="min-w-0">
-                          <div class="truncate font-semibold text-white">{{ note.title || '无标题' }}</div>
-                          <div class="text-[11px] text-slate-500">{{ note.nickname }}</div>
+                          <div class="truncate font-semibold text-[hsl(var(--foreground))]">{{ note.title || '无标题' }}</div>
+                          <div class="text-[11px] text-[hsl(var(--muted-foreground))]">{{ note.nickname }}</div>
                         </div>
                       </div>
                     </td>
-                    <td class="px-4 py-3 text-slate-300">{{ note.note_type || '—' }}</td>
-                    <td class="px-4 py-3 text-slate-400">{{ note.upload_time }}</td>
-                    <td class="px-4 py-3 font-mono text-slate-300">{{ note.liked_count }}</td>
-                    <td class="px-4 py-3 font-mono text-slate-300">{{ note.comment_count }}</td>
-                    <td class="px-4 py-3 font-mono text-slate-300">{{ note.collected_count }}</td>
+                    <td class="px-4 py-3 text-[hsl(var(--muted-foreground))]">{{ note.note_type || '—' }}</td>
+                    <td class="px-4 py-3 text-[hsl(var(--muted-foreground))]">{{ note.upload_time }}</td>
+                    <td class="px-4 py-3 font-mono text-[hsl(var(--muted-foreground))]">{{ note.liked_count }}</td>
+                    <td class="px-4 py-3 font-mono text-[hsl(var(--muted-foreground))]">{{ note.comment_count }}</td>
+                    <td class="px-4 py-3 font-mono text-[hsl(var(--muted-foreground))]">{{ note.collected_count }}</td>
                     <td class="px-4 py-3">
                       <div class="flex flex-wrap gap-1">
                         <Tag v-for="tag in note.tags.slice(0, 3)" :key="tag" color="default">{{ tag }}</Tag>
                       </div>
                     </td>
                     <td class="px-4 py-3 text-right">
-                      <button
-                        class="text-[11px] text-slate-500 hover:text-blue-400"
-                        @click.stop="openAiData(note)"
-                      >
-                        AI 数据
-                      </button>
+                      <div class="flex items-center justify-end gap-3">
+                        <button
+                          class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-emerald-400"
+                          @click.stop="openComments(note)"
+                        >
+                          评论{{ Number(note.comment_count || 0) > 0 ? ` (${note.comment_count})` : '' }}
+                        </button>
+                        <button
+                          class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-blue-400"
+                          @click.stop="openAiData(note)"
+                        >
+                          AI 数据
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -793,12 +939,12 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
           </div>
         </div>
 
-        <div v-if="notesTotal > notesPageSize" class="mt-4 shrink-0 flex items-center justify-between text-xs text-slate-400">
+        <div v-if="notesTotal > notesPageSize" class="mt-4 shrink-0 flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))]">
           <span>共 {{ notesTotal }} 篇笔记</span>
           <div class="flex items-center gap-2">
-            <button class="rounded-lg border border-[#232B3E] bg-[#121622] px-2 py-1 disabled:opacity-40" :disabled="notesPage <= 1" @click="goNotesPage(notesPage - 1)">上一页</button>
+            <button class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 py-1 disabled:opacity-40" :disabled="notesPage <= 1" @click="goNotesPage(notesPage - 1)">上一页</button>
             <span>{{ notesPage }} / {{ notesTotalPages }}</span>
-            <button class="rounded-lg border border-[#232B3E] bg-[#121622] px-2 py-1 disabled:opacity-40" :disabled="notesPage >= notesTotalPages" @click="goNotesPage(notesPage + 1)">下一页</button>
+            <button class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 py-1 disabled:opacity-40" :disabled="notesPage >= notesTotalPages" @click="goNotesPage(notesPage + 1)">下一页</button>
           </div>
         </div>
       </template>
@@ -838,7 +984,7 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
             在小红书查看原文
           </button>
           <button
-            class="rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs font-bold text-slate-300 hover:text-white disabled:opacity-50"
+            class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs font-bold text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] disabled:opacity-50"
             :disabled="refreshingNote"
             @click="refreshNoteData"
           >
@@ -854,12 +1000,69 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
         <Empty v-if="!aiDataLoading && aiDataError" :description="aiDataError" />
         <pre
           v-else-if="aiDataContent"
-          class="max-h-[60vh] overflow-auto rounded-lg bg-[#121622] p-4 text-xs text-slate-300"
+          class="max-h-[60vh] overflow-auto rounded-lg bg-[hsl(var(--card))] p-4 text-xs text-[hsl(var(--muted-foreground))]"
           style="white-space: pre-wrap; word-break: break-all"
           >{{ aiDataPretty }}</pre>
         <div v-else style="min-height: 120px"></div>
       </Spin>
     </Modal>
+
+    <!-- 查看评论 -->
+    <Drawer
+      v-model:open="commentsOpen"
+      :title="`评论 · ${commentsNote?.title || commentsNote?.note_id || ''}`"
+      width="680px"
+    >
+      <div class="mb-3 flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))]">
+        <span>共获取到 {{ commentsTotal }} 条评论</span>
+        <span v-if="commentsData.length && commentsTotal > COMMENTS_PAGE_SIZE" class="text-[hsl(var(--muted-foreground))]">
+          {{ commentsPage }} / {{ commentsTotalPages }} 页
+        </span>
+      </div>
+
+      <Spin :spinning="commentsLoading">
+        <Empty
+          v-if="!commentsLoading && commentsError"
+          :description="commentsError"
+        />
+        <Empty v-else-if="!commentsLoading && commentsData.length === 0" description="该笔记暂无评论（可重新采集或检查采集时是否勾选了抓取评论）" />
+        <div v-else class="custom-scrollbar max-h-[62vh] space-y-2 overflow-y-auto pr-1">
+          <div
+            v-for="c in commentsData"
+            :key="c.comment_id"
+            class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] px-3 py-2.5"
+            :class="c.parent_comment_id ? 'ml-8 border-l-2 border-l-indigo-500/50' : ''"
+          >
+            <div class="flex items-center gap-2 text-[11px]">
+              <span class="font-bold text-[hsl(var(--foreground))]">{{ c.nickname || '匿名' }}</span>
+              <span class="text-[hsl(var(--muted-foreground))]">{{ c.create_time || '' }}</span>
+              <span v-if="c.like_count" class="ml-auto flex items-center gap-0.5 text-[hsl(var(--muted-foreground))]">
+                <span>👍</span>{{ c.like_count }}
+              </span>
+            </div>
+            <p class="mt-1 text-xs leading-relaxed text-[hsl(var(--muted-foreground))]">{{ c.content || '（无内容）' }}</p>
+          </div>
+        </div>
+      </Spin>
+
+      <div v-if="commentsTotal > COMMENTS_PAGE_SIZE" class="mt-4 flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))]">
+        <button
+          class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 py-1 disabled:opacity-40"
+          :disabled="commentsPage <= 1 || commentsLoading"
+          @click="goCommentsPage(commentsPage - 1)"
+        >
+          上一页
+        </button>
+        <span>{{ commentsPage }} / {{ commentsTotalPages }}</span>
+        <button
+          class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 py-1 disabled:opacity-40"
+          :disabled="commentsPage >= commentsTotalPages || commentsLoading"
+          @click="goCommentsPage(commentsPage + 1)"
+        >
+          下一页
+        </button>
+      </div>
+    </Drawer>
 
     <!-- 批量加入 AI 分析 -->
     <Modal
@@ -869,7 +1072,7 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
       ok-text="确认加入"
       @ok="confirmAddToAnalysis"
     >
-      <p class="mb-3 text-xs text-slate-400">已选择 {{ selectedNoteIds.size }} 篇笔记</p>
+      <p class="mb-3 text-xs text-[hsl(var(--muted-foreground))]">已选择 {{ selectedNoteIds.size }} 篇笔记</p>
       <RadioGroup v-model:value="pickMode" class="mb-3">
         <Radio value="existing" :disabled="projects.length === 0">加入已有项目</Radio>
         <Radio value="new">新建项目</Radio>
@@ -877,7 +1080,7 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
       <div v-if="pickMode === 'existing'">
         <select
           v-model="pickProjectId"
-          class="w-full rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"
+          class="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
         >
           <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}（{{ p.note_count }} 篇）</option>
         </select>
@@ -886,7 +1089,7 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
         <input
           v-model="newProjectName"
           placeholder="新分析项目名称"
-          class="w-full rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"
+          class="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
         />
       </div>
       <button class="mt-3 text-xs text-indigo-400 hover:text-indigo-300" @click="goAiAnalysis">前往 AI 分析页面 →</button>
@@ -908,18 +1111,31 @@ class="inline-flex items-center gap-1.5 font-semibold" :class="[
       cancel-text="取消"
       @ok="submitIncremental"
     >
-      <p class="mb-3 text-xs text-slate-500">
+      <p class="mb-3 text-xs text-[hsl(var(--muted-foreground))]">
         当前主题笔记：{{ incrementalTarget?.note_count ?? 0 }} 篇。会跳过已经采集过的笔记，只补齐下面填写的新增数量；
         如果该关键词候选内容已经接近用尽，实际新增可能少于填写的数量。
       </p>
-      <div class="mb-1 text-xs font-bold text-slate-400">本次新增数量</div>
+      <div class="mb-1 text-xs font-bold text-[hsl(var(--muted-foreground))]">本次新增数量</div>
       <input
         v-model.number="incrementalCount"
         type="number"
         min="1"
         max="500"
-        class="w-full rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-2 text-xs text-white outline-none focus:border-indigo-500"
+        class="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
       />
+
+      <div class="mt-4 mb-1 text-xs font-bold text-[hsl(var(--muted-foreground))]">采集选项</div>
+      <div class="space-y-3">
+        <div class="flex items-center gap-2">
+          <Switch v-model:checked="incrementalFetchComments" /> 同时抓取评论
+        </div>
+        <div class="flex items-center gap-2">
+          <Switch v-model:checked="incrementalDownloadVideo" /> 下载视频
+        </div>
+        <p class="text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">
+          默认沿用任务原设置；勾选/取消后仅本次增量生效。增量采集按最新发布顺序补录。
+        </p>
+      </div>
     </Modal>
   </Page>
 </template>

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -7,42 +9,147 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user
 from app.core.database import get_db
 from app.common.models import Task
-from app.common.schemas.home import DataSourceStatus, HomeResponse, HomeSummary
+from app.common.schemas.home import (
+    HomeResponse,
+    HomeSummary,
+    RunningTask,
+    TrendPoint,
+)
 from app.common.schemas.task import TaskOut
 
 router = APIRouter(prefix="/api/home", tags=["home"])
 
 
+def _as_utc(dt: datetime | None) -> datetime | None:
+    """SQLite 读出的 datetime 是 naive 的，统一补上 UTC 时区再比较"""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
 @router.get("", response_model=HomeResponse)
 def get_home(db: Session = Depends(get_db), _=Depends(get_current_user)):
-    modules = [row[0] for row in db.query(Task.module).distinct().all()]
-    data_sources = []
-    for module in modules:
-        latest = db.query(Task).filter(Task.module == module).order_by(Task.created_at.desc()).first()
-        total = db.query(func.count(Task.id)).filter(Task.module == module).scalar() or 0
-        data_sources.append(
-            DataSourceStatus(
-                module=module,
-                last_run_at=latest.created_at if latest else None,
-                last_status=latest.status if latest else None,
-                total_tasks=total,
+    recent_tasks = db.query(Task).order_by(Task.created_at.desc()).limit(5).all()
+
+    # ---- 运行中任务（首页实时卡片，聚合所有模块）----
+    running_tasks: list[RunningTask] = []
+    # 1) 通用采集/分析任务（排队中/运行中）
+    for t in (
+        db.query(Task)
+        .filter(Task.status.in_(("pending", "running")))
+        .order_by(Task.created_at.desc())
+        .all()
+    ):
+        extra = None
+        if t.module == "xhs":
+            from app.xhs.models import XhsTaskExtra
+            extra = db.get(XhsTaskExtra, t.id)
+        running_tasks.append(
+            RunningTask(
+                id=t.id,
+                kind="collect",
+                title=(t.params or {}).get("keyword") or f"{t.module} 任务",
+                status=t.status,
+                phase=extra.phase if extra else None,
+                progress_current=extra.progress_current if extra else None,
+                progress_total=extra.progress_total if extra else None,
+                started_at=t.started_at,
             )
         )
-
-    recent_tasks = db.query(Task).order_by(Task.created_at.desc()).limit(5).all()
+    # 2) 补抓评论中（独立后台线程，status 保持 success，phase 标记进行中）
+    from app.xhs.models import XhsTaskExtra
+    for extra in (
+        db.query(XhsTaskExtra)
+        .filter(XhsTaskExtra.phase == "fetching_missing_comments")
+        .all()
+    ):
+        t = db.get(Task, extra.task_id)
+        if t:
+            running_tasks.append(
+                RunningTask(
+                    id=t.id,
+                    kind="backfill",
+                    title=(t.params or {}).get("keyword", "采集任务"),
+                    status=t.status,
+                    phase=extra.phase,
+                    progress_current=extra.progress_current,
+                    progress_total=extra.progress_total,
+                    started_at=t.started_at,
+                )
+            )
+    # 3) 追踪任务扫描中
+    from app.xhs.models import XhsTrackingTask
+    for tt in (
+        db.query(XhsTrackingTask)
+        .filter(XhsTrackingTask.status == "running")
+        .order_by(XhsTrackingTask.last_run_at.desc())
+        .all()
+    ):
+        running_tasks.append(
+            RunningTask(
+                id=tt.id,
+                kind="tracking",
+                title=tt.keyword,
+                status="running",
+                phase="scanning",
+                started_at=tt.last_run_at,
+            )
+        )
 
     total_tasks = db.query(func.count(Task.id)).scalar() or 0
     success_count = db.query(func.count(Task.id)).filter(Task.status == "success").scalar() or 0
     failed_count = db.query(func.count(Task.id)).filter(Task.status == "failed").scalar() or 0
     running_count = db.query(func.count(Task.id)).filter(Task.status.in_(("pending", "running"))).scalar() or 0
 
+    # ---- 监控看板统计：近 7 天趋势 / 状态分布 / 今日新增完成 / 成功率 ----
+    all_tasks = db.query(Task).all()
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    status_distribution = {"pending": 0, "running": 0, "success": 0, "failed": 0}
+    today_new = 0
+    today_done = 0
+    trend_map: dict[str, dict] = {}
+    for i in range(6, -1, -1):
+        d = (now - timedelta(days=i)).date()
+        trend_map[d.isoformat()] = {"created": 0, "finished": 0}
+
+    for t in all_tasks:
+        status_distribution[t.status] = status_distribution.get(t.status, 0) + 1
+        created_utc = _as_utc(t.created_at)
+        finished_utc = _as_utc(t.finished_at)
+        if created_utc and created_utc >= today_start:
+            today_new += 1
+        if finished_utc and finished_utc >= today_start:
+            today_done += 1
+        if created_utc:
+            day = created_utc.date().isoformat()
+            if day in trend_map:
+                trend_map[day]["created"] += 1
+        if finished_utc:
+            day = finished_utc.date().isoformat()
+            if day in trend_map:
+                trend_map[day]["finished"] += 1
+
+    trend = [
+        TrendPoint(date=day, created=v["created"], finished=v["finished"])
+        for day, v in trend_map.items()
+    ]
+    done_total = success_count + failed_count
+    success_rate = round(success_count / done_total * 100, 1) if done_total else 0.0
+
     return HomeResponse(
-        data_sources=data_sources,
         recent_tasks=[TaskOut.model_validate(t) for t in recent_tasks],
+        running_tasks=running_tasks,
+        trend=trend,
+        status_distribution=status_distribution,
         summary=HomeSummary(
             total_tasks=total_tasks,
             success_count=success_count,
             failed_count=failed_count,
             running_count=running_count,
+            today_new=today_new,
+            today_done=today_done,
+            success_rate=success_rate,
         ),
     )

@@ -19,3 +19,7 @@ Pillow
 yfinance
 lxml  # yfinance 的 earnings_dates（历史 EPS surprise）需要它解析
 PyYAML  # 解析 Skill 的 SKILL.md frontmatter 和 workbench.yaml
+
+# xhs 评论获取切换为 Playwright 页面级爬取（services/client/page_crawler.py）。
+# 安装后还需执行 `python -m playwright install chromium`（Docker 构建见 Dockerfile）
+playwright

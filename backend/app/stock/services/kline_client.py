@@ -25,9 +25,12 @@ from sqlalchemy.orm import Session
 from app.stock.services import cache_service
 
 # 冷启动（缓存里完全没有这支股票这个周期的数据）时用，一次性拉够前端展示窗口
-# （quotes/index.vue 的 MAX_VISIBLE_CANDLES=60）之外还留出计算 MA60 需要的历史余量
+# （quotes/index.vue 的 MAX_VISIBLE_CANDLES=60）之外还留出计算 MA60 需要的历史余量。
+# 日K拉 1 年：前端提供"近半年 / 近一年"快捷视窗 + 底部滑块拖动看更早历史，
+# 之前只拉 6mo，用户拖两下就到头了。注意：已有 kline_1d 缓存不会自动扩展窗口，
+# 改这里后需要清一次缓存（冷启动才会重新拉 full）。
 _FULL_PERIOD_BY_INTERVAL = {
-    "1d": "6mo",
+    "1d": "1y",
     "1wk": "2y",
     "1mo": "5y",
 }

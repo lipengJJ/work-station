@@ -10,6 +10,7 @@ fast_info/history/calendar 接口。FOMC 会议日期、CPI 发布日期这类"�
 """
 from __future__ import annotations
 
+import math
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
@@ -17,6 +18,7 @@ import yfinance as yf
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from app.stock.models.watchlist_stock import WatchlistStock
 from app.stock.services import cache_service
 
 _INDEX_DEFINITIONS = [
@@ -132,6 +134,39 @@ def get_index_history(db: Session, symbol: str, period: str = "6M") -> list[dict
     return points
 
 
+def _clean_float(v):
+    """yfinance 的估值/预期字段经常返回 float('nan')，直接进 JSON 序列化会报
+    ValueError: Out of range float（FastAPI 的 JSONResponse 不允许 NaN/inf）。"""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(f) or math.isinf(f) else f
+
+
+def _fetch_earnings_calendar(symbol: str) -> Optional[dict]:
+    """取一只股票的最近财报日期 + EPS 一致预期（yfinance calendar），字段已清理 NaN。"""
+    try:
+        calendar = yf.Ticker(symbol).calendar or {}
+    except Exception as e:
+        logger.warning(f"获取 {symbol} 财报日历失败: {e}")
+        return None
+    earnings_dates = calendar.get("Earnings Date") or []
+    next_date = None
+    if earnings_dates:
+        try:
+            next_date = earnings_dates[0].isoformat()
+        except (AttributeError, ValueError):
+            next_date = None
+    return {
+        "next_earnings_date": next_date,
+        "eps_estimate": _clean_float(calendar.get("Earnings Average")),
+        "revenue_estimate": _clean_float(calendar.get("Revenue Average")),
+    }
+
+
 def get_mag7_earnings(db: Session, force_refresh: bool = False) -> dict:
     dataset = "mag7_earnings"
     cache_key = "US_MARKET"
@@ -143,16 +178,14 @@ def get_mag7_earnings(db: Session, force_refresh: bool = False) -> dict:
     companies = []
     for company in _MAG7:
         entry = {**company}
-        try:
-            calendar = yf.Ticker(company["symbol"]).calendar or {}
-            earnings_dates = calendar.get("Earnings Date") or []
-            entry["next_earnings_date"] = earnings_dates[0].isoformat() if earnings_dates else None
-            entry["eps_estimate"] = calendar.get("Earnings Average")
-            entry["revenue_estimate"] = calendar.get("Revenue Average")
+        info = _fetch_earnings_calendar(company["symbol"])
+        if info:
+            entry.update(info)
             entry["available"] = True
-        except Exception as e:
-            logger.warning(f"获取 {company['symbol']} 财报日期失败: {e}")
+        else:
             entry["next_earnings_date"] = None
+            entry["eps_estimate"] = None
+            entry["revenue_estimate"] = None
             entry["available"] = False
         companies.append(entry)
 
@@ -161,9 +194,30 @@ def get_mag7_earnings(db: Session, force_refresh: bool = False) -> dict:
     return data
 
 
+def _get_watchlist_earnings(db: Session) -> dict:
+    """自选股（watchlist_stocks 表）的财报日期 + EPS 预期，整份缓存 6h（dataset
+    watchlist_earnings）——日历每次切换月份/刷新都会调 events 接口，逐只实时打
+    yfinance 太浪费。缓存过期后重拉时会自动包含新增的自选股。"""
+    dataset = "watchlist_earnings"
+    cache_key = "US_MARKET"
+    cached = cache_service.get_cached(db, cache_key, dataset)
+    if cached:
+        return cached["data"]
+
+    symbols = [row.symbol for row in db.query(WatchlistStock.symbol).order_by(WatchlistStock.id).all()]
+    by_symbol: dict[str, dict] = {}
+    for symbol in symbols:
+        info = _fetch_earnings_calendar(symbol)
+        if info and info.get("next_earnings_date"):
+            by_symbol[symbol] = info
+    data = {"by_symbol": by_symbol}
+    cache_service.save_cache(db, cache_key, dataset, data, sources=["Yahoo Finance"])
+    return data
+
+
 def get_upcoming_events(db: Session, window_days_past: int = 14, window_days_future: int = 120) -> dict:
-    """把 FOMC 会议、"七姐妹"财报、CPI 发布合并成一条时间线，按日期排序，只保留
-    [今天-window_days_past, 今天+window_days_future] 窗口内的，避免列表里塞满明年的日期。"""
+    """把 FOMC 会议、"七姐妹"财报、CPI 发布、以及用户自选股（持仓关注）的财报合并成一条
+    时间线，按日期排序，只保留 [今天-window_days_past, 今天+window_days_future] 窗口内的。"""
     today = datetime.now(timezone.utc).date()
     window_start = today - timedelta(days=window_days_past)
     window_end = today + timedelta(days=window_days_future)
@@ -176,6 +230,7 @@ def get_upcoming_events(db: Session, window_days_past: int = 14, window_days_fut
             events.append(
                 {
                     "type": "fomc",
+                    "group": "macro",
                     "date": meeting["end"],
                     "date_range": f"{meeting['start']} ~ {meeting['end']}",
                     "title": "美联储 FOMC 议息会议",
@@ -192,6 +247,7 @@ def get_upcoming_events(db: Session, window_days_past: int = 14, window_days_fut
             events.append(
                 {
                     "type": "cpi",
+                    "group": "macro",
                     "date": release["date"],
                     "date_range": release["date"],
                     "title": "美国 CPI 消费者物价指数",
@@ -211,6 +267,7 @@ def get_upcoming_events(db: Session, window_days_past: int = 14, window_days_fut
             events.append(
                 {
                     "type": "earnings",
+                    "group": "mag7",
                     "date": company["next_earnings_date"],
                     "date_range": company["next_earnings_date"],
                     "title": f"{company['name_cn']} ({company['symbol']}) 财报",
@@ -222,11 +279,42 @@ def get_upcoming_events(db: Session, window_days_past: int = 14, window_days_fut
                 }
             )
 
-    events.sort(key=lambda e: e["date"])
+    # 自选股（持仓关注）财报 —— 日历的核心诉求
+    watchlist_data = _get_watchlist_earnings(db)
+    watchlist_names = {
+        row.symbol: row.name
+        for row in db.query(WatchlistStock.symbol, WatchlistStock.name).order_by(WatchlistStock.id).all()
+    }
+    for symbol, info in watchlist_data["by_symbol"].items():
+        if not info.get("next_earnings_date"):
+            continue
+        earnings_date = date.fromisoformat(info["next_earnings_date"])
+        if window_start <= earnings_date <= window_end:
+            display_name = watchlist_names.get(symbol) or symbol
+            events.append(
+                {
+                    "type": "earnings",
+                    "group": "watchlist",
+                    "date": info["next_earnings_date"],
+                    "date_range": info["next_earnings_date"],
+                    "title": f"{display_name} ({symbol}) 财报",
+                    "detail": f"EPS 一致预期 {round(info['eps_estimate'], 2)}" if info.get("eps_estimate") else "财报发布",
+                    "importance": "high",
+                    "source_url": None,
+                    "confirmed": True,
+                    "symbol": symbol,
+                    "is_watchlist": True,
+                }
+            )
+
+    events.sort(key=lambda e: (e["date"], e["group"] != "watchlist"))
+    watchlist_count = sum(1 for e in events if e.get("group") == "watchlist")
     return {
         "events": events,
         "window_start": window_start.isoformat(),
         "window_end": window_end.isoformat(),
-        "reference_note": "美联储会议日期来自 federalreserve.gov 官方公布日程；CPI 发布日期来自 BLS，"
-        "只收录已经确认过的具体日期；完整经济日历请以官方网站为准。",
+        "watchlist_count": watchlist_count,
+        "reference_note": "日历已自动合并你自选股（持仓关注）的财报日期（高亮显示）。美联储会议日期来自 "
+        "federalreserve.gov 官方公布日程；CPI 发布日期来自 BLS，只收录已经确认过的具体日期；"
+        "完整经济日历请以官方网站为准。",
     }

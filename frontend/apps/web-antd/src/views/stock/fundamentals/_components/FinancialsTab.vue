@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { chartColor } from '../../_shared/chart-theme';
 import type { EchartsUIType } from '@vben/plugins/echarts';
 import type { FundamentalsApi } from '#/api/core/fundamentals';
 
@@ -141,10 +142,10 @@ watch(
     const isBar = mode.value === 'value' && selectedMetric.value.source !== 'margin' && chartLines.value.length === 1;
     renderEcharts({
       grid: { left: 60, right: 20, top: 40, bottom: 40 },
-      legend: { top: 0, textStyle: { color: '#94a3b8' } },
+      legend: { top: 0, textStyle: { color: chartColor('--muted-foreground') } },
       tooltip: { trigger: 'axis' },
-      xAxis: { type: 'category', data: allEnds, axisLabel: { color: '#64748b' } },
-      yAxis: { type: 'value', axisLabel: { color: '#64748b' } },
+      xAxis: { type: 'category', data: allEnds, axisLabel: { color: chartColor('--muted-foreground') } },
+      yAxis: { type: 'value', axisLabel: { color: chartColor('--muted-foreground') } },
       series: chartLines.value.map((line) => ({
         name: line.label,
         type: isBar ? 'bar' : 'line',
@@ -174,56 +175,56 @@ const tableData = computed(() => {
 </script>
 
 <template>
-  <div v-if="loading" class="py-12 text-center text-xs text-slate-500">正在加载财务数据…</div>
+  <div v-if="loading" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">正在加载财务数据…</div>
   <div v-else-if="errorMsg" class="py-12 text-center text-xs text-rose-400">{{ errorMsg }}</div>
-  <div v-else-if="!data" class="py-12 text-center text-xs text-slate-500">{{ NO_DATA_TEXT }}</div>
+  <div v-else-if="!data" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
   <div v-else class="space-y-4">
     <!-- 预警信号 -->
     <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      <div v-for="flag in data.red_flags" :key="flag.key" class="rounded-lg border border-[#1E2433] bg-[#0F131C] p-2.5">
-        <div class="text-[10px] text-slate-500">{{ flag.title }}</div>
+      <div v-for="flag in data.red_flags" :key="flag.key" class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-2.5">
+        <div class="text-[10px] text-[hsl(var(--muted-foreground))]">{{ flag.title }}</div>
         <div class="flex items-center gap-1.5">
           <Tag :color="['是', '加速', '改善', '否', '减速', '恶化', '背离'].includes(flag.result) ? (['是', '加速', '恶化', '背离'].includes(flag.result) ? 'error' : 'success') : 'default'">
             {{ flag.result }}
           </Tag>
         </div>
-        <div class="mt-0.5 text-[10px] text-slate-500">{{ flag.detail }}</div>
+        <div class="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">{{ flag.detail }}</div>
       </div>
     </div>
 
     <!-- 控制条 -->
     <div class="flex flex-wrap items-center gap-2">
-      <div class="flex flex-wrap items-center gap-1 rounded-lg border border-[#232B3E] bg-[#121622] p-1">
+      <div class="flex flex-wrap items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1">
         <button
           v-for="m in METRICS" :key="m.key"
-          class="rounded px-2 py-1 text-[11px] font-semibold" :class="selectedMetricKey === m.key ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'"
+          class="rounded px-2 py-1 text-[11px] font-semibold" :class="selectedMetricKey === m.key ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
           @click="selectedMetricKey = m.key"
         >
           {{ m.label }}
         </button>
       </div>
       <span class="flex-1"></span>
-      <div class="flex items-center gap-1 rounded-lg border border-[#232B3E] bg-[#121622] p-1 text-[11px] font-semibold">
-        <button class="rounded px-2 py-1" :class="period === 'quarterly' ? 'bg-indigo-600 text-white' : 'text-slate-400'" @click="period = 'quarterly'">季度</button>
-        <button class="rounded px-2 py-1" :class="period === 'annual' ? 'bg-indigo-600 text-white' : 'text-slate-400'" @click="period = 'annual'">年度</button>
+      <div class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-[11px] font-semibold">
+        <button class="rounded px-2 py-1" :class="period === 'quarterly' ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="period = 'quarterly'">季度</button>
+        <button class="rounded px-2 py-1" :class="period === 'annual' ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="period = 'annual'">年度</button>
       </div>
-      <div class="flex items-center gap-1 rounded-lg border border-[#232B3E] bg-[#121622] p-1 text-[11px] font-semibold">
-        <button class="rounded px-2 py-1" :class="mode === 'value' ? 'bg-indigo-600 text-white' : 'text-slate-400'" @click="mode = 'value'">数值</button>
-        <button class="rounded px-2 py-1" :class="mode === 'growth' ? 'bg-indigo-600 text-white' : 'text-slate-400'" @click="mode = 'growth'">同比增速</button>
+      <div class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-[11px] font-semibold">
+        <button class="rounded px-2 py-1" :class="mode === 'value' ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="mode = 'value'">数值</button>
+        <button class="rounded px-2 py-1" :class="mode === 'growth' ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="mode = 'growth'">同比增速</button>
       </div>
-      <div class="flex items-center gap-1 rounded-lg border border-[#232B3E] bg-[#121622] p-1 text-[11px] font-semibold">
-        <button class="rounded px-2 py-1" :class="viewMode === 'chart' ? 'bg-indigo-600 text-white' : 'text-slate-400'" @click="viewMode = 'chart'">图表</button>
-        <button class="rounded px-2 py-1" :class="viewMode === 'table' ? 'bg-indigo-600 text-white' : 'text-slate-400'" @click="viewMode = 'table'">数据表</button>
+      <div class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-[11px] font-semibold">
+        <button class="rounded px-2 py-1" :class="viewMode === 'chart' ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="viewMode = 'chart'">图表</button>
+        <button class="rounded px-2 py-1" :class="viewMode === 'table' ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="viewMode = 'table'">数据表</button>
       </div>
     </div>
 
-    <p class="text-[10px] text-slate-500">同比增速按{{ period === 'annual' ? '年度(N-1)' : '季度(N-4，同季度同比)' }}计算；毛利率等利润率指标本身就是比率，不支持切换成"同比增速"。</p>
+    <p class="text-[10px] text-[hsl(var(--muted-foreground))]">同比增速按{{ period === 'annual' ? '年度(N-1)' : '季度(N-4，同季度同比)' }}计算；毛利率等利润率指标本身就是比率，不支持切换成"同比增速"。</p>
 
-    <div v-if="chartLines.every((l) => l.points.length === 0)" class="py-12 text-center text-xs text-slate-500">{{ NO_DATA_TEXT }}</div>
-    <div v-else-if="viewMode === 'chart'" class="rounded-2xl border border-[#1E2433] bg-[#0F131C] p-4">
+    <div v-if="chartLines.every((l) => l.points.length === 0)" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
+    <div v-else-if="viewMode === 'chart'" class="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-4">
       <EchartsUI ref="chartRef" height="360px" />
     </div>
-    <div v-else class="overflow-hidden rounded-2xl border border-[#1E2433] bg-[#0F131C]">
+    <div v-else class="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))]">
       <Table :columns="tableColumns" :data-source="tableData" :pagination="{ pageSize: 12 }" row-key="end" size="small" />
     </div>
   </div>

@@ -103,52 +103,52 @@ onMounted(() => {
 
 <template>
   <Page :auto-content-height="true" content-class="!p-0">
-    <div class="custom-scrollbar flex h-full flex-1 flex-col overflow-y-auto bg-[#0B0E14] p-6 select-none">
+    <div class="custom-scrollbar flex h-full flex-1 flex-col overflow-y-auto bg-[hsl(var(--background-deep))] p-6 select-none">
       <div class="mb-6 shrink-0">
-        <h1 class="text-xl font-extrabold text-white">分析报告</h1>
-        <p class="mt-1 text-xs text-slate-400">在「AI 分析」里把满意的分析结论保存为报告，这里统一查看和管理</p>
+        <h1 class="text-xl font-extrabold text-[hsl(var(--foreground))]">分析报告</h1>
+        <p class="mt-1 text-xs text-[hsl(var(--muted-foreground))]">在「AI 分析」里把满意的分析结论保存为报告，这里统一查看和管理</p>
       </div>
 
       <div class="mb-4 shrink-0 flex flex-wrap items-center gap-2">
         <div class="relative">
-          <Search class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+          <Search class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-[hsl(var(--muted-foreground))]" />
           <input
             v-model="searchQuery"
             placeholder="搜索报告标题"
-            class="w-64 rounded-lg border border-[#232B3E] bg-[#121622] py-1.5 pr-3 pl-8 text-xs text-white outline-none focus:border-indigo-500"
+            class="w-64 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-1.5 pr-3 pl-8 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
           />
         </div>
         <select
           v-model="projectFilter"
-          class="rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-white outline-none focus:border-indigo-500"
+          class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
         >
           <option :value="undefined">全部项目</option>
           <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
         <select
           v-model="sort"
-          class="rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs text-white outline-none focus:border-indigo-500"
+          class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
         >
           <option value="created_desc">最新生成优先</option>
           <option value="created_asc">最早生成优先</option>
         </select>
       </div>
 
-      <div class="shrink-0 overflow-hidden rounded-2xl border border-[#1E2433] bg-[#0F131C] shadow-xl">
+      <div class="shrink-0 overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] shadow-xl">
         <div v-if="!loading && reports.length === 0" class="flex flex-col items-center justify-center gap-3 p-12 text-center">
           <div class="flex h-14 w-14 items-center justify-center rounded-2xl border border-indigo-500/20 bg-indigo-500/10">
             <FileText class="h-7 w-7 text-indigo-400" />
           </div>
-          <p class="text-sm font-semibold text-white">
+          <p class="text-sm font-semibold text-[hsl(var(--foreground))]">
             {{ searchQuery || projectFilter ? '没有匹配的报告' : '还没有保存过报告' }}
           </p>
-          <p v-if="!searchQuery && !projectFilter" class="text-xs text-slate-400">
+          <p v-if="!searchQuery && !projectFilter" class="text-xs text-[hsl(var(--muted-foreground))]">
             在「AI 分析」页面完成一次分析后，点击「保存为报告」即可
           </p>
         </div>
         <div v-else class="overflow-x-auto">
           <table class="w-full text-left text-xs">
-            <thead class="border-b border-[#1E2433] bg-[#121622] font-mono text-[11px] text-slate-400 uppercase">
+            <thead class="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] font-mono text-[11px] text-[hsl(var(--muted-foreground))] uppercase">
               <tr>
                 <th class="px-4 py-3">报告名称及摘要</th>
                 <th class="px-4 py-3">模板</th>
@@ -159,28 +159,28 @@ onMounted(() => {
                 <th class="px-4 py-3 text-right">操作</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-[#1E2433]">
+            <tbody class="divide-y divide-[hsl(var(--border))]">
               <tr
                 v-for="r in reports"
                 :key="r.id"
                 tabindex="0"
-                class="cursor-pointer transition-colors hover:bg-[#161C2A] focus:bg-[#161C2A] focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500"
+                class="cursor-pointer transition-colors hover:bg-[hsl(var(--accent))] focus:bg-[hsl(var(--accent))] focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500"
                 @click="openReport(r)"
                 @keyup.enter="openReport(r)"
               >
                 <td class="max-w-md px-4 py-4">
-                  <div class="font-semibold text-white">{{ r.title }}</div>
-                  <div class="mt-0.5 truncate text-[11px] text-slate-500">{{ r.summary }}</div>
+                  <div class="font-semibold text-[hsl(var(--foreground))]">{{ r.title }}</div>
+                  <div class="mt-0.5 truncate text-[11px] text-[hsl(var(--muted-foreground))]">{{ r.summary }}</div>
                 </td>
-                <td class="px-4 py-4 text-slate-300">{{ r.template || '—' }}</td>
-                <td class="px-4 py-4 text-slate-300">{{ r.project_name }}</td>
-                <td class="px-4 py-4 font-mono text-slate-200">{{ r.source_count }}</td>
-                <td class="px-4 py-4 text-slate-400">{{ formatDateTime(r.created_at) }}</td>
+                <td class="px-4 py-4 text-[hsl(var(--muted-foreground))]">{{ r.template || '—' }}</td>
+                <td class="px-4 py-4 text-[hsl(var(--muted-foreground))]">{{ r.project_name }}</td>
+                <td class="px-4 py-4 font-mono text-[hsl(var(--foreground))]">{{ r.source_count }}</td>
+                <td class="px-4 py-4 text-[hsl(var(--muted-foreground))]">{{ formatDateTime(r.created_at) }}</td>
                 <td class="px-4 py-4">
                   <Tag color="success">{{ r.status }}</Tag>
                 </td>
                 <td class="px-4 py-4 text-right" @click.stop>
-                  <button class="text-[11px] text-slate-500 hover:text-rose-400" @click="removeReport(r)">删除</button>
+                  <button class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-rose-400" @click="removeReport(r)">删除</button>
                 </td>
               </tr>
             </tbody>
@@ -188,12 +188,12 @@ onMounted(() => {
         </div>
       </div>
 
-      <div v-if="total > pageSize" class="mt-4 shrink-0 flex items-center justify-between text-xs text-slate-400">
+      <div v-if="total > pageSize" class="mt-4 shrink-0 flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))]">
         <span>共 {{ total }} 份报告</span>
         <div class="flex items-center gap-2">
-          <button class="rounded-lg border border-[#232B3E] bg-[#121622] px-2 py-1 disabled:opacity-40" :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
+          <button class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 py-1 disabled:opacity-40" :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
           <span>{{ page }} / {{ totalPages }}</span>
-          <button class="rounded-lg border border-[#232B3E] bg-[#121622] px-2 py-1 disabled:opacity-40" :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
+          <button class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 py-1 disabled:opacity-40" :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
         </div>
       </div>
     </div>

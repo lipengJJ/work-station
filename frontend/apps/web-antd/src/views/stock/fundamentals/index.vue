@@ -167,42 +167,42 @@ const TABS = [
 
 <template>
   <Page :auto-content-height="true" content-class="!p-0">
-    <div class="custom-scrollbar flex h-full flex-1 flex-col overflow-y-auto bg-[#0B0E14] p-6 select-none">
+    <div class="custom-scrollbar flex h-full flex-1 flex-col overflow-y-auto bg-[hsl(var(--background-deep))] p-6 select-none">
       <!-- 搜索区 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <div class="relative w-80">
           <input
             v-model="searchQuery"
             placeholder="输入代码或公司名，例如 AAPL / Apple"
-            class="w-full rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+            class="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
             @input="onSearchInput"
             @focus="searchOpen = true"
             @keyup.enter="searchResults[0] && pickResult(searchResults[0])"
           />
           <div
             v-if="searchOpen && (searchResults.length > 0 || searchLoading)"
-            class="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-[#232B3E] bg-[#161C2A] shadow-xl"
+            class="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--accent))] shadow-xl"
           >
-            <div v-if="searchLoading" class="px-3 py-2 text-xs text-slate-500">搜索中…</div>
+            <div v-if="searchLoading" class="px-3 py-2 text-xs text-[hsl(var(--muted-foreground))]">搜索中…</div>
             <button
               v-for="r in searchResults"
               :key="r.symbol"
-              class="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-[#1E2538]"
+              class="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-[hsl(var(--muted))]"
               @click="pickResult(r)"
             >
-              <span class="font-mono font-bold text-white">{{ r.symbol }}</span>
-              <span class="ml-2 truncate text-slate-400">{{ r.title }}</span>
+              <span class="font-mono font-bold text-[hsl(var(--foreground))]">{{ r.symbol }}</span>
+              <span class="ml-2 truncate text-[hsl(var(--muted-foreground))]">{{ r.title }}</span>
             </button>
           </div>
         </div>
 
         <div class="flex flex-wrap items-center gap-1.5">
-          <span class="text-xs text-slate-500">自选股快捷选择:</span>
+          <span class="text-xs text-[hsl(var(--muted-foreground))]">自选股快捷选择:</span>
           <button
             v-for="s in watchlistStocks"
             :key="s.symbol"
             class="rounded-lg border px-2 py-1 font-mono text-xs font-bold transition-all"
-            :class="symbol === s.symbol ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-[#232B3E] bg-[#121622] text-slate-300 hover:border-indigo-500/50'"
+            :class="symbol === s.symbol ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:border-indigo-500/50'"
             @click="loadSymbol(s.symbol)"
           >
             {{ s.symbol }}
@@ -211,28 +211,28 @@ const TABS = [
       </div>
 
       <!-- 初始未选择股票 -->
-      <div v-if="pageState === 'empty'" class="flex flex-1 flex-col items-center justify-center rounded-2xl border border-[#1E2433] bg-[#0F131C] p-12 text-center">
-        <Building2 class="mb-4 h-12 w-12 text-slate-600" />
-        <h3 class="mb-2 text-base font-bold text-white">输入股票代码开始基本面分析</h3>
-        <p class="max-w-sm text-xs text-slate-400">支持代码、公司名搜索，或者从上方自选股快捷选择</p>
+      <div v-if="pageState === 'empty'" class="flex flex-1 flex-col items-center justify-center rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-12 text-center">
+        <Building2 class="mb-4 h-12 w-12 text-[hsl(var(--muted-foreground))]" />
+        <h3 class="mb-2 text-base font-bold text-[hsl(var(--foreground))]">输入股票代码开始基本面分析</h3>
+        <p class="max-w-sm text-xs text-[hsl(var(--muted-foreground))]">支持代码、公司名搜索，或者从上方自选股快捷选择</p>
       </div>
 
       <!-- 加载中 -->
-      <div v-else-if="pageState === 'loading'" class="flex flex-1 items-center justify-center text-sm text-slate-400">
+      <div v-else-if="pageState === 'loading'" class="flex flex-1 items-center justify-center text-sm text-[hsl(var(--muted-foreground))]">
         正在加载 {{ symbol }} 的基本面数据…
       </div>
 
       <!-- 无数据 / 找不到 -->
       <div v-else-if="pageState === 'no_data'" class="flex flex-1 flex-col items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/5 p-12 text-center">
         <ScanSearch class="mb-4 h-12 w-12 text-amber-500" />
-        <h3 class="mb-2 text-base font-bold text-white">找不到 {{ symbol }}</h3>
+        <h3 class="mb-2 text-base font-bold text-[hsl(var(--foreground))]">找不到 {{ symbol }}</h3>
         <p class="max-w-sm text-xs text-amber-300">{{ errorMessage }}</p>
       </div>
 
       <!-- 网络错误 / API 报错 -->
       <div v-else-if="pageState === 'error'" class="flex flex-1 flex-col items-center justify-center rounded-2xl border border-rose-500/30 bg-rose-500/5 p-12 text-center">
         <ShieldAlert class="mb-4 h-12 w-12 text-rose-500" />
-        <h3 class="mb-2 text-base font-bold text-white">加载 {{ symbol }} 失败</h3>
+        <h3 class="mb-2 text-base font-bold text-[hsl(var(--foreground))]">加载 {{ symbol }} 失败</h3>
         <p class="mb-4 max-w-md text-xs text-rose-300">{{ errorMessage }}</p>
         <button class="rounded-lg bg-rose-500/20 px-4 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/30" @click="loadSymbol(symbol)">
           重试
@@ -249,18 +249,18 @@ const TABS = [
         </div>
 
         <!-- 公司摘要区 -->
-        <div class="mb-4 rounded-2xl border border-[#1E2433] bg-[#0F131C] p-5">
+        <div class="mb-4 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-5">
           <div class="flex flex-wrap items-start justify-between gap-4">
             <div class="flex items-center gap-3">
-              <div class="flex h-12 w-12 items-center justify-center rounded-xl border border-[#232B3E] bg-[#181F30] font-mono text-sm font-bold text-white">
+              <div class="flex h-12 w-12 items-center justify-center rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] font-mono text-sm font-bold text-[hsl(var(--foreground))]">
                 {{ overview.symbol.slice(0, 2) }}
               </div>
               <div>
                 <div class="flex items-center gap-2">
-                  <h1 class="text-xl font-extrabold text-white">{{ overview.symbol }}</h1>
-                  <span class="text-sm text-slate-400">{{ overview.name }}</span>
+                  <h1 class="text-xl font-extrabold text-[hsl(var(--foreground))]">{{ overview.symbol }}</h1>
+                  <span class="text-sm text-[hsl(var(--muted-foreground))]">{{ overview.name }}</span>
                 </div>
-                <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[hsl(var(--muted-foreground))]">
                   <span v-if="overview.sector" class="rounded border border-indigo-500/20 bg-indigo-500/10 px-2 py-0.5 text-indigo-300">
                     {{ overview.sector }}<template v-if="overview.industry"> / {{ overview.industry }}</template>
                   </span>
@@ -273,7 +273,7 @@ const TABS = [
             <div class="flex items-center gap-2">
               <button
                 class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all"
-                :class="isInWatchlist ? 'border-amber-500/40 bg-amber-500/15 text-amber-300' : 'border-[#232B3E] bg-[#121622] text-slate-400 hover:text-slate-200'"
+                :class="isInWatchlist ? 'border-amber-500/40 bg-amber-500/15 text-amber-300' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
                 :disabled="watchlistBusy"
                 @click="toggleWatchlist"
               >
@@ -281,7 +281,7 @@ const TABS = [
                 {{ isInWatchlist ? '已加自选' : '加入自选' }}
               </button>
               <button
-                class="flex items-center gap-1.5 rounded-lg border border-[#232B3E] bg-[#121622] px-3 py-1.5 text-xs font-bold text-slate-400 hover:text-slate-200"
+                class="flex items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs font-bold text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
                 :disabled="refreshing"
                 @click="manualRefresh"
               >
@@ -293,31 +293,31 @@ const TABS = [
 
           <div class="mt-4 grid grid-cols-2 gap-3 font-mono sm:grid-cols-3 lg:grid-cols-6">
             <div>
-              <div class="text-[10px] text-slate-500">当前价格</div>
-              <div class="text-lg font-black text-white">${{ overview.price?.toFixed(2) ?? '--' }}</div>
+              <div class="text-[10px] text-[hsl(var(--muted-foreground))]">当前价格</div>
+              <div class="text-lg font-black text-[hsl(var(--foreground))]">${{ overview.price?.toFixed(2) ?? '--' }}</div>
               <div class="text-[11px] font-bold" :class="(overview.change ?? 0) >= 0 ? 'text-rose-500' : 'text-emerald-400'">
                 {{ overview.change >= 0 ? '+' : '' }}{{ overview.change?.toFixed(2) }} ({{ formatPercent(overview.change_percent) }})
               </div>
             </div>
             <div>
-              <div class="text-[10px] text-slate-500">市值</div>
-              <div class="text-sm font-bold text-white">{{ formatCompactUsd(overview.market_cap) }}</div>
+              <div class="text-[10px] text-[hsl(var(--muted-foreground))]">市值</div>
+              <div class="text-sm font-bold text-[hsl(var(--foreground))]">{{ formatCompactUsd(overview.market_cap) }}</div>
             </div>
             <div>
-              <div class="text-[10px] text-slate-500">TTM PE</div>
-              <div class="text-sm font-bold text-white">{{ formatMultiple(overview.pe_ttm) }}</div>
+              <div class="text-[10px] text-[hsl(var(--muted-foreground))]">TTM PE</div>
+              <div class="text-sm font-bold text-[hsl(var(--foreground))]">{{ formatMultiple(overview.pe_ttm) }}</div>
             </div>
             <div>
-              <div class="text-[10px] text-slate-500">Forward PE</div>
-              <div class="text-sm font-bold text-white">{{ formatMultiple(overview.pe_forward) }}</div>
+              <div class="text-[10px] text-[hsl(var(--muted-foreground))]">Forward PE</div>
+              <div class="text-sm font-bold text-[hsl(var(--foreground))]">{{ formatMultiple(overview.pe_forward) }}</div>
             </div>
             <div>
-              <div class="text-[10px] text-slate-500">下次财报日期</div>
-              <div class="text-sm font-bold text-white">{{ formatDate(overview.next_earnings_date) }}</div>
+              <div class="text-[10px] text-[hsl(var(--muted-foreground))]">下次财报日期</div>
+              <div class="text-sm font-bold text-[hsl(var(--foreground))]">{{ formatDate(overview.next_earnings_date) }}</div>
             </div>
             <div>
-              <div class="text-[10px] text-slate-500">员工人数</div>
-              <div class="text-sm font-bold text-white">{{ overview.employees?.toLocaleString() ?? '暂无数据' }}</div>
+              <div class="text-[10px] text-[hsl(var(--muted-foreground))]">员工人数</div>
+              <div class="text-sm font-bold text-[hsl(var(--foreground))]">{{ overview.employees?.toLocaleString() ?? '暂无数据' }}</div>
             </div>
           </div>
         </div>

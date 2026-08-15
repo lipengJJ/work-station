@@ -41,12 +41,17 @@ def search(
     page_size: int = Query(20, ge=1, le=50),
     _=Depends(get_current_user),
 ):
-    src = registry.get(source)
+    try:
+        src = registry.get(source)
+    except ResourceSourceError as exc:
+        # 未知资源源属于参数错误（400），不能落到 500
+        raise HTTPException(400, str(exc))
     if not src.supports_search:
         raise HTTPException(400, f"资源源 {source} 不支持搜索")
     try:
         return src.search(keyword, category, page, page_size)
     except ResourceSourceError as exc:
+        # 搜索渠道全挂属于上游故障（502），语义为"网关错误"
         raise HTTPException(502, str(exc))
 
 
@@ -59,7 +64,10 @@ def check_links(body: LinkCheckIn, db: Session = Depends(get_db), _=Depends(get_
 
 @router.post("/save")
 def save_resource(body: SaveIn, db: Session = Depends(get_db), _=Depends(get_current_user)):
-    src = registry.get(body.source)
+    try:
+        src = registry.get(body.source)
+    except ResourceSourceError as exc:
+        raise HTTPException(400, str(exc))
     if not src.supports_save:
         raise HTTPException(400, f"资源源 {body.source} 不支持转存")
     try:

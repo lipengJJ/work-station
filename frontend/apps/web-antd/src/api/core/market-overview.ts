@@ -39,6 +39,8 @@ export namespace MarketOverviewApi {
 
   export interface MarketEvent {
     type: 'cpi' | 'earnings' | 'fomc';
+    /** 事件来源分组：macro=宏观日程 / mag7=七姐妹财报 / watchlist=自选股（持仓关注）财报 */
+    group?: 'macro' | 'mag7' | 'watchlist';
     date: string;
     date_range: string;
     title: string;
@@ -47,12 +49,14 @@ export namespace MarketOverviewApi {
     source_url: string | null;
     confirmed: boolean;
     symbol?: string;
+    is_watchlist?: boolean;
   }
 
   export interface EventsResponse {
     events: MarketEvent[];
     window_start: string;
     window_end: string;
+    watchlist_count?: number;
     reference_note: string;
   }
 

@@ -5,11 +5,22 @@ from pydantic import BaseModel
 from app.common.schemas.task import TaskOut
 
 
-class DataSourceStatus(BaseModel):
-    module: str
-    last_run_at: datetime | None
-    last_status: str | None
-    total_tasks: int
+class RunningTask(BaseModel):
+    """首页"运行中任务"卡片：采集任务 / 补抓评论 / 追踪扫描 统一结构"""
+    id: int
+    kind: str  # collect | backfill | tracking
+    title: str
+    status: str
+    phase: str | None = None
+    progress_current: int | None = None
+    progress_total: int | None = None
+    started_at: datetime | None = None
+
+
+class TrendPoint(BaseModel):
+    date: str  # YYYY-MM-DD
+    created: int
+    finished: int
 
 
 class HomeSummary(BaseModel):
@@ -17,9 +28,14 @@ class HomeSummary(BaseModel):
     success_count: int
     failed_count: int
     running_count: int
+    today_new: int
+    today_done: int
+    success_rate: float
 
 
 class HomeResponse(BaseModel):
-    data_sources: list[DataSourceStatus]
     recent_tasks: list[TaskOut]
+    running_tasks: list[RunningTask]
+    trend: list[TrendPoint]
+    status_distribution: dict[str, int]
     summary: HomeSummary

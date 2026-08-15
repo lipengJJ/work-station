@@ -543,7 +543,7 @@ onMounted(() => {
       <div v-if="otherConfigs.length > 0" class="ac-card ac-other">
         <div class="ac-card-head">
           <div class="ac-card-head-left">
-            <span class="ac-module-icon" style="background: rgba(107, 114, 128, 0.15); color: #6b7280">
+            <span class="ac-module-icon" style="background: rgba(107, 114, 128, 0.15); color: hsl(var(--muted-foreground))">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                 <ellipse cx="12" cy="5" rx="8" ry="3" />
                 <path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
@@ -878,7 +878,7 @@ body.dark {
   border-radius: 16px;
   overflow: hidden;
   color: #fff;
-  background: linear-gradient(118deg, #4f46e5 0%, #6d28d9 52%, #a21caf 100%);
+  background: linear-gradient(118deg, var(--primary) 0%, #6d28d9 52%, #a21caf 100%);
   box-shadow: 0 6px 20px rgba(88, 50, 220, 0.32);
 }
 
@@ -1014,7 +1014,7 @@ body.dark {
   padding-inline: 20px;
   font-weight: 600;
   background: rgba(255, 255, 255, 0.94);
-  color: #4f46e5;
+  color: var(--primary);
   border: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }

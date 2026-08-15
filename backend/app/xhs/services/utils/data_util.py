@@ -182,7 +182,12 @@ def handle_comment_info(data):
         pictures_temp = data['pictures']
         for picture in pictures_temp:
             try:
-                pictures.append(picture['info_list'][1]['url'])
+                # 兼容两种产出形态：API 直连的 dict(info_list) / 页面级爬取的字符串 URL
+                # （page_crawler 的 DOM 提取直接 push URL 字符串）
+                if isinstance(picture, str):
+                    pictures.append(picture)
+                else:
+                    pictures.append(picture['info_list'][1]['url'])
                 # success, msg, img_url = XHS_Apis.get_note_no_water_img(picture['info_list'][1]['url'])
                 # pictures.append(img_url)
             except (KeyError, IndexError, TypeError):
@@ -203,6 +208,9 @@ def handle_comment_info(data):
         'upload_time': upload_time,
         'ip_location': ip_location,
         'pictures': pictures,
+        # 二级评论的父评论 id（一级评论为空字符串），由 _flatten_comments 递归时打标，
+        # 供评论表（xhs_note_comments）保留评论树结构；Excel 导出不受影响
+        'parent_comment_id': str(data.get('parent_comment_id') or ''),
     }
 def save_to_xlsx(datas, file_path, type='note'):
     wb = openpyxl.Workbook()
@@ -301,7 +309,12 @@ def save_note_detail(note, path):
 
 
 @retry(tries=3, delay=1)
-def download_note(note_info, path, save_choice):
+def download_note(note_info, path, save_choice, download_video: bool = True):
+    """
+    下载笔记素材到本地。save_choice 决定图片/视频/Excel 组合；
+    download_video=False 时视频只保留地址（video_addr）不下载文件——
+    视频体积大，采集默认不下载，用户在创建任务时勾选后才下（collect_tasks.py）。
+    """
     note_id = note_info['note_id']
     user_id = note_info['user_id']
     title = note_info['title']
@@ -328,7 +341,7 @@ def download_note(note_info, path, save_choice):
                 ]
                 for future in futures:
                     future.result()
-    elif note_type == '视频' and save_choice in ['media', 'media-video', 'all']:
+    elif note_type == '视频' and save_choice in ['media', 'media-video', 'all'] and download_video:
         video_cover = note_info.get('video_cover')
         video_addr = note_info.get('video_addr')
         if not video_cover:

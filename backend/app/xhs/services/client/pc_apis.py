@@ -10,8 +10,13 @@ from app.xhs.services.utils.http_util import REQUEST_TIMEOUT
 from loguru import logger
 
 """
-    获小红书的api
+    获小红书的api（遗留实现）。
     :param cookies_str: 你的cookies
+
+    说明：搜索/笔记详情/评论/用户主页等"数据爬取链路"方法已迁移到
+    xhs_crawler_client.XhsCrawlerClient（统一请求层 + 异常分类 + 限流重试），
+    本类中这些方法改为委托，避免同一套逻辑两份实现后漂移；
+    其余方法（首页 feed/消息/互动等）保留原实现。
 """
 
 # 小红书风控/限流响应码：接口层 success 仍为 true，但 data 为空，需当作失败处理并退避重试
@@ -79,6 +84,9 @@ def _get_query_params(parsed_url):
 class XHS_Apis():
     def __init__(self):
         self.base_url = "https://edith.xiaohongshu.com"
+        # 爬取链方法已迁移到 XhsCrawlerClient（统一请求层+异常分类），这里委托避免双实现漂移
+        from app.xhs.services.client.xhs_crawler_client import XhsCrawlerClient
+        self._crawler = XhsCrawlerClient(base_url=self.base_url)
 
     def get_homefeed_all_channel(self, cookies_str: str, proxies: dict = None):
         """
@@ -192,104 +200,17 @@ class XHS_Apis():
         return success, msg, res_json
 
     def get_user_self_info(self, cookies_str: str, proxies: dict = None):
-        """
-            获取用户自己的信息1
-            :param cookies_str: 你的cookies
-            返回用户自己的信息1
-        """
-        res_json = None
-        try:
-            api = f"/api/sns/web/v1/user/selfinfo"
-            headers, cookies, data = generate_request_params(cookies_str, api, '', 'GET')
-            response = requests.get(self.base_url + api, headers=headers, cookies=cookies, proxies=proxies, timeout=REQUEST_TIMEOUT)
-            res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, res_json
-
-
+        """委托 XhsCrawlerClient.get_user_self_info（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.get_user_self_info(cookies_str, proxies)
     def get_user_self_info2(self, cookies_str: str, proxies: dict = None):
-        """
-            获取用户自己的信息2
-            :param cookies_str: 你的cookies
-            返回用户自己的信息2
-        """
-        res_json = None
-        try:
-            api = f"/api/sns/web/v2/user/me"
-            headers, cookies, data = generate_request_params(cookies_str, api, '', 'GET')
-            response = requests.get(self.base_url + api, headers=headers, cookies=cookies, proxies=proxies, timeout=REQUEST_TIMEOUT)
-            res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, res_json
-
+        """委托 XhsCrawlerClient.get_user_self_info2（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.get_user_self_info2(cookies_str, proxies)
     def get_user_note_info(self, user_id: str, cursor: str, cookies_str: str, xsec_token='', xsec_source='', proxies: dict = None):
-        """
-            获取用户指定位置的笔记
-            :param user_id: 你想要获取的用户的id
-            :param cursor: 你想要获取的笔记的cursor
-            :param cookies_str: 你的cookies
-            返回用户指定位置的笔记
-        """
-        res_json = None
-        try:
-            api = f"/api/sns/web/v1/user_posted"
-            params = {
-                "num": "30",
-                "cursor": cursor,
-                "user_id": user_id,
-                "image_formats": "jpg,webp,avif",
-                "xsec_token": xsec_token,
-                "xsec_source": xsec_source,
-            }
-            splice_api = splice_str(api, params)
-            headers, cookies, data = generate_request_params(cookies_str, splice_api, '', 'GET')
-            response = requests.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=proxies, timeout=REQUEST_TIMEOUT)
-            res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, res_json
-
-
+        """委托 XhsCrawlerClient.get_user_note_info（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.get_user_note_info(user_id, cursor, cookies_str, xsec_token, xsec_source, proxies)
     def get_user_all_notes(self, user_url: str, cookies_str: str, proxies: dict = None):
-        """
-           获取用户所有笔记
-           :param user_id: 你想要获取的用户的id
-           :param cookies_str: 你的cookies
-           返回用户的所有笔记
-        """
-        cursor = ''
-        note_list = []
-        try:
-            urlParse = urllib.parse.urlparse(user_url)
-            user_id = urlParse.path.split("/")[-1]
-            kvDist = _get_query_params(urlParse)
-            xsec_token = kvDist['xsec_token'] if 'xsec_token' in kvDist else ""
-            xsec_source = kvDist['xsec_source'] if 'xsec_source' in kvDist else "pc_search"
-            while True:
-                success, msg, res_json = self.get_user_note_info(user_id, cursor, cookies_str, xsec_token, xsec_source, proxies)
-                if not success:
-                    raise Exception(msg)
-                notes = res_json["data"]["notes"]
-                if 'cursor' in res_json["data"]:
-                    cursor = str(res_json["data"]["cursor"])
-                else:
-                    break
-                note_list.extend(notes)
-                if len(notes) == 0 or not res_json["data"]["has_more"]:
-                    break
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, note_list
-
+        """委托 XhsCrawlerClient.get_user_all_notes（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.get_user_all_notes(user_url, cookies_str, proxies)
     def get_user_like_note_info(self, user_id: str, cursor: str, cookies_str: str, xsec_token='', xsec_source='', proxies: dict = None):
         """
             获取用户指定位置喜欢的笔记
@@ -415,222 +336,17 @@ class XHS_Apis():
         return success, msg, note_list
 
     def get_note_info(self, url: str, cookies_str: str, proxies: dict = None):
-        """
-            获取笔记的详细
-            :param url: 你想要获取的笔记的url
-            :param cookies_str: 你的cookies
-            :param xsec_source: 你的xsec_source 默认为pc_search pc_user pc_feed
-            返回笔记的详细
-        """
-        res_json = None
-        try:
-            urlParse = urllib.parse.urlparse(url)
-            note_id = urlParse.path.split("/")[-1]
-            kvDist = _get_query_params(urlParse)
-            api = f"/api/sns/web/v1/feed"
-            data = {
-                "source_note_id": note_id,
-                "image_formats": [
-                    "jpg",
-                    "webp",
-                    "avif"
-                ],
-                "extra": {
-                    "need_body_topic": "1"
-                },
-                "xsec_source": kvDist['xsec_source'] if 'xsec_source' in kvDist else "pc_search",
-                "xsec_token": kvDist.get('xsec_token', '')
-            }
-            headers, cookies, data = generate_request_params(cookies_str, api, data, 'POST')
-            headers["x-rap-param"] = generate_x_rap_param(api, data)
-            headers["xy-direction"] = "13"
-            response = requests.post(self.base_url + api, headers=headers, data=data, cookies=cookies, proxies=proxies, timeout=REQUEST_TIMEOUT)
-            res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, res_json
-
-
+        """委托 XhsCrawlerClient.get_note_info（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.get_note_info(url, cookies_str, proxies)
     def get_search_keyword(self, word: str, cookies_str: str, proxies: dict = None):
-        """
-            获取搜索关键词
-            :param word: 你的关键词
-            :param cookies_str: 你的cookies
-            返回搜索关键词
-        """
-        res_json = None
-        try:
-            api = "/api/sns/web/v1/search/recommend"
-            params = {
-                "keyword": urllib.parse.quote(word)
-            }
-            splice_api = splice_str(api, params)
-            headers, cookies, data = generate_request_params(cookies_str, splice_api, '', 'GET')
-            response = requests.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=proxies, timeout=REQUEST_TIMEOUT)
-            res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, res_json
-
+        """委托 XhsCrawlerClient.get_search_keyword（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.get_search_keyword(word, cookies_str, proxies)
     def search_note(self, query: str, cookies_str: str, page=1, sort_type_choice=0, note_type=0, note_time=0, note_range=0, pos_distance=0, geo="", search_id=None, proxies: dict = None):
-        """
-            获取搜索笔记的结果
-            :param query 搜索的关键词
-            :param cookies_str 你的cookies
-            :param page 搜索的页数
-            :param sort_type_choice 排序方式 0 综合排序, 1 最新, 2 最多点赞, 3 最多评论, 4 最多收藏
-            :param note_type 笔记类型 0 不限, 1 视频笔记, 2 普通笔记
-            :param note_time 笔记时间 0 不限, 1 一天内, 2 一周内天, 3 半年内
-            :param note_range 笔记范围 0 不限, 1 已看过, 2 未看过, 3 已关注
-            :param pos_distance 位置距离 0 不限, 1 同城, 2 附近 指定这个必须要指定 geo
-            返回搜索的结果
-        """
-        res_json = None
-        sort_type = "general"
-        if sort_type_choice == 1:
-            sort_type = "time_descending"
-        elif sort_type_choice == 2:
-            sort_type = "popularity_descending"
-        elif sort_type_choice == 3:
-            sort_type = "comment_descending"
-        elif sort_type_choice == 4:
-            sort_type = "collect_descending"
-        filter_note_type = "不限"
-        if note_type == 1:
-            filter_note_type = "视频笔记"
-        elif note_type == 2:
-            filter_note_type = "普通笔记"
-        filter_note_time = "不限"
-        if note_time == 1:
-            filter_note_time = "一天内"
-        elif note_time == 2:
-            filter_note_time = "一周内"
-        elif note_time == 3:
-            filter_note_time = "半年内"
-        filter_note_range = "不限"
-        if note_range == 1:
-            filter_note_range = "已看过"
-        elif note_range == 2:
-            filter_note_range = "未看过"
-        elif note_range == 3:
-            filter_note_range = "已关注"
-        filter_pos_distance = "不限"
-        if pos_distance == 1:
-            filter_pos_distance = "同城"
-        elif pos_distance == 2:
-            filter_pos_distance = "附近"
-        if geo:
-            geo = json.dumps(geo, separators=(',', ':'))
-        try:
-            api = "/api/sns/web/v1/search/notes"
-            data = {
-                "keyword": query,
-                "page": page,
-                "page_size": 20,
-                "search_id": search_id or generate_search_id(),
-                "sort": "general",
-                "note_type": 0,
-                "ext_flags": [],
-                "filters": [
-                    {
-                        "tags": [
-                            sort_type
-                        ],
-                        "type": "sort_type"
-                    },
-                    {
-                        "tags": [
-                            filter_note_type
-                        ],
-                        "type": "filter_note_type"
-                    },
-                    {
-                        "tags": [
-                            filter_note_time
-                        ],
-                        "type": "filter_note_time"
-                    },
-                    {
-                        "tags": [
-                            filter_note_range
-                        ],
-                        "type": "filter_note_range"
-                    },
-                    {
-                        "tags": [
-                            filter_pos_distance
-                        ],
-                        "type": "filter_pos_distance"
-                    }
-                ],
-                "geo": geo,
-                "image_formats": [
-                    "jpg",
-                    "webp",
-                    "avif"
-                ]
-            }
-            headers, cookies, data = generate_request_params(cookies_str, api, data, 'POST')
-            headers["x-rap-param"] = generate_x_rap_param(api, data)
-            response = requests.post(self.base_url + api, headers=headers, data=data.encode('utf-8'), cookies=cookies, proxies=proxies, timeout=REQUEST_TIMEOUT)
-            res_json = response.json()
-            success = res_json.get("success", False)
-            # 有些失败响应（比如触发了小红书的滑块验证/风控校验）不带 "msg" 字段，只有
-            # "code"——直接 res_json["msg"] 会抛 KeyError，冒出来的报错信息就是不知所云的
-            # "'msg'"（KeyError 的字符串表示）。这里退回一段包含实际响应内容的诊断信息，
-            # 让调用方至少能看出是不是触发了风控校验，而不是一个看不出原因的字符串。
-            if success:
-                msg = res_json.get("msg", "")
-            else:
-                msg = res_json.get("msg") or (
-                    f"响应异常（可能触发小红书风控校验），code={res_json.get('code')}, data={res_json.get('data')}"
-                )
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, res_json
-
+        """委托 XhsCrawlerClient.search_note（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.search_note(query, cookies_str, page, sort_type_choice, note_type, note_time, note_range, pos_distance, geo, search_id, proxies)
     def search_some_note(self, query: str, require_num: int, cookies_str: str, sort_type_choice=0, note_type=0, note_time=0, note_range=0, pos_distance=0, geo="", proxies: dict = None):
-        """
-            指定数量搜索笔记，设置排序方式和笔记类型和笔记数量
-            :param query 搜索的关键词
-            :param require_num 搜索的数量
-            :param cookies_str 你的cookies
-            :param sort_type_choice 排序方式 0 综合排序, 1 最新, 2 最多点赞, 3 最多评论, 4 最多收藏
-            :param note_type 笔记类型 0 不限, 1 视频笔记, 2 普通笔记
-            :param note_time 笔记时间 0 不限, 1 一天内, 2 一周内天, 3 半年内
-            :param note_range 笔记范围 0 不限, 1 已看过, 2 未看过, 3 已关注
-            :param pos_distance 位置距离 0 不限, 1 同城, 2 附近 指定这个必须要指定 geo
-            :param geo: 定位信息 经纬度
-            返回搜索的结果
-        """
-        page = 1
-        note_list = []
-        root_search_id = generate_search_id()
-        try:
-            while True:
-                search_id = generate_search_id(root_search_id)
-                success, msg, res_json = self.search_note(query, cookies_str, page, sort_type_choice, note_type, note_time, note_range, pos_distance, geo, search_id, proxies)
-                if not success:
-                    raise Exception(msg)
-                if "items" not in res_json["data"]:
-                    break
-                notes = res_json["data"]["items"]
-                note_list.extend(notes)
-                page += 1
-                if len(note_list) >= require_num or not res_json["data"]["has_more"]:
-                    break
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        if len(note_list) > require_num:
-            note_list = note_list[:require_num]
-        return success, msg, note_list
-
+        """委托 XhsCrawlerClient.search_some_note（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.search_some_note(query, require_num, cookies_str, sort_type_choice, note_type, note_time, note_range, pos_distance, geo, proxies)
     def search_user(self, query: str, cookies_str: str, page=1, proxies: dict = None):
         """
             获取搜索用户的结果
@@ -691,179 +407,20 @@ class XHS_Apis():
         return success, msg, user_list
 
     def get_note_out_comment(self, note_id: str, cursor: str, xsec_token: str, cookies_str: str, proxies: dict = None):
-        """
-            获取指定位置的笔记一级评论
-            :param note_id 笔记的id
-            :param cursor 指定位置的评论的cursor
-            :param cookies_str 你的cookies
-            返回指定位置的笔记一级评论
-        """
-        res_json = None
-        try:
-            api = "/api/sns/web/v2/comment/page"
-            params = {
-                "note_id": note_id,
-                "cursor": cursor,
-                "top_comment_id": "",
-                "image_formats": "jpg,webp,avif",
-                "xsec_token": xsec_token
-            }
-            splice_api = splice_str(api, params)
-            headers, cookies, data = generate_request_params(cookies_str, splice_api, '', 'GET')
-            response = requests.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=proxies, timeout=REQUEST_TIMEOUT)
-            res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
-            if res_json.get("code") in RATE_LIMIT_CODES:
-                success = False
-                msg = res_json.get("msg") or msg
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, res_json
-
+        """委托 XhsCrawlerClient.get_note_out_comment（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.get_note_out_comment(note_id, cursor, xsec_token, cookies_str, proxies)
     def get_note_all_out_comment(self, note_id: str, xsec_token: str, cookies_str: str, proxies: dict = None, interval_seconds: float = None, max_comments: int = None):
-        """
-            获取笔记的全部一级评论
-            没有二级互动且正文很短的一级评论会被直接丢弃（视为无意义评论），正文较长的仍会保留
-            :param note_id 笔记的id
-            :param cookies_str 你的cookies
-            :param interval_seconds 翻页请求间隔（秒），用于限速，默认 COMMENT_PAGE_INTERVAL_SECONDS
-            :param max_comments 最多保留的一级评论数量，达到后停止翻页（None 表示不限制，抓取全部）
-            返回笔记的全部一级评论
-        """
-        interval = COMMENT_PAGE_INTERVAL_SECONDS if interval_seconds is None else interval_seconds
-        cursor = ''
-        note_out_comment_list = []
-        try:
-            first_page = True
-            while True:
-                if not first_page:
-                    _paced_sleep(interval)
-                first_page = False
-                success, msg, res_json = _request_with_rate_limit_retry(
-                    lambda: self.get_note_out_comment(note_id, cursor, xsec_token, cookies_str, proxies)
-                )
-                if not success:
-                    raise Exception(msg)
-                page_comments = res_json["data"]["comments"]
-                note_out_comment_list.extend(c for c in page_comments if not _is_trivial_top_comment(c))
-                if max_comments is not None and len(note_out_comment_list) >= max_comments:
-                    note_out_comment_list = note_out_comment_list[:max_comments]
-                    break
-                if 'cursor' in res_json["data"]:
-                    cursor = str(res_json["data"]["cursor"])
-                else:
-                    break
-                if len(page_comments) == 0 or not res_json["data"]["has_more"]:
-                    break
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, note_out_comment_list
-
+        """委托 XhsCrawlerClient.get_note_all_out_comment（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.get_note_all_out_comment(note_id, xsec_token, cookies_str, proxies, interval_seconds, max_comments)
     def get_note_inner_comment(self, comment: dict, cursor: str, xsec_token: str, cookies_str: str, proxies: dict = None):
-        """
-            获取指定位置的笔记二级评论
-            :param comment 笔记的一级评论
-            :param cursor 指定位置的评论的cursor
-            :param cookies_str 你的cookies
-            返回指定位置的笔记二级评论
-        """
-        res_json = None
-        try:
-            api = "/api/sns/web/v2/comment/sub/page"
-            params = {
-                "note_id": comment['note_id'],
-                "root_comment_id": comment['id'],
-                "num": "10",
-                "cursor": cursor,
-                "image_formats": "jpg,webp,avif",
-                "top_comment_id": '',
-                "xsec_token": xsec_token
-            }
-            splice_api = splice_str(api, params)
-            headers, cookies, data = generate_request_params(cookies_str, splice_api, '', 'GET')
-            response = requests.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=proxies, timeout=REQUEST_TIMEOUT)
-            res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
-            if res_json.get("code") in RATE_LIMIT_CODES:
-                success = False
-                msg = res_json.get("msg") or msg
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, res_json
-
+        """委托 XhsCrawlerClient.get_note_inner_comment（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.get_note_inner_comment(comment, cursor, xsec_token, cookies_str, proxies)
     def get_note_all_inner_comment(self, comment: dict, xsec_token: str, cookies_str: str, proxies: dict = None, interval_seconds: float = None):
-        """
-            获取笔记的全部二级评论
-            :param comment 笔记的一级评论
-            :param cookies_str 你的cookies
-            :param interval_seconds 翻页请求间隔（秒），用于限速，默认 COMMENT_PAGE_INTERVAL_SECONDS
-            返回笔记的全部二级评论
-        """
-        interval = COMMENT_PAGE_INTERVAL_SECONDS if interval_seconds is None else interval_seconds
-        try:
-            if not comment['sub_comment_has_more']:
-                return True, 'success', comment
-            cursor = comment['sub_comment_cursor']
-            inner_comment_list = []
-            first_page = True
-            while True:
-                if not first_page:
-                    _paced_sleep(interval)
-                first_page = False
-                success, msg, res_json = _request_with_rate_limit_retry(
-                    lambda: self.get_note_inner_comment(comment, cursor, xsec_token, cookies_str, proxies)
-                )
-                if not success:
-                    raise Exception(msg)
-                comments = res_json["data"]["comments"]
-                if 'cursor' in res_json["data"]:
-                    cursor = str(res_json["data"]["cursor"])
-                else:
-                    break
-                inner_comment_list.extend(comments)
-                if not res_json["data"]["has_more"]:
-                    break
-            comment['sub_comments'].extend(inner_comment_list)
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, comment
-
+        """委托 XhsCrawlerClient.get_note_all_inner_comment（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.get_note_all_inner_comment(comment, xsec_token, cookies_str, proxies, interval_seconds)
     def get_note_all_comment(self, url: str, cookies_str: str, proxies: dict = None, interval_seconds: float = None, max_comments: int = None):
-        """
-            获取一篇文章的所有评论
-            没有二级互动且正文很短的一级评论会被直接丢弃，正文较长的仍会保留
-            :param note_id: 你想要获取的笔记的id
-            :param cookies_str: 你的cookies
-            :param interval_seconds: 评论请求间隔（秒），用于限速，默认 COMMENT_PAGE_INTERVAL_SECONDS
-            :param max_comments: 最多保留的一级评论数量，达到后停止翻页也不再展开更多二级评论（None 表示不限制）
-            返回一篇文章的所有评论
-        """
-        interval = COMMENT_PAGE_INTERVAL_SECONDS if interval_seconds is None else interval_seconds
-        out_comment_list = []
-        try:
-            urlParse = urllib.parse.urlparse(url)
-            note_id = urlParse.path.split("/")[-1]
-            kvDist = _get_query_params(urlParse)
-            xsec_token = kvDist.get('xsec_token', '')
-            success, msg, out_comment_list = self.get_note_all_out_comment(note_id, xsec_token, cookies_str, proxies, interval_seconds=interval, max_comments=max_comments)
-            if not success:
-                raise Exception(msg)
-            # 一级评论已经拿到手，某一条展开二级评论失败（比如被限流重试耗尽）不应该丢掉已抓到的全部数据，跳过即可
-            for comment in out_comment_list:
-                if comment.get('sub_comment_has_more'):
-                    _paced_sleep(interval)
-                inner_success, inner_msg, _ = self.get_note_all_inner_comment(comment, xsec_token, cookies_str, proxies, interval_seconds=interval)
-                if not inner_success:
-                    logger.warning(f"评论 {comment.get('id')} 展开二级评论失败，跳过: {inner_msg}")
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, out_comment_list
-
+        """委托 XhsCrawlerClient.get_note_all_comment（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        return self._crawler.get_note_all_comment(url, cookies_str, proxies, interval_seconds, max_comments)
     def get_unread_message(self, cookies_str: str, proxies: dict = None):
         """
             获取未读消息
@@ -1034,26 +591,9 @@ class XHS_Apis():
 
     @staticmethod
     def get_note_no_water_video(note_id):
-        """
-            获取笔记无水印视频
-            :param note_id: 你想要获取的笔记的id
-            返回笔记无水印视频
-        """
-        success = True
-        msg = '成功'
-        video_addr = None
-        try:
-            headers = get_common_headers()
-            url = f"https://www.xiaohongshu.com/explore/{note_id}"
-            response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
-            res = response.text
-            video_addr = re.findall(r'<meta name="og:video" content="(.*?)">', res)[0]
-        except Exception as e:
-            success = False
-            msg = _log_api_error(e)
-        return success, msg, video_addr
-
-
+        """委托 XhsCrawlerClient.get_note_no_water_video（统一请求层+异常分类，见 xhs_crawler_client.py）"""
+        from app.xhs.services.client.xhs_crawler_client import XhsCrawlerClient
+        return XhsCrawlerClient.get_note_no_water_video(note_id)
     @staticmethod
     def get_note_no_water_img(img_url):
         """

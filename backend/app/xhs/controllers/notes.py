@@ -87,6 +87,21 @@ def get_note_task_notes(
     return result or {"items": [], "total": 0, "page": page, "page_size": page_size}
 
 
+@router.get("/notes/{note_id}/comments")
+def get_note_comments(
+    note_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """按笔记查看已获取的评论（笔记列表"评论"按钮）。表数据优先，旧任务 JSON 兜底。"""
+    from app.xhs.services.comment_store import list_comments_for_note
+
+    items, total, source = list_comments_for_note(db, note_id, page=page, page_size=page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "source": source}
+
+
 @router.post("/notes/tasks/{task_id}/ai-process")
 def process_existing_task_notes(task_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
     """使用智谱补处理该主题中缺失、失败或内容已变化的存量结构化数据。"""
@@ -148,6 +163,11 @@ def refresh_note(note_id: str, db: Session = Depends(get_db), _=Depends(get_curr
     cookies_str = token_store.get_cookies_str(db)
     if not cookies_str:
         raise HTTPException(400, "尚未配置小红书 token/cookie")
+
+    # 登录态心跳探测：失效时给出明确提示，而不是等请求失败后冒出难懂的报错
+    valid, valid_msg = token_store.validate(db)
+    if not valid:
+        raise HTTPException(400, f"刷新失败：{valid_msg}")
 
     ok, msg, note_info = note_cache.get_or_fetch_note(
         db, cached["note_url"], note_id, cookies_str, Data_Spider(), force_refresh=True

@@ -922,7 +922,7 @@ onMounted(() => {
 
             <template v-for="a in orderedAnalyses" :key="a.id">
               <div class="chat-row chat-row--user">
-                <Avatar style="background-color: #1677ff; flex-shrink: 0">我</Avatar>
+                <Avatar style="background-color: hsl(var(--primary)); flex-shrink: 0">我</Avatar>
                 <div class="chat-bubble chat-bubble--user">{{ a.question }}</div>
               </div>
               <div class="chat-row chat-row--assistant">
@@ -951,7 +951,7 @@ onMounted(() => {
 
             <template v-if="streamingEntry">
               <div class="chat-row chat-row--user">
-                <Avatar style="background-color: #1677ff; flex-shrink: 0">我</Avatar>
+                <Avatar style="background-color: hsl(var(--primary)); flex-shrink: 0">我</Avatar>
                 <div class="chat-bubble chat-bubble--user">{{ streamingEntry.question }}</div>
               </div>
               <div class="chat-row chat-row--assistant">

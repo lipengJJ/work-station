@@ -20,6 +20,7 @@ from app.skills.services import registry_service as skills_registry
 from app.stock.controllers import fundamentals as fundamentals_api
 from app.stock.controllers import market_overview as market_overview_api
 from app.stock.controllers import stock as stock_api
+from app.stock.controllers import strategy_ai as strategy_ai_api
 from app.xhs.controllers import analysis as xhs_analysis_api
 from app.xhs.controllers import collect_tasks as xhs_api
 from app.xhs.controllers import notes as xhs_notes_api
@@ -70,6 +71,7 @@ def create_app() -> FastAPI:
     app.include_router(stock_api.router)
     app.include_router(fundamentals_api.router)
     app.include_router(market_overview_api.router)
+    app.include_router(strategy_ai_api.router)
     app.include_router(stock_router)
     app.include_router(xhs_api.router)
     app.include_router(xhs_notes_api.router)

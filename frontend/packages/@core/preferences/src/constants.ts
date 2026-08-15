@@ -8,9 +8,14 @@ interface BuiltinThemePreset {
 }
 
 const BUILT_IN_THEME_PRESETS: BuiltinThemePreset[] = [
+  // ---- 热门推荐主题（浅色/深色均有完整色板，直接点选切换）----
   {
     color: 'hsl(212 100% 45%)',
     type: 'default',
+  },
+  {
+    color: 'hsl(231 98% 65%)',
+    type: 'sky-blue',
   },
   {
     color: 'hsl(245 82% 67%)',
@@ -21,60 +26,22 @@ const BUILT_IN_THEME_PRESETS: BuiltinThemePreset[] = [
     type: 'pink',
   },
   {
-    color: 'hsl(42 84% 61%)',
-    type: 'yellow',
+    color: 'hsl(210 34% 52%)',
+    darkPrimaryColor: 'hsl(200 39% 67%)',
+    primaryColor: 'hsl(210 34% 52%)',
+    type: 'nord',
   },
   {
-    color: 'hsl(231 98% 65%)',
-    type: 'sky-blue',
+    color: 'hsl(265 65% 58%)',
+    darkPrimaryColor: 'hsl(265 89% 78%)',
+    primaryColor: 'hsl(265 65% 58%)',
+    type: 'dracula',
   },
   {
-    color: 'hsl(161 90% 43%)',
-    type: 'green',
-  },
-  {
-    color: 'hsl(240 5% 26%)',
-    darkPrimaryColor: 'hsl(0 0% 98%)',
-    primaryColor: 'hsl(240 5.9% 10%)',
-    type: 'zinc',
-  },
-  {
-    color: 'hsl(181 84% 32%)',
-    type: 'deep-green',
-  },
-  {
-    color: 'hsl(211 91% 39%)',
-    type: 'deep-blue',
-  },
-  {
-    color: 'hsl(18 89% 40%)',
-    type: 'orange',
-  },
-  {
-    color: 'hsl(0 75% 42%)',
-    type: 'rose',
-  },
-  {
-    color: 'hsl(0 0% 25%)',
-    darkPrimaryColor: 'hsl(0 0% 98%)',
-    primaryColor: 'hsl(240 5.9% 10%)',
-    type: 'neutral',
-  },
-  {
-    color: 'hsl(215 25% 27%)',
-    darkPrimaryColor: 'hsl(0 0% 98%)',
-    primaryColor: 'hsl(240 5.9% 10%)',
-    type: 'slate',
-  },
-  {
-    color: 'hsl(217 19% 27%)',
-    darkPrimaryColor: 'hsl(0 0% 98%)',
-    primaryColor: 'hsl(240 5.9% 10%)',
-    type: 'gray',
-  },
-  {
-    color: '',
-    type: 'custom',
+    color: 'hsl(220 89% 60%)',
+    darkPrimaryColor: 'hsl(220 89% 72%)',
+    primaryColor: 'hsl(220 89% 60%)',
+    type: 'tokyo-night',
   },
 ];
 

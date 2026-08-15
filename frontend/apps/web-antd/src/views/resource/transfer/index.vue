@@ -73,7 +73,7 @@ const columns = [
   <Page>
     <div class="flex w-full flex-col gap-4">
       <div class="flex items-center justify-between">
-        <div class="text-base font-semibold text-slate-200">转存记录</div>
+        <div class="text-base font-semibold text-[hsl(var(--foreground))]">转存记录</div>
         <Button @click="fetchTasks">
           <RefreshCw class="mr-1 size-4" />
           刷新
@@ -92,9 +92,9 @@ const columns = [
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'resource_title'">
             <div class="flex flex-col gap-0.5">
-              <span class="truncate text-slate-200">{{ record.resource_title }}</span>
-              <span class="truncate font-mono text-xs text-slate-500">{{ record.share_url }}</span>
-              <span v-if="record.message" class="truncate text-xs text-slate-400">
+              <span class="truncate text-[hsl(var(--foreground))]">{{ record.resource_title }}</span>
+              <span class="truncate font-mono text-xs text-[hsl(var(--muted-foreground))]">{{ record.share_url }}</span>
+              <span v-if="record.message" class="truncate text-xs text-[hsl(var(--muted-foreground))]">
                 {{ record.message }}
               </span>
             </div>
@@ -105,10 +105,10 @@ const columns = [
             </Tag>
           </template>
           <template v-else-if="column.key === 'target_dir'">
-            <span class="text-slate-300">{{ record.target_dir || '根目录' }}</span>
+            <span class="text-[hsl(var(--muted-foreground))]">{{ record.target_dir || '根目录' }}</span>
           </template>
           <template v-else-if="column.key === 'created_at'">
-            <span class="text-slate-400">{{ formatDateTime(record.created_at) }}</span>
+            <span class="text-[hsl(var(--muted-foreground))]">{{ formatDateTime(record.created_at) }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
             <Popconfirm

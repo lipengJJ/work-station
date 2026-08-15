@@ -24,8 +24,11 @@ _COMPANY_CONCEPT_URL = "https://data.sec.gov/api/xbrl/companyconcept/CIK{cik}/us
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _ARCHIVES_BASE = "https://www.sec.gov/Archives/edgar/data"
 
-_TIMEOUT = 20
-_MAX_RETRIES = 3
+# SEC 在国内网络下经常连接超时（connect timeout 是主要瓶颈）。正常响应 1-3 秒内，
+# 10 秒连不上基本就是不可达；配合 orchestrator 的容错（降级 partial_failures），
+# 不要重试太多拖慢整个接口——之前 20s×3 次，SEC 挂掉时基本面接口要白等 60 秒。
+_TIMEOUT = 10
+_MAX_RETRIES = 2
 _USER_AGENT_CONFIG_NAME = "sec_user_agent"
 _DEFAULT_USER_AGENT = "workbench-fundamentals-module (unconfigured-contact@example.com)"
 
