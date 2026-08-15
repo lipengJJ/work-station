@@ -2,7 +2,8 @@ services:
   backend:
     build:
       context: ./backend
-    container_name: workbench-backend
+    # 独立工作区部署：容器名加 -notify 后缀，避免与主工作区（workbench-backend）容器冲突
+    container_name: workbench-notify-backend
     environment:
       # 生产环境必须自己设置一个真正的密钥（用来签 JWT），默认值只适合本地开发。
       # 没设置的话 docker compose up 会直接报错退出，而不是悄悄用不安全的默认值跑起来。
@@ -23,7 +24,7 @@ services:
   frontend:
     build:
       context: ./frontend
-    container_name: workbench-frontend
+    container_name: workbench-notify-frontend
     depends_on:
       - backend
     ports:
