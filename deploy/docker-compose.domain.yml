@@ -1,11 +1,11 @@
 # 域名 + HTTPS 部署 compose（Docker Hub 拉取模式）
-# 域名: hapi-workhome.duckdns.org → Caddy(自动 HTTPS) → frontend
+# 域名: hapi-home.duckdns.org → Caddy(自动 HTTPS) → frontend
 # 用法：
 #   1. 先到 duckdns.org 注册子域名 hapi-workhome，A 记录填服务器公网 IP
 #   2. 服务器上准备好本文件 + Caddyfile：
 #      docker compose -f docker-compose.domain.yml up -d
 #   3. 首次初始化管理员：docker compose -f docker-compose.domain.yml exec backend python seed.py
-#   4. 等待 DNS 生效（几分钟）后访问 https://hapi-workhome.duckdns.org
+#   4. 等待 DNS 生效（几分钟）后访问 https://hapi-home.duckdns.org
 #
 # 数据持久化：./data（数据库+配置镜像）、./storage（采集素材）；API 配置自动从 config.json 恢复。
 

@@ -1,6 +1,6 @@
-# Caddy 自动 HTTPS：把 hapi-workhome.duckdns.org 反代到前端容器
+# Caddy 自动 HTTPS：把 hapi-home.duckdns.org 反代到前端容器
 # Caddy 会自动申请/续期 Let's Encrypt 证书，无需手动配置
-hapi-workhome.duckdns.org {
+hapi-home.duckdns.org {
 	reverse_proxy frontend:8080
 	encode gzip
 	header {
