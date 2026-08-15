@@ -166,11 +166,8 @@ const showThemeToggleInDropdown = computed(
     preferences.widget.themeToggleButtonPosition === 'user-dropdown',
 );
 
-const showLanguageToggleInDropdown = computed(
-  () =>
-    preferences.widget.languageToggle &&
-    preferences.widget.languageToggleButtonPosition === 'user-dropdown',
-);
+// 语言切换已整体移除（保持中文），无论偏好设置如何持久化都不再显示
+const showLanguageToggleInDropdown = computed(() => false);
 
 const showTimezoneInDropdown = computed(
   () =>
