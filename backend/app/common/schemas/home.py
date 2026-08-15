@@ -33,8 +33,14 @@ class HomeSummary(BaseModel):
     success_rate: float
 
 
+class StorageTrendPoint(BaseModel):
+    t: str  # HH:MM
+    db: int  # 字节
+    storage: int  # 字节
+
+
 class StorageStats(BaseModel):
-    """首页存储概览：数据库/素材占用 + 各数据表行数"""
+    """首页存储概览：数据库/素材占用 + 各数据表行数 + 近 24h 趋势"""
     db_size: int  # 字节
     storage_size: int  # 素材/Excel 目录总字节
     note_count: int
@@ -42,6 +48,7 @@ class StorageStats(BaseModel):
     structured_count: int
     report_count: int
     task_count: int
+    trend: list[StorageTrendPoint]
 
 
 class HomeResponse(BaseModel):

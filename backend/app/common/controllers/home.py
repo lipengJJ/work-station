@@ -15,6 +15,7 @@ from app.common.schemas.home import (
     HomeSummary,
     RunningTask,
     StorageStats,
+    StorageTrendPoint,
     TrendPoint,
 )
 from app.common.schemas.task import TaskOut
@@ -158,8 +159,12 @@ def get_home(db: Session = Depends(get_db), _=Depends(get_current_user)):
 
 
 # ------------------------------------------------------------ 存储概览 ----
-# 首页"存储概览"：数据库文件 + 素材/Excel 目录占用 + 各数据表行数。
-# 独立接口 + 前端低频轮询（30s），避免每次 du 全量扫描拖慢主看板。
+# 首页"存储概览"：数据库文件 + 素材/Excel 目录占用 + 各数据表行数 + 近 24h 趋势折线。
+# 独立接口 + 前端低频轮询（30s）；惰性采样（距上次 ≥ 5 分钟插一条快照），
+# 不用常驻定时任务，接口有人看才采样。
+
+STORAGE_SAMPLE_INTERVAL_MINUTES = 5
+STORAGE_TREND_HOURS = 24
 
 
 def _dir_size(path: str) -> int:
@@ -178,6 +183,8 @@ def _dir_size(path: str) -> int:
 
 @router.get("/storage", response_model=StorageStats)
 def get_storage_stats(db: Session = Depends(get_db), _=Depends(get_current_user)):
+    from app.common.models import StorageSnapshot
+
     # 数据库文件：从 engine URL 解析 sqlite 路径（docker 里是 /app/data/workbench.db）
     db_path = ""
     url = str(db.get_bind().engine.url)
@@ -197,6 +204,42 @@ def get_storage_stats(db: Session = Depends(get_db), _=Depends(get_current_user)
     report_count = db.query(func.count(XhsAnalysisReport.id)).scalar() or 0
     task_count = db.query(func.count(Task.id)).scalar() or 0
 
+    # ---- 惰性采样：距上次采样 ≥ 5 分钟才插一条快照（并清理超 24h 的旧数据）----
+    now = datetime.now(timezone.utc)
+    last = (
+        db.query(StorageSnapshot)
+        .order_by(StorageSnapshot.sampled_at.desc())
+        .first()
+    )
+    if last is None or (_as_utc(last.sampled_at) is not None
+                        and (now - _as_utc(last.sampled_at)).total_seconds() >= STORAGE_SAMPLE_INTERVAL_MINUTES * 60):
+        db.add(StorageSnapshot(
+            db_size=db_size,
+            storage_size=storage_size,
+            note_count=note_count,
+            comment_count=comment_count,
+        ))
+        cutoff = now - timedelta(hours=STORAGE_TREND_HOURS)
+        db.query(StorageSnapshot).filter(StorageSnapshot.sampled_at < cutoff.replace(tzinfo=None)).delete()
+        db.commit()
+
+    # ---- 近 24h 趋势（最多 288 点）----
+    cutoff = now - timedelta(hours=STORAGE_TREND_HOURS)
+    snapshots = (
+        db.query(StorageSnapshot)
+        .filter(StorageSnapshot.sampled_at >= cutoff.replace(tzinfo=None))
+        .order_by(StorageSnapshot.sampled_at.asc())
+        .all()
+    )
+    trend = [
+        StorageTrendPoint(
+            t=_as_utc(s.sampled_at).strftime("%H:%M") if _as_utc(s.sampled_at) else "",
+            db=s.db_size,
+            storage=s.storage_size,
+        )
+        for s in snapshots
+    ]
+
     return StorageStats(
         db_size=db_size,
         storage_size=storage_size,
@@ -205,4 +248,5 @@ def get_storage_stats(db: Session = Depends(get_db), _=Depends(get_current_user)
         structured_count=structured_count,
         report_count=report_count,
         task_count=task_count,
+        trend=trend,
     )

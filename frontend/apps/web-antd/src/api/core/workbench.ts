@@ -50,6 +50,12 @@ export namespace WorkbenchApi {
   }
 
   /** 首页存储概览 */
+  export interface StorageTrendPoint {
+    t: string;
+    db: number;
+    storage: number;
+  }
+
   export interface StorageStats {
     db_size: number;
     storage_size: number;
@@ -58,6 +64,7 @@ export namespace WorkbenchApi {
     structured_count: number;
     report_count: number;
     task_count: number;
+    trend: StorageTrendPoint[];
   }
 
   export interface TaskCenterResponse {

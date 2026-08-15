@@ -11,10 +11,8 @@ import {
   Activity,
   CheckCircle2,
   Database,
-  FolderArchive,
   HardDrive,
   Loader2,
-  MessageSquare,
   PlusCircle,
   TrendingUp,
 } from 'lucide-vue-next';
@@ -82,6 +80,51 @@ async function loadStorage() {
     // 静默
   }
 }
+
+// ------------------------------------------- 存储趋势折线图（SVG）----
+const ST_W = 560;
+const ST_H = 150;
+const ST_PAD = { top: 12, right: 10, bottom: 20, left: 52 };
+
+const storageChart = computed(() => {
+  const points = storage.value?.trend ?? [];
+  const innerW = ST_W - ST_PAD.left - ST_PAD.right;
+  const innerH = ST_H - ST_PAD.top - ST_PAD.bottom;
+  const max = Math.max(1, ...points.flatMap((p) => [p.db, p.storage]));
+  const step = points.length > 1 ? innerW / (points.length - 1) : innerW;
+
+  const toXY = (v: number, i: number) => ({
+    x: ST_PAD.left + step * i,
+    y: ST_PAD.top + innerH - (v / max) * innerH,
+  });
+  const linePath = (key: 'db' | 'storage') =>
+    points
+      .map((p, i) => {
+        const { x, y } = toXY(p[key], i);
+        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+  // 刻度：0 / 1/3 / 2/3 / max
+  const ticks = [0, 0.33, 0.66, 1].map((r) => ({
+    y: ST_PAD.top + innerH - r * innerH,
+    label: formatAxis(max * r),
+  }));
+  const labels: { x: number; t: string }[] = [];
+  if (points.length) {
+    const idxs = [0, Math.floor((points.length - 1) / 2), points.length - 1];
+    [...new Set(idxs)].forEach((i) =>
+      labels.push({ x: toXY(points[i].db, i).x, t: points[i].t }),
+    );
+  }
+  return { lineDb: linePath('db'), lineStorage: linePath('storage'), ticks, labels, count: points.length };
+});
+
+function formatAxis(n: number): string {
+  if (n >= 1024 * 1024 * 1024) return `${(n / 1024 / 1024 / 1024).toFixed(1)}GB`;
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(0)}MB`;
+  return `${(n / 1024).toFixed(0)}KB`;
+}
+
 const nowText = ref('');
 const lastRefreshText = ref('');
 
@@ -283,7 +326,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 存储概览（监控表格） -->
+    <!-- 存储趋势（折线图） -->
     <div
       style="
         padding: 14px 16px;
@@ -293,57 +336,53 @@ onBeforeUnmount(() => {
         background: hsl(var(--card));
       "
     >
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px">
         <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: hsl(var(--foreground))">
           <HardDrive style="width: 14px; height: 14px" />
-          存储概览
+          存储趋势（近 24 小时）
         </span>
-        <span style="font-size: 11px; color: hsl(var(--muted-foreground))">每 30 秒刷新</span>
+        <span style="display: flex; align-items: center; gap: 14px; font-size: 11px; color: hsl(var(--muted-foreground))">
+          <span style="display: flex; align-items: center; gap: 5px"><i style="width: 9px; height: 3px; border-radius: 2px; background: #3b82f6"></i>数据库 {{ formatBytes(storage?.db_size ?? 0) }}</span>
+          <span style="display: flex; align-items: center; gap: 5px"><i style="width: 9px; height: 3px; border-radius: 2px; background: #22c55e"></i>笔记素材 {{ formatBytes(storage?.storage_size ?? 0) }}</span>
+          <span style="font-weight: 700; color: hsl(var(--foreground))">合计 {{ formatBytes((storage?.db_size ?? 0) + (storage?.storage_size ?? 0)) }}</span>
+          <span>每 5 分钟采样</span>
+        </span>
       </div>
-      <table style="width: 100%; border-collapse: collapse; font-size: 12px">
-        <thead>
-          <tr style="border-bottom: 1px solid hsl(var(--border)); text-align: left">
-            <th style="padding: 6px 10px; font-weight: 600; color: hsl(var(--muted-foreground))">数据项</th>
-            <th style="padding: 6px 10px; font-weight: 600; color: hsl(var(--muted-foreground)); text-align: right">数量</th>
-            <th style="padding: 6px 10px; font-weight: 600; color: hsl(var(--muted-foreground)); text-align: right">占用空间</th>
-            <th style="padding: 6px 10px; font-weight: 600; color: hsl(var(--muted-foreground))">说明</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="row in [
-              { label: '数据库', icon: Database, color: '#3b82f6', count: '—', size: formatBytes(storage?.db_size ?? 0), desc: 'SQLite 持久化（任务/配置/索引）' },
-              { label: '笔记素材', icon: FolderArchive, color: '#22c55e', count: '—', size: formatBytes(storage?.storage_size ?? 0), desc: 'Excel 产出 / 图文素材（storage 卷）' },
-              { label: '笔记', icon: Activity, color: '#8b5cf6', count: `${storage?.note_count ?? 0} 篇`, size: '—', desc: '已采集笔记缓存' },
-              { label: '评论', icon: MessageSquare, color: '#06b6d4', count: `${storage?.comment_count ?? 0} 条`, size: '—', desc: '已抓取评论数据' },
-              { label: 'AI 结构化', icon: CheckCircle2, color: '#f59e0b', count: `${storage?.structured_count ?? 0} 条`, size: '—', desc: 'AI 提取的结构化字段' },
-              { label: '分析报告', icon: TrendingUp, color: '#f43f5e', count: `${storage?.report_count ?? 0} 份`, size: '—', desc: 'AI 生成的报告' },
-              { label: '任务', icon: Loader2, color: '#94a3b8', count: `${storage?.task_count ?? 0} 个`, size: '—', desc: '采集任务记录' },
-            ] as const"
-            :key="row.label"
-            class="group"
-            style="border-bottom: 1px solid hsl(var(--border)); transition: background 0.15s"
-            @mouseover="($event.currentTarget as HTMLElement).style.background = 'hsl(var(--accent))'"
-            @mouseout="($event.currentTarget as HTMLElement).style.background = 'transparent'"
-          >
-            <td style="padding: 7px 10px; display: flex; align-items: center; gap: 8px; font-weight: 600; color: hsl(var(--foreground))">
-              <component :is="row.icon" :style="{ width: 14, height: 14, color: row.color, flexShrink: 0 }" />
-              {{ row.label }}
-            </td>
-            <td style="padding: 7px 10px; text-align: right; font-variant-numeric: tabular-nums; color: hsl(var(--foreground))">{{ row.count }}</td>
-            <td style="padding: 7px 10px; text-align: right; font-variant-numeric: tabular-nums; color: hsl(var(--foreground))">{{ row.size }}</td>
-            <td style="padding: 7px 10px; color: hsl(var(--muted-foreground))">{{ row.desc }}</td>
-          </tr>
-          <tr style="border-top: 1px solid hsl(var(--border)); background: hsl(var(--background-deep))">
-            <td style="padding: 8px 10px; font-weight: 700; color: hsl(var(--foreground))">合计占用</td>
-            <td style="padding: 8px 10px"></td>
-            <td style="padding: 8px 10px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: hsl(var(--foreground))">
-              {{ formatBytes((storage?.db_size ?? 0) + (storage?.storage_size ?? 0)) }}
-            </td>
-            <td style="padding: 8px 10px; color: hsl(var(--muted-foreground))">数据库 + 素材持久化总量</td>
-          </tr>
-        </tbody>
-      </table>
+      <svg :viewBox="`0 0 ${ST_W} ${ST_H}`" style="width: 100%; height: auto">
+        <template v-for="tick in storageChart.ticks" :key="tick.y">
+          <line
+            :x1="ST_PAD.left"
+            :x2="ST_W - ST_PAD.right"
+            :y1="tick.y"
+            :y2="tick.y"
+            stroke="hsl(var(--border))"
+            stroke-width="0.6"
+            stroke-dasharray="3 4"
+          />
+          <text :x="ST_PAD.left - 6" :y="tick.y + 3" text-anchor="end" fill="hsl(var(--muted-foreground))" style="font-size: 10px">
+            {{ tick.label }}
+          </text>
+        </template>
+        <template v-if="storageChart.count > 1">
+          <path :d="storageChart.lineStorage" fill="none" stroke="#22c55e" stroke-width="1.8" opacity="0.9" />
+          <path :d="storageChart.lineDb" fill="none" stroke="#3b82f6" stroke-width="1.8" opacity="0.9" />
+        </template>
+        <text
+          v-if="!storageChart.count"
+          :x="ST_W / 2"
+          :y="ST_H / 2"
+          text-anchor="middle"
+          fill="hsl(var(--muted-foreground))"
+          style="font-size: 12px"
+        >
+          正在采样中，每 5 分钟记录一个点
+        </text>
+        <g v-for="l in storageChart.labels" :key="l.x">
+          <text :x="l.x" :y="ST_H - 6" text-anchor="middle" fill="hsl(var(--muted-foreground))" style="font-size: 10px">
+            {{ l.t }}
+          </text>
+        </g>
+      </svg>
     </div>
 
     <!-- 图表行：趋势 + 状态分布 -->
