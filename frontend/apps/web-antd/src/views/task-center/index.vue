@@ -74,7 +74,7 @@ const tabs = computed(() => [
   <Page :auto-content-height="false">
     <Tabs default-active-key="running">
       <Tabs.TabPane v-for="tab in tabs" :key="tab.key" :tab="tab.label">
-        <Table row-key="id" :loading="loading" :data-source="tab.rows" :columns="columns">
+        <Table row-key="id" :loading="loading" :data-source="tab.rows" :columns="columns" :scroll="{ x: 720 }">
           <template #bodyCell="{ column, text }">
             <Tag v-if="column.key === 'status'" :color="STATUS_COLOR[text as string]">
               {{ text }}

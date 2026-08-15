@@ -279,7 +279,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- KPI 卡片 -->
-    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 14px">
+    <div class="kpi-grid">
       <div v-for="kpi in [
         { label: '任务总数', value: data?.summary.total_tasks ?? 0, icon: Database, color: '#3b82f6', sub: '全部模块累计' },
         { label: '运行中', value: data?.summary.running_count ?? 0, icon: Activity, color: '#eab308', sub: '采集 / 补抓 / 追踪' },
@@ -301,6 +301,7 @@ onBeforeUnmount(() => {
         "
       >
         <div
+          class="kpi-icon"
           :style="{
             width: 44,
             height: 44,
@@ -329,16 +330,7 @@ onBeforeUnmount(() => {
 
     <!-- 存储面板：左=当前数值明细，右=趋势折线 -->
     <div
-      style="
-        display: grid;
-        grid-template-columns: 0.9fr 1.4fr;
-        gap: 14px;
-        padding: 14px 16px;
-        margin-bottom: 14px;
-        border-radius: 12px;
-        border: 1px solid hsl(var(--border));
-        background: hsl(var(--card));
-      "
+      class="storage-panel"
     >
       <!-- 左：当前存储明细 -->
       <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0">
@@ -423,7 +415,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 图表行：趋势 + 状态分布 -->
-    <div style="display: grid; grid-template-columns: 1.6fr 1fr; gap: 12px; margin-bottom: 14px">
+    <div class="chart-row">
       <div
         style="
           padding: 14px 16px;
@@ -600,6 +592,53 @@ onBeforeUnmount(() => {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+<style scoped>
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.storage-panel {
+  display: grid;
+  grid-template-columns: 0.9fr 1.4fr;
+  gap: 14px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+}
+.chart-row {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+/* 手机端：单列堆叠 + KPI 两列 + 图标缩小 */
+@media (max-width: 767px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .storage-panel {
+    grid-template-columns: 1fr;
+  }
+  .chart-row {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 480px) {
+  .kpi-icon {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 10px !important;
+  }
+  .kpi-grid > div {
+    padding: 12px !important;
+    gap: 10px !important;
   }
 }
 </style>
