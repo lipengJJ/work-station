@@ -959,7 +959,14 @@ def _run_task(task_id: int) -> None:
         except Exception as e:
             logger.exception(f"任务 {task_id} 执行失败")
             task.status = "failed"
-            task.result_summary = str(e)
+            # 461 = 小红书风控拒绝，给中文提示而不是裸状态码
+            if "461" in str(e):
+                task.result_summary = (
+                    "请求被小红书风控拦截（HTTP 461）。常见原因：cookie 已失效、请求过于频繁。"
+                    "请到系统设置 > API 配置重新获取并更新 cookie，稍后重试"
+                )
+            else:
+                task.result_summary = str(e)
             task.finished_at = datetime.now(timezone.utc)
             extra.phase = "failed"
             db.commit()
