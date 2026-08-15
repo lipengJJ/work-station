@@ -880,4 +880,26 @@ body.dark {
   background: var(--nt-bg-soft);
   border: 1px solid var(--nt-border);
 }
+
+/* ================= antd Table 风格统一（表头不再纯黑） =================
+   发送记录表格用 antd Table，表头默认近纯黑，与 --nt 卡片体系割裂；
+   统一为卡片软色（--nt-bg-soft），行内 hover 用主题 accent。 */
+:deep(.ant-table) {
+  background: transparent;
+}
+:deep(.ant-table-thead > tr > th) {
+  background: var(--nt-bg-soft) !important;
+  color: var(--nt-text-3, hsl(var(--muted-foreground)));
+  font-weight: 600;
+  border-bottom: 1px solid var(--nt-border, hsl(var(--border)));
+}
+:deep(.ant-table-thead > tr > th::before) {
+  display: none; /* 去掉 antd 表头竖向分隔线 */
+}
+:deep(.ant-table-tbody > tr > td) {
+  border-bottom: 1px solid var(--nt-border, hsl(var(--border)));
+}
+:deep(.ant-table-tbody > tr:hover > td) {
+  background: hsl(var(--accent)) !important;
+}
 </style>
