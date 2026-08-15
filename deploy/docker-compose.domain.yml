@@ -1,0 +1,52 @@
+# 域名 + HTTPS 部署 compose（Docker Hub 拉取模式）
+# 域名: hapi-workhome.duckdns.org → Caddy(自动 HTTPS) → frontend
+# 用法：
+#   1. 先到 duckdns.org 注册子域名 hapi-workhome，A 记录填服务器公网 IP
+#   2. 服务器上准备好本文件 + Caddyfile：
+#      docker compose -f docker-compose.domain.yml up -d
+#   3. 首次初始化管理员：docker compose -f docker-compose.domain.yml exec backend python seed.py
+#   4. 等待 DNS 生效（几分钟）后访问 https://hapi-workhome.duckdns.org
+#
+# 数据持久化：./data（数据库+配置镜像）、./storage（采集素材）；API 配置自动从 config.json 恢复。
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: workbench-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
+  backend:
+    image: ${DOCKERHUB_USER}/workbench-backend:latest
+    container_name: workbench-backend
+    environment:
+      - WORKBENCH_SECRET_KEY=${WORKBENCH_SECRET_KEY:?请设置 WORKBENCH_SECRET_KEY 环境变量（生产环境必须使用随机的强密钥）}
+      - WORKBENCH_DATABASE_URL=sqlite:////app/data/workbench.db
+    volumes:
+      - ./data:/app/data
+      - ./storage:/app/storage
+    ports:
+      - "127.0.0.1:8010:8010"   # 仅本机可访问，便于排查，不对外暴露
+    restart: unless-stopped
+
+  frontend:
+    image: ${DOCKERHUB_USER}/workbench-frontend:latest
+    container_name: workbench-frontend
+    depends_on:
+      - backend
+    expose:
+      - "8080"                  # 仅容器网络内访问，由 Caddy 反代
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
