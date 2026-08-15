@@ -6,6 +6,7 @@ export namespace SystemApi {
     name: string;
     value: string;
     description: null | string;
+    updated_at: null | string;
   }
 
   export interface ApiConfigIn {

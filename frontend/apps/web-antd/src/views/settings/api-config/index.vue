@@ -26,66 +26,6 @@ import { deleteApiConfigApi, listApiConfigsApi, upsertApiConfigApi } from '#/api
 
 const TextArea = Input.TextArea;
 
-// -------------------------------------------------------------- 分类定义 ----
-// 按功能模块分组展示。AI 助手（Gemini）用量最大的三个 key
-// （gemini_api_key/gemini_model/gemini_thinking_enabled）从通用列表里摘出来，
-// 单独做成模型配置卡片 + 弹窗，复用小红书 AI 分析页"模型设置"同一套配置接口。
-interface ConfigCategory {
-  key: string;
-  label: string;
-  description: string;
-  matchNames: string[];
-  icon: string; // 内联 SVG 的 path 内容（24x24 视图，stroke 风格）
-  accent: string; // 模块主题色（用于图标底色）
-}
-
-const CATEGORIES: ConfigCategory[] = [
-  {
-    key: 'xhs',
-    label: '小红书 token',
-    description: '采集/追踪任务需要的登录态凭证',
-    matchNames: ['xhs_cookie'],
-    icon: '<path d="M9 18V6l10-2v11" /><path d="M9 11l10-2" />',
-    accent: '#ff2442',
-  },
-  {
-    key: 'note_structuring',
-    label: '数据处理模型',
-    description: '采集笔记时的结构化预处理用（智谱 GLM），与 AI 模型独立配置',
-    matchNames: ['zhipu_api_key', 'zhipu_model'],
-    icon: '<rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" />',
-    accent: '#f59e0b',
-  },
-];
-
-// 系统固定配置：AI 模型 / 小红书 token / 数据处理模型，前端隐藏删除按钮 + 后端拒绝删除
-const FIXED_CONFIG_NAMES = new Set([
-  'ai_provider', 'gemini_api_key', 'gemini_model', 'gemini_thinking_enabled',
-  'deepseek_api_key', 'deepseek_model',
-  'xhs_cookie', 'zhipu_api_key', 'zhipu_model',
-]);
-
-// AI 模型（Gemini / DeepSeek）三个 key 及厂商标记从通用列表里摘出来，单独展示
-const AI_CONFIG_NAMES = new Set([
-  'ai_provider',
-  'gemini_api_key',
-  'gemini_model',
-  'gemini_thinking_enabled',
-  'deepseek_api_key',
-  'deepseek_model',
-]);
-
-// 点建议 Tag 时顺手把说明也填好
-const NAME_DESCRIPTIONS: Record<string, string> = {
-  finnhub_api_key: 'Finnhub 行情数据 API Key',
-  fmp_api_key: 'Financial Modeling Prep API Key',
-  massive_api_key: 'Massive 数据源 API Key',
-  sec_user_agent: 'SEC EDGAR 请求要求的 User-Agent（邮箱格式）',
-  xhs_cookie: '小红书登录态 cookie',
-  zhipu_api_key: '智谱开放平台 API Key（open.bigmodel.cn 获取，GLM-4-Flash 免费）',
-  zhipu_model: '结构化预处理用的模型，不填默认 glm-4-flash',
-};
-
 // -------------------------------------------------------------- 通用配置列表 ----
 
 const configs = ref<SystemApi.ApiConfig[]>([]);
@@ -100,157 +40,13 @@ async function fetchConfigs() {
   }
 }
 
-const categorizedGroups = computed(() =>
-  CATEGORIES.map((cat) => ({
-    ...cat,
-    items: configs.value.filter((c) => cat.matchNames.includes(c.name)),
-  })),
-);
-
-// 不属于任何已知分类、也不是 AI 助手三个 key 的，归到"其它"
-const otherConfigs = computed(() =>
-  configs.value.filter(
-    (c) => !AI_CONFIG_NAMES.has(c.name) && !CATEGORIES.some((cat) => cat.matchNames.includes(c.name)),
-  ),
-);
-
-// 顶部统计
-const totalCount = computed(() => configs.value.length);
-const configuredModules = computed(
-  () => categorizedGroups.value.filter((g) => g.items.length > 0).length,
-);
-
-function maskValue(value: string) {
-  if (!value) return '（空）';
-  if (value.length <= 4) return '••••';
-  return `${'•'.repeat(Math.min(value.length - 4, 12))}${value.slice(-4)}`;
+function configByName(name: string) {
+  return configs.value.find((c) => c.name === name);
 }
 
-// ------------------------------------------------------------- 值的显隐 / 复制 ----
-
-const visibleMap = reactive<Record<number, boolean>>({});
-const copiedId = ref<number | null>(null);
-let copyTimer: ReturnType<typeof setTimeout> | null = null;
-
-function toggleVisible(id: number) {
-  visibleMap[id] = !visibleMap[id];
-}
-
-async function copyValue(config: SystemApi.ApiConfig) {
-  try {
-    await navigator.clipboard.writeText(config.value || '');
-  } catch {
-    // 剪贴板不可用时的兜底方案
-    const el = document.createElement('textarea');
-    el.value = config.value || '';
-    document.body.appendChild(el);
-    el.select();
-    document.execCommand('copy');
-    document.body.removeChild(el);
-  }
-  copiedId.value = config.id;
-  if (copyTimer) clearTimeout(copyTimer);
-  copyTimer = setTimeout(() => {
-    copiedId.value = null;
-  }, 1600);
-}
-
-// ------------------------------------------------------------- 新增 / 编辑弹窗（通用配置） ----
-
-const modalOpen = ref(false);
-const saving = ref(false);
-const isEditing = ref(false);
-const form = reactive<SystemApi.ApiConfigIn & { categoryKey: string }>({
-  name: '',
-  value: '',
-  description: '',
-  categoryKey: 'other',
-});
-const suggestedNames = ref<string[]>([]);
-
-const categoryOptions = computed(() => [
-  ...CATEGORIES.map((c) => ({ label: c.label, value: c.key })),
-  { label: '其它（自由填写）', value: 'other' },
-]);
-
-function applyCategory(key: string) {
-  const cat = CATEGORIES.find((c) => c.key === key);
-  if (!cat) {
-    suggestedNames.value = [];
-    form.name = '';
-    form.description = '';
-    return;
-  }
-  suggestedNames.value = cat.matchNames;
-  const configuredNames = new Set(configs.value.map((c) => c.name));
-  const preselect = cat.matchNames.find((n) => !configuredNames.has(n));
-  if (preselect) {
-    form.name = preselect;
-    form.description = NAME_DESCRIPTIONS[preselect] ?? '';
-  }
-}
-
-function openCreateModal(category?: ConfigCategory) {
-  isEditing.value = false;
-  form.value = '';
-  form.categoryKey = category?.key ?? 'other';
-  applyCategory(form.categoryKey);
-  modalOpen.value = true;
-}
-
-function openEditModal(config: SystemApi.ApiConfig) {
-  isEditing.value = true;
-  suggestedNames.value = [];
-  form.name = config.name;
-  form.value = '';
-  form.description = config.description ?? '';
-  modalOpen.value = true;
-}
-
-async function submitForm() {
-  if (!form.name.trim()) {
-    message.error('请填写配置项名称');
-    return;
-  }
-  if (!isEditing.value && !form.value?.trim()) {
-    message.error('新增配置需要填写值');
-    return;
-  }
-  saving.value = true;
-  try {
-    await upsertApiConfigApi({
-      name: form.name.trim(),
-      value: form.value?.trim() || undefined,
-      description: form.description?.trim() || undefined,
-    });
-    message.success('已保存');
-    modalOpen.value = false;
-    await fetchConfigs();
-  } catch (e: any) {
-    message.error(`保存失败：${e.message}`);
-  } finally {
-    saving.value = false;
-  }
-}
-
-function removeConfig(config: SystemApi.ApiConfig) {
-  Modal.confirm({
-    title: `确定删除配置「${config.name}」吗？`,
-    content: '依赖这个配置的功能会立即无法使用，此操作不可恢复。',
-    okText: '删除',
-    okType: 'danger',
-    cancelText: '取消',
-    onOk: async () => {
-      try {
-        await deleteApiConfigApi(config.id);
-        message.success('已删除');
-        await fetchConfigs();
-      } catch (e: any) {
-        message.error(`删除失败：${e.message}`);
-      }
-    },
-  });
-}
+// 三个固定配置项的"已配置"状态（有值即已配置）
+const xhsConfigured = computed(() => !!configByName('xhs_cookie')?.value);
+const zhipuConfigured = computed(() => !!configByName('zhipu_api_key')?.value);
 
 // -------------------------------------------------------------- AI 模型配置（注册表驱动） ----
 // 厂商列表 / 预设模型 / 思考模式支持全部来自后端注册表下发的 providers 元数据，
@@ -347,6 +143,83 @@ async function submitModelConfig() {
   }
 }
 
+// -------------------------------------------------------------- 固定配置更新弹窗 ----
+// 小红书 token / 数据处理模型：输入框默认留空（留空=不修改），不回显任何已有值，
+// 只显示上次更新时间；保存后仅刷新行内状态点。
+
+const updateModalOpen = ref(false);
+const updateTarget = ref<'xhs' | 'zhipu'>('xhs');
+const updateForm = reactive({ value: '', zhipu_model: '' });
+const updateUpdatedAt = ref<string | null>(null);
+const updateSaving = ref(false);
+
+const UPDATE_META: Record<
+  'xhs' | 'zhipu',
+  { title: string; desc: string; keyPlaceholder: string }
+> = {
+  xhs: {
+    title: '更新小红书 token',
+    desc: '采集与追踪任务所需的登录态凭证。留空则不修改。',
+    keyPlaceholder: '粘贴新的小红书登录态 cookie（留空则不修改）',
+  },
+  zhipu: {
+    title: '更新数据处理模型',
+    desc: '采集笔记时的结构化预处理（智谱 GLM）。留空则不修改。',
+    keyPlaceholder: '粘贴新的智谱 API Key（留空则不修改）',
+  },
+};
+
+function openUpdateModal(target: 'xhs' | 'zhipu') {
+  updateTarget.value = target;
+  updateForm.value = '';
+  updateForm.zhipu_model = '';
+  const cfg = configByName(target === 'xhs' ? 'xhs_cookie' : 'zhipu_api_key');
+  updateUpdatedAt.value = cfg?.updated_at
+    ? new Date(cfg.updated_at).toLocaleString('zh-CN', { hour12: false })
+    : null;
+  updateModalOpen.value = true;
+}
+
+async function submitUpdate() {
+  const value = updateForm.value.trim();
+  const model = updateForm.zhipu_model.trim();
+  if (updateTarget.value === 'xhs') {
+    if (!value) {
+      message.warning('没有输入新值，无需更新');
+      return;
+    }
+  } else if (!value && !model) {
+    message.warning('没有输入新值，无需更新');
+    return;
+  }
+  updateSaving.value = true;
+  try {
+    if (updateTarget.value === 'xhs') {
+      await upsertApiConfigApi({
+        name: 'xhs_cookie',
+        value: value || undefined,
+        description: '小红书登录态 cookie',
+      });
+    } else {
+      await upsertApiConfigApi({
+        name: 'zhipu_api_key',
+        value: value || undefined,
+        description: '智谱开放平台 API Key',
+      });
+      if (model) {
+        await upsertApiConfigApi({ name: 'zhipu_model', value: model, description: '结构化预处理用的模型' });
+      }
+    }
+    message.success('已保存');
+    updateModalOpen.value = false;
+    await fetchConfigs();
+  } catch (e: any) {
+    message.error(`保存失败：${e.message}`);
+  } finally {
+    updateSaving.value = false;
+  }
+}
+
 onMounted(() => {
   fetchConfigs();
   fetchModelConfig();
@@ -365,42 +238,12 @@ onMounted(() => {
           </div>
           <p>集中管理各业务模块使用的第三方服务凭证与密钥，保存后全局生效</p>
         </div>
-        <Button type="primary" class="ac-header-btn" @click="openCreateModal()">
-          <template #icon>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
-          </template>
-          新增配置
-        </Button>
-      </div>
-
-      <!-- ============================ 统计概览 ============================ -->
-      <div class="ac-stats">
-        <div class="ac-stat">
-          <span class="ac-stat-num">{{ totalCount }}</span>
-          <span class="ac-stat-label">配置项</span>
-        </div>
-        <div class="ac-stat">
-          <span class="ac-stat-num">{{ configuredModules }}<em>/{{ CATEGORIES.length }}</em></span>
-          <span class="ac-stat-label">已配置模块</span>
-        </div>
-        <div class="ac-stat">
-          <span class="ac-stat-num" :class="{ 'ac-stat-off': !modelConfig.configured }">
-            {{ modelConfig.configured ? 'ON' : 'OFF' }}
-          </span>
-          <span class="ac-stat-label">AI 模型</span>
-        </div>
-        <div class="ac-stat ac-stat-hint">
-          <span class="ac-stat-num">🔒</span>
-          <span class="ac-stat-label">密钥仅展示末 4 位，可点击眼睛查看</span>
-        </div>
       </div>
 
       <!-- ============================ AI 助手模型 Banner ============================ -->
       <!-- AI 模型：与下方配置项同一等高卡片格式 -->
       <div v-if="!modelConfigLoading" class="ac-item ac-ai-item">
-        <span class="ac-status-dot" :class="modelConfig.configured ? 'ok' : 'no'" :title="modelConfig.configured ? '已配置' : '未配置'">
-          <svg v-if="!modelConfig.configured" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-        </span>
+        <span class="ac-status-dot" :class="modelConfig.configured ? 'ok' : 'no'" :title="modelConfig.configured ? '已配置' : '未配置'" />
         <div class="ac-ai-icon">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
@@ -409,244 +252,51 @@ onMounted(() => {
         </div>
         <div class="ac-item-info">
           <span class="ac-item-name">AI 模型 · {{ modelProviderLabel }}</span>
-          <span class="ac-item-desc">
-            当前模型 {{ modelConfig.model || '未选择' }}
-            <template v-if="savedProviderMeta?.supports_thinking">
-              · 思考模式 {{ modelConfig.thinking_enabled ? '已开启' : '未开启' }}
-            </template>
-            · 小红书 AI 分析 / Skill 分析共用
-          </span>
+          <span class="ac-item-desc">用于小红书 AI 分析与 Skill 分析</span>
         </div>
         <div class="ac-item-actions">
-          <Button type="text" size="small" class="ac-ai-btn" @click="openModelModal">配置</Button>
+          <Button type="text" size="small" class="ac-update-btn" @click="openModelModal">更新</Button>
         </div>
       </div>
       <div v-else class="ac-item ac-ai-item ac-ai-loading">加载中…</div>
 
-      <!-- ============================ 模块分类卡片 ============================ -->
+      <!-- ============================ 固定配置列表（小红书 token / 数据处理模型） ============================ -->
       <div class="ac-grid">
-        <div v-for="group in categorizedGroups" :key="group.key" class="ac-card">
-          <div class="ac-card-head">
-            <div class="ac-card-head-left">
-              <span class="ac-module-icon" :style="{ background: `${group.accent}1a`, color: group.accent }">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" v-html="group.icon" />
-              </span>
-              <div class="ac-card-head-text">
-                <div class="ac-card-title">
-                  {{ group.label }}
-                  <span class="ac-count" :class="{ empty: group.items.length === 0 }">
-                    {{ group.items.length }}
-                  </span>
-                </div>
-                <div class="ac-card-desc">{{ group.description }}</div>
-              </div>
-            </div>
-            <Button type="text" size="small" class="ac-add-mini" @click="openCreateModal(group)">
-              <template #icon>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
-              </template>
-              新增
-            </Button>
+        <!-- 小红书 token -->
+        <div class="ac-item">
+          <span class="ac-status-dot" :class="xhsConfigured ? 'ok' : 'no'" :title="xhsConfigured ? '已配置' : '未配置'" />
+          <span class="ac-module-icon" style="background: color-mix(in srgb, #ff2442 12%, transparent); color: #ff2442">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 18V6l10-2v11" /><path d="M9 11l10-2" />
+            </svg>
+          </span>
+          <div class="ac-item-info">
+            <span class="ac-item-name">小红书 token</span>
+            <span class="ac-item-desc">采集与追踪任务所需的登录态凭证</span>
           </div>
-
-          <div v-if="!loading && group.items.length === 0" class="ac-empty ac-empty--compact">
-            <span>暂无配置</span>
+          <div class="ac-item-actions">
+            <Button type="text" size="small" class="ac-update-btn" @click="openUpdateModal('xhs')">更新</Button>
           </div>
+        </div>
 
-          <div v-else class="ac-items" :class="{ 'is-loading': loading }">
-            <div
-              v-for="item in group.items"
-              :key="item.id"
-              class="ac-item"
-              :title="item.description || item.name"
-            >
-              <span class="ac-status-dot" :class="item.value ? 'ok' : 'no'" :title="item.value ? '已配置' : '未配置'">
-                <svg v-if="!item.value" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-              </span>
-              <div class="ac-item-info">
-                <span class="ac-item-name">{{ item.name }}</span>
-                <span v-if="item.description" class="ac-item-desc">{{ item.description }}</span>
-              </div>
-              <div class="ac-item-value" :title="visibleMap[item.id] ? item.value : '点击眼睛查看明文'">
-                <span class="ac-item-value-text">
-                  {{ visibleMap[item.id] ? (item.value || '（空）') : maskValue(item.value) }}
-                </span>
-              </div>
-              <div class="ac-item-actions">
-                <button
-                  class="ac-icon-btn"
-                  :class="{ active: visibleMap[item.id] }"
-                  :title="visibleMap[item.id] ? '隐藏明文' : '显示明文'"
-                  @click="toggleVisible(item.id)"
-                >
-                  <svg v-if="!visibleMap[item.id]" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                  <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 3l18 18" />
-                    <path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.9 3.9M6.6 6.6A16.5 16.5 0 0 0 2 12s3.5 7 10 7a10.4 10.4 0 0 0 3.4-.6" />
-                  </svg>
-                </button>
-                <button
-                  class="ac-icon-btn"
-                  :class="{ copied: copiedId === item.id }"
-                  :title="'复制：' + item.value"
-                  @click="copyValue(item)"
-                >
-                  <svg v-if="copiedId !== item.id" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="9" y="9" width="11" height="11" rx="2" />
-                    <path d="M5 15V5a2 2 0 0 1 2-2h10" />
-                  </svg>
-                  <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 12.5l5 5L20 6.5" />
-                  </svg>
-                </button>
-                <button class="ac-icon-btn" title="编辑" @click="openEditModal(item)">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 20h9" />
-                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                  </svg>
-                </button>
-                <button v-if="!FIXED_CONFIG_NAMES.has(item.name)" class="ac-icon-btn danger" title="删除" @click="removeConfig(item)">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 6h18" />
-                    <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
-                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                    <path d="M10 11v6M14 11v6" />
-                  </svg>
-                </button>
-              </div>
-            </div>
+        <!-- 数据处理模型 -->
+        <div class="ac-item">
+          <span class="ac-status-dot" :class="zhipuConfigured ? 'ok' : 'no'" :title="zhipuConfigured ? '已配置' : '未配置'" />
+          <span class="ac-module-icon" style="background: color-mix(in srgb, #f59e0b 12%, transparent); color: #f59e0b">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" />
+            </svg>
+          </span>
+          <div class="ac-item-info">
+            <span class="ac-item-name">数据处理模型</span>
+            <span class="ac-item-desc">采集笔记时的结构化预处理，与 AI 模型独立配置</span>
+          </div>
+          <div class="ac-item-actions">
+            <Button type="text" size="small" class="ac-update-btn" @click="openUpdateModal('zhipu')">更新</Button>
           </div>
         </div>
       </div>
 
-      <!-- ============================ 其它（兜底） ============================ -->
-      <div v-if="otherConfigs.length > 0" class="ac-card ac-other">
-        <div class="ac-card-head">
-          <div class="ac-card-head-left">
-            <span class="ac-module-icon" style="background: rgba(107, 114, 128, 0.15); color: hsl(var(--muted-foreground))">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                <ellipse cx="12" cy="5" rx="8" ry="3" />
-                <path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
-                <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
-              </svg>
-            </span>
-            <div class="ac-card-head-text">
-              <div class="ac-card-title">
-                其它
-                <span class="ac-count">{{ otherConfigs.length }}</span>
-              </div>
-              <div class="ac-card-desc">未归类到具体模块的配置</div>
-            </div>
-          </div>
-          <Button type="text" size="small" class="ac-add-mini" @click="openCreateModal()">
-            <template #icon>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
-            </template>
-            新增
-          </Button>
-        </div>
-        <div class="ac-items">
-          <div v-for="item in otherConfigs" :key="item.id" class="ac-item" :title="item.description || item.name">
-            <span class="ac-status-dot" :class="item.value ? 'ok' : 'no'" :title="item.value ? '已配置' : '未配置'">
-              <svg v-if="!item.value" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-            </span>
-            <div class="ac-item-info">
-              <span class="ac-item-name">{{ item.name }}</span>
-              <span v-if="item.description" class="ac-item-desc">{{ item.description }}</span>
-            </div>
-            <div class="ac-item-value" :title="visibleMap[item.id] ? item.value : '点击眼睛查看明文'">
-              <span class="ac-item-value-text">
-                {{ visibleMap[item.id] ? (item.value || '（空）') : maskValue(item.value) }}
-              </span>
-            </div>
-            <div class="ac-item-actions">
-              <button class="ac-icon-btn" :class="{ active: visibleMap[item.id] }" title="显示/隐藏明文" @click="toggleVisible(item.id)">
-                <svg v-if="!visibleMap[item.id]" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" />
-                </svg>
-                <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 3l18 18" /><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.9 3.9M6.6 6.6A16.5 16.5 0 0 0 2 12s3.5 7 10 7a10.4 10.4 0 0 0 3.4-.6" />
-                </svg>
-              </button>
-              <button class="ac-icon-btn" :class="{ copied: copiedId === item.id }" title="复制值" @click="copyValue(item)">
-                <svg v-if="copiedId !== item.id" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" />
-                </svg>
-                <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4 12.5l5 5L20 6.5" />
-                </svg>
-              </button>
-              <button class="ac-icon-btn" title="编辑" @click="openEditModal(item)">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                </svg>
-              </button>
-              <button class="ac-icon-btn danger" title="删除" @click="removeConfig(item)">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 6h18" /><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ============================ 新增 / 编辑弹窗（通用配置） ============================ -->
-    <Modal
-      v-model:open="modalOpen"
-      :title="isEditing ? `编辑配置「${form.name}」` : '新增 API 配置'"
-      :ok-text="isEditing ? '保存' : '新增'"
-      :confirm-loading="saving"
-      ok-type="primary"
-      @ok="submitForm"
-    >
-      <Form layout="vertical">
-        <FormItem v-if="!isEditing" label="所属模块">
-          <Select
-            v-model:value="form.categoryKey"
-            :options="categoryOptions"
-            style="width: 100%"
-            @change="(v: string) => applyCategory(v)"
-          />
-          <div class="ac-form-hint">选择模块后自动推荐该模块的配置项名称</div>
-        </FormItem>
-        <FormItem label="配置项名称">
-          <Input
-            v-model:value="form.name"
-            :disabled="isEditing"
-            placeholder="例如：fmp_api_key"
-            class="ac-mono-input"
-          />
-          <div v-if="suggestedNames.length" class="ac-suggest">
-            <span class="ac-suggest-label">推荐：</span>
-            <Tag
-              v-for="n in suggestedNames"
-              :key="n"
-              class="ac-suggest-tag"
-              :color="form.name === n ? 'blue' : 'default'"
-              @click="
-                form.name = n;
-                form.description = form.description?.trim() ? form.description : (NAME_DESCRIPTIONS[n] ?? '');
-              "
-            >
-              {{ n }}
-            </Tag>
-          </div>
-        </FormItem>
-        <FormItem label="值" :extra="isEditing ? '留空 = 不修改已保存的值' : undefined">
-          <TextArea v-model:value="form.value" :rows="2" class="ac-mono-input" placeholder="第三方服务的 key / endpoint" />
-        </FormItem>
-        <FormItem label="说明">
-          <Input v-model:value="form.description" placeholder="给自己看的备注，可留空" />
-        </FormItem>
-      </Form>
-    </Modal>
-
-    <!-- ============================ AI 模型配置弹窗（厂商由注册表下发） ============================ -->
     <Modal v-model:open="modelModalOpen" title="AI 模型配置" :footer="null" width="480px">
       <div class="ac-model-modal-desc">
         小红书 AI 分析、Skill 分析共用这份配置。保存后立即生效，无需重启服务。
@@ -703,6 +353,34 @@ onMounted(() => {
         <Button type="primary" block :loading="modelSaving" @click="submitModelConfig">保存</Button>
       </Form>
     </Modal>
+    <!-- ============================ 更新弹窗（小红书 token / 数据处理模型） ============================ -->
+    <Modal v-model:open="updateModalOpen" :title="UPDATE_META[updateTarget].title" :footer="null" width="520px">
+      <div class="ac-model-modal-desc">{{ UPDATE_META[updateTarget].desc }}</div>
+      <Form layout="vertical">
+        <FormItem label="凭证值">
+          <Input.Password
+            v-model:value="updateForm.value"
+            class="ac-mono-input"
+            :placeholder="UPDATE_META[updateTarget].keyPlaceholder"
+          />
+        </FormItem>
+        <FormItem v-if="updateTarget === 'zhipu'" label="模型（可选）">
+          <Input
+            v-model:value="updateForm.zhipu_model"
+            class="ac-mono-input"
+            placeholder="如 glm-4-flash（留空则不修改）"
+          />
+        </FormItem>
+        <div v-if="updateUpdatedAt" class="ac-form-hint" style="margin-bottom: 12px">
+          上次更新时间：{{ updateUpdatedAt }}
+        </div>
+        <div class="ac-modal-actions">
+          <Button @click="updateModalOpen = false">取消</Button>
+          <Button type="primary" :loading="updateSaving" @click="submitUpdate">保存</Button>
+        </div>
+      </Form>
+    </Modal>
+    </div>
   </Page>
 </template>
 
@@ -993,6 +671,17 @@ body.dark {
   color: rgba(255, 255, 255, 0.72);
 }
 
+.ac-update-btn {
+  border-radius: 8px !important;
+  color: var(--ac-text-2, hsl(var(--muted-foreground))) !important;
+  border: 1px solid var(--ac-border-strong, hsl(var(--border))) !important;
+  background: var(--ac-bg-soft, hsl(var(--muted))) !important;
+}
+.ac-update-btn:hover {
+  color: var(--ac-text, hsl(var(--foreground))) !important;
+  border-color: var(--ac-primary, #4f6ef7) !important;
+}
+
 .ac-ai-btn {
   position: relative;
   flex-shrink: 0;
@@ -1275,11 +964,12 @@ body.dark {
   margin: 0 5px;
 }
 .ac-status-dot.no {
-  width: 16px;
-  height: 16px;
-  margin: 0 1px;
-  color: #f43f5e;
-  opacity: 0.85;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: hsl(var(--muted-foreground));
+  opacity: 0.45;
+  margin: 0 5px;
 }
 
 /* ================= 其它卡片 ================= */

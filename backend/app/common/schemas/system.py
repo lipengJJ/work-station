@@ -18,6 +18,7 @@ class ApiConfigOut(BaseModel):
     id: int
     name: str
     value: str
+    updated_at: datetime | None = None
     description: str | None
 
 
