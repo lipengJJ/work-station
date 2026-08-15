@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, unref } from 'vue';
 
-import { SUPPORT_LANGUAGES } from '@vben/constants';
 import { $t } from '@vben/locales';
 import { useTimezoneStore } from '@vben/stores';
 
@@ -13,7 +12,6 @@ defineOptions({
   name: 'PreferenceGeneralConfig',
 });
 
-const appLocale = defineModel<string>('appLocale');
 const appTimezone = defineModel<string>('appTimezone');
 const appDynamicTitle = defineModel<boolean>('appDynamicTitle');
 const appWatermark = defineModel<boolean>('appWatermark');
@@ -42,9 +40,6 @@ onMounted(async () => {
 </script>
 
 <template>
-  <SelectItem v-model="appLocale" :items="SUPPORT_LANGUAGES">
-    {{ $t('preferences.language') }}
-  </SelectItem>
   <SelectItem v-model="appTimezone" :items="timezoneOptionsRef">
     {{ $t('preferences.timezone') }}
   </SelectItem>

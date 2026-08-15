@@ -23,6 +23,11 @@ export const overridesPreferences = defineOverridesPreferences({
     defaultHomePath: '/home',
   },
   copyright: appCopyrightPreferences,
+  // 保持中文：移除顶栏语言切换按钮（偏好设置面板里的语言下拉也一并移除）
+  widget: {
+    languageToggle: false,
+    languageToggleButtonPosition: 'none',
+  },
 });
 
 export const preferencesExtension =
