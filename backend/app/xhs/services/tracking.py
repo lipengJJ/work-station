@@ -54,6 +54,83 @@ def _job_id(tracking_task_id: int) -> str:
     return f"{_JOB_ID_PREFIX}{tracking_task_id}"
 
 
+_FREQUENCY_MINUTES = {"realtime": 0, "1h": 60, "6h": 360, "12h": 720, "daily": 1440}
+
+
+def _in_notify_window(task) -> bool:
+    """当前时间（Asia/Shanghai）是否在任务通知时段内；start/end 为空 = 不限时段。"""
+    from datetime import datetime as dt
+
+    if not task.notify_time_start or not task.notify_time_end:
+        return True
+    try:
+        now = dt.now().strftime("%H:%M")
+        start, end = task.notify_time_start, task.notify_time_end
+        if end < start:  # 跨天时段（如 22:00-08:00）
+            return now >= start or now <= end
+        return start <= now <= end
+    except Exception:
+        return True
+
+
+def notify_task_hits(db: Session, tracking_task_id: int, new_hits: int) -> None:
+    """按任务的机器人通知配置评估并推送（渠道/时段/频率/仅新命中），异常不阻塞任务。"""
+    try:
+        task = db.get(XhsTrackingTask, tracking_task_id)
+        if not task or not task.notify_enabled:
+            return
+        from app.common.services.notify_service import send_task_hits_to_channels
+
+        channel_ids = json.loads(task.notify_channel_ids or "[]")
+        if not channel_ids:
+            return
+        title = f"追踪任务「{task.name}」"
+        in_window = _in_notify_window(task)
+        freq = _FREQUENCY_MINUTES.get(task.notify_frequency, 0)
+
+        # 时段外：命中暂存，等进入时段后合并推送
+        if not in_window:
+            if new_hits > 0:
+                task.notify_pending_hits = (task.notify_pending_hits or 0) + new_hits
+                if not task.notify_pending_since:
+                    task.notify_pending_since = datetime.now(timezone.utc)
+                db.commit()
+            return
+
+        pending = task.notify_pending_hits or 0
+        total = pending + new_hits
+
+        # 无新命中（含无暂存）：按「仅新命中」开关决定是否发空消息
+        if total == 0:
+            if task.notify_only_on_hit:
+                return
+            content = f"本次无新增结果"
+            send_task_hits_to_channels(db, channel_ids, title, content)
+            return
+
+        # 频率判断：实时立即推；汇总类看距首次暂存是否达到间隔
+        if freq > 0 and task.notify_pending_since:
+            elapsed = (datetime.now(timezone.utc) - task.notify_pending_since).total_seconds() / 60
+            if elapsed < freq:
+                task.notify_pending_hits = total
+                db.commit()
+                return
+
+        # 推送（合并暂存 + 本次）
+        content = (
+            f"关键词「{task.keyword}」新增命中 {total} 篇"
+            + (f"（含暂存 {pending} 篇）" if pending else "")
+            + "\n点击查看：https://www.xiaohongshu.com/search_result?keyword="
+            + task.keyword
+        )
+        send_task_hits_to_channels(db, channel_ids, title, content)
+        task.notify_pending_hits = 0
+        task.notify_pending_since = None
+        db.commit()
+    except Exception:
+        logger.exception(f"机器人通知评估失败（任务 {tracking_task_id}）")
+
+
 def _total_hit_count(db: Session, tracking_task_id: int) -> int:
     return (
         db.query(XhsTrackingHit)
@@ -88,6 +165,12 @@ def serialize_task(db: Session, task: XhsTrackingTask) -> dict:
         "must_exclude": json.loads(task.must_exclude or "[]"),
         "interval_minutes": task.interval_minutes,
         "enabled": task.enabled,
+        "notify_enabled": task.notify_enabled,
+        "notify_channel_ids": json.loads(task.notify_channel_ids or "[]"),
+        "notify_time_start": task.notify_time_start,
+        "notify_time_end": task.notify_time_end,
+        "notify_frequency": task.notify_frequency,
+        "notify_only_on_hit": task.notify_only_on_hit,
         "status": task.status,
         "last_run_at": task.last_run_at.isoformat() if task.last_run_at else None,
         "last_run_message": task.last_run_message,
@@ -120,6 +203,12 @@ def create_tracking_task(db: Session, params: dict) -> dict:
         must_exclude=json.dumps(params.get("must_exclude") or [], ensure_ascii=False),
         interval_minutes=params.get("interval_minutes", 60),
         enabled=params.get("enabled", True),
+        notify_enabled=params.get("notify_enabled", False),
+        notify_channel_ids=json.dumps(params.get("notify_channel_ids") or [], ensure_ascii=False),
+        notify_time_start=params.get("notify_time_start"),
+        notify_time_end=params.get("notify_time_end"),
+        notify_frequency=params.get("notify_frequency", "realtime"),
+        notify_only_on_hit=params.get("notify_only_on_hit", True),
     )
     db.add(task)
     db.commit()
@@ -144,6 +233,12 @@ def update_tracking_task(db: Session, tracking_task_id: int, params: dict) -> Op
     task.must_exclude = json.dumps(params.get("must_exclude") or [], ensure_ascii=False)
     task.interval_minutes = params.get("interval_minutes", task.interval_minutes)
     task.enabled = params.get("enabled", task.enabled)
+    task.notify_enabled = params.get("notify_enabled", task.notify_enabled)
+    task.notify_channel_ids = json.dumps(params.get("notify_channel_ids") or [], ensure_ascii=False)
+    task.notify_time_start = params.get("notify_time_start", task.notify_time_start)
+    task.notify_time_end = params.get("notify_time_end", task.notify_time_end)
+    task.notify_frequency = params.get("notify_frequency", task.notify_frequency)
+    task.notify_only_on_hit = params.get("notify_only_on_hit", task.notify_only_on_hit)
     db.commit()
     db.refresh(task)
     if task.enabled:
@@ -306,6 +401,7 @@ def run_scan(tracking_task_id: int) -> None:
             )
             db.commit()
             notify_task_result(new_task_id)
+            notify_task_hits(db, tracking_task_id, new_hit_count)
         except XhsAuthError as e:
             logger.error(f"追踪任务 {tracking_task_id} 因登录态失效终止: {e}")
             task.status = "failed"

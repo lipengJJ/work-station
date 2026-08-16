@@ -419,6 +419,30 @@ def _notify_task_result_sync(task_id: int) -> None:
         db.close()
 
 
+def send_task_hits_to_channels(db, channel_ids: list[int], title: str, content: str) -> dict:
+    """按任务的机器人通知配置向指定渠道实例推送（跳过已失效渠道）。返回成功/失败统计。"""
+    if not channel_ids:
+        return {"success": False, "sent": 0, "failed": 0}
+    sent = 0
+    failed = 0
+    for cfg in list_configs(db):
+        if cfg.id not in channel_ids:
+            continue
+        missing = config_missing_hint(cfg)
+        if missing:
+            failed += 1
+            continue
+        ok, msg = send_by_config(cfg, title, content, msgtype="text")
+        log_notification(
+            db, cfg.channel, title, content, "success" if ok else "failed", None if ok else msg,
+        )
+        if ok:
+            sent += 1
+        else:
+            failed += 1
+    return {"success": sent > 0, "sent": sent, "failed": failed}
+
+
 def notify_task_result(task_id: int) -> None:
     """
     任务到达终态（success/failed）后的通知入口：独立线程发送，不阻塞任务执行；

@@ -121,3 +121,9 @@ class TrackingTaskIn(BaseModel):
     must_exclude: list[str] = Field(default_factory=list)
     interval_minutes: int = Field(60, ge=5, le=10080)
     enabled: bool = True
+    notify_enabled: bool = False
+    notify_channel_ids: list[int] = Field(default_factory=list)
+    notify_time_start: str | None = None  # "HH:mm"；None 表示不限时段
+    notify_time_end: str | None = None
+    notify_frequency: str = "realtime"  # realtime/1h/6h/12h/daily
+    notify_only_on_hit: bool = True

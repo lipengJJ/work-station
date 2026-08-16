@@ -1,7 +1,9 @@
 <script lang="ts" setup>
 import type { XhsApi } from '#/api/core/xhs';
 
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
+
+import dayjs from 'dayjs';
 
 import { Page } from '@vben/common-ui';
 
@@ -22,9 +24,10 @@ import {
   Select,
   Switch,
   Tag,
+  TimePicker,
   Tooltip,
 } from 'ant-design-vue';
-import { ArrowLeft, MoreHorizontal, Plus } from 'lucide-vue-next';
+import { ArrowLeft, Bell, MoreHorizontal, Plus } from 'lucide-vue-next';
 
 import {
   buildXhsMediaProxyUrl,
@@ -36,6 +39,7 @@ import {
   runXhsTrackingTaskNowApi,
   updateXhsTrackingTaskApi,
 } from '#/api/core/xhs';
+import { listNotifyConfigsApi } from '#/api/core/notify';
 import { groupNotesByRecency } from '#/utils/note-grouping';
 
 const SORT_OPTIONS = [
@@ -119,7 +123,92 @@ function defaultForm(): XhsApi.TrackingTaskParams {
     must_exclude: [],
     interval_minutes: 60,
     enabled: true,
+    notify_enabled: false,
+    notify_channel_ids: [],
+    notify_time_start: '09:00',
+    notify_time_end: '22:00',
+    notify_frequency: 'realtime',
+    notify_only_on_hit: true,
   };
+}
+
+// 可选通知渠道（系统设置已启用）
+const notifyChannels = ref<{ id: number; label: string; channel: string }[]>([]);
+const notifyChannelsLoading = ref(false);
+async function loadNotifyChannels() {
+  notifyChannelsLoading.value = true;
+  try {
+    const configs = await listNotifyConfigsApi();
+    const meta: Record<string, string> = {
+      wecom_webhook: '企业微信群机器人',
+      serverchan: 'Server酱',
+      pushplus: 'PushPlus',
+    };
+    notifyChannels.value = configs
+      .filter((c) => c.enabled)
+      .map((c) => ({
+        id: c.id,
+        channel: c.channel,
+        remark: c.remark || '',
+        label: c.remark ? `${meta[c.channel] || c.channel} · ${c.remark}` : meta[c.channel] || c.channel,
+      }));
+  } catch {
+    notifyChannels.value = [];
+  } finally {
+    notifyChannelsLoading.value = false;
+  }
+}
+
+const NOTIFY_FREQ_OPTIONS = [
+  { value: 'realtime', label: '实时（每次执行后有新命中立即推送）' },
+  { value: '1h', label: '每 1 小时汇总' },
+  { value: '6h', label: '每 6 小时汇总' },
+  { value: '12h', label: '每 12 小时汇总' },
+  { value: 'daily', label: '每天汇总（跟随通知时段起始）' },
+];
+// 已选但已失效的渠道（被停用/删除）
+const invalidChannels = computed(() => {
+  if (!form.notify_enabled) return [];
+  const validIds = new Set(notifyChannels.value.map((c) => c.id));
+  return form.notify_channel_ids.filter((id) => !validIds.has(id));
+});
+const notifyFreqDesc = computed(() => {
+  if (form.notify_frequency === 'realtime') {
+    const label = FREQUENCY_OPTIONS.find((o) => o.value === form.interval_minutes)?.label;
+    return `任务每执行一次就推送一次，当前执行频率为「${label || '每 ' + form.interval_minutes + ' 分钟'}」`;
+  }
+  return '多次执行的新命中结果合并为一条消息推送';
+});
+const notifyFreqWarn = computed(() => {
+  if (form.notify_frequency === 'realtime') return '';
+  const freqMin: Record<string, number> = { '1h': 60, '6h': 360, '12h': 720, daily: 1440 };
+  const nf = freqMin[form.notify_frequency] || 0;
+  return nf < form.interval_minutes ? '通知频率高于任务执行频率，实际推送间隔将以执行频率为准' : '';
+});
+const startDayjs = computed(() => (form.notify_time_start ? dayjs(form.notify_time_start, 'HH:mm') : undefined));
+const endDayjs = computed(() => (form.notify_time_end ? dayjs(form.notify_time_end, 'HH:mm') : undefined));
+
+// 不限时段：勾选后时间选择器置灰（start/end 置 null 表示不限）
+const unlimitedTime = ref(false);
+watch(
+  () => unlimitedTime.value,
+  (v) => {
+    if (v) {
+      form.notify_time_start = null;
+      form.notify_time_end = null;
+    } else {
+      form.notify_time_start = form.notify_time_start || '09:00';
+      form.notify_time_end = form.notify_time_end || '22:00';
+    }
+  },
+);
+function toggleChannel(id: number) {
+  const idx = form.notify_channel_ids.indexOf(id);
+  if (idx >= 0) {
+    form.notify_channel_ids.splice(idx, 1);
+  } else {
+    form.notify_channel_ids.push(id);
+  }
 }
 
 const editModalOpen = ref(false);
@@ -127,9 +216,20 @@ const editingId = ref<number>();
 const submitting = ref(false);
 const form = reactive(defaultForm());
 
+// 通知渠道名（用于列表 hover；失效渠道标注「已失效」）
+function notifyChannelNames(task: XhsApi.TrackingTask): string {
+  if (!task.notify_channel_ids.length) return '';
+  const names = task.notify_channel_ids.map((id) => {
+    const ch = notifyChannels.value.find((c) => c.id === id);
+    return ch ? ch.label : `渠道 #${id}（已失效）`;
+  });
+  return names.join('、');
+}
+
 function openCreateModal() {
   Object.assign(form, defaultForm());
   editingId.value = undefined;
+  loadNotifyChannels();
   editModalOpen.value = true;
 }
 
@@ -146,14 +246,25 @@ function openEditModal(task: XhsApi.TrackingTask) {
     must_exclude: [...task.must_exclude],
     interval_minutes: task.interval_minutes,
     enabled: task.enabled,
+    notify_enabled: task.notify_enabled,
+    notify_channel_ids: [...task.notify_channel_ids],
+    notify_time_start: task.notify_time_start,
+    notify_time_end: task.notify_time_end,
+    notify_frequency: task.notify_frequency,
+    notify_only_on_hit: task.notify_only_on_hit,
   });
   editingId.value = task.id;
+  loadNotifyChannels();
   editModalOpen.value = true;
 }
 
 async function submitForm() {
   if (!form.name.trim() || !form.keyword.trim()) {
     message.error('请填写任务名称和关键词');
+    return;
+  }
+  if (form.notify_enabled && form.notify_channel_ids.length === 0) {
+    message.error('请至少选择一个通知渠道');
     return;
   }
   submitting.value = true;
@@ -187,6 +298,12 @@ async function toggleEnabled(task: XhsApi.TrackingTask, enabled: boolean) {
       must_exclude: task.must_exclude,
       interval_minutes: task.interval_minutes,
       enabled,
+      notify_enabled: task.notify_enabled,
+      notify_channel_ids: task.notify_channel_ids,
+      notify_time_start: task.notify_time_start,
+      notify_time_end: task.notify_time_end,
+      notify_frequency: task.notify_frequency,
+      notify_only_on_hit: task.notify_only_on_hit,
     });
     task.enabled = updated.enabled;
     task.next_run_at = updated.next_run_at;
@@ -346,6 +463,14 @@ fetchTasks();
                 <tr v-for="task in tasks" :key="task.id" class="transition-colors hover:bg-[hsl(var(--accent))]">
                   <td class="cursor-pointer px-4 py-3" @click="openTask(task)">
                     <div class="font-semibold text-[hsl(var(--foreground))]">{{ task.name }}</div>
+                    <div v-if="task.notify_enabled && task.notify_channel_ids.length" class="mt-0.5 flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))]">
+                      <Tooltip :title="notifyChannelNames(task)">
+                        <span class="inline-flex items-center gap-0.5">
+                          <Bell class="size-3" />
+                          {{ task.notify_channel_ids.length }} 个渠道
+                        </span>
+                      </Tooltip>
+                    </div>
                     <div class="mt-0.5 flex items-center gap-2 text-[11px] text-[hsl(var(--muted-foreground))]">
                       <span>{{ task.keyword }}</span>
                     </div>
@@ -542,6 +667,112 @@ fetchTasks();
             placeholder="比如：求购、已出"
           />
         </div>
+
+        <!-- ==================== 机器人通知 ==================== -->
+        <div
+          class="rounded-lg border"
+          style="padding: 12px 14px; border-color: hsl(var(--border)); background: hsl(var(--muted) / 0.3)"
+        >
+          <div style="display: flex; align-items: center; justify-content: space-between">
+            <span style="font-size: 13px; font-weight: 600; color: hsl(var(--foreground))">机器人通知</span>
+            <Switch
+              v-model:checked="form.notify_enabled"
+              checked-children="开"
+              un-checked-children="关"
+            />
+          </div>
+
+          <template v-if="form.notify_enabled">
+            <!-- 通知渠道（多选） -->
+            <div style="margin-top: 12px">
+              <div style="margin-bottom: 4px; font-size: 12px; color: hsl(var(--muted-foreground))">通知渠道</div>
+              <div v-if="notifyChannelsLoading" style="font-size: 12px; color: hsl(var(--muted-foreground))">加载中…</div>
+              <template v-else-if="notifyChannels.length">
+                <div
+                  v-for="ch in notifyChannels"
+                  :key="ch.id"
+                  style="display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer"
+                  @click="toggleChannel(ch.id)"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="form.notify_channel_ids.includes(ch.id)"
+                    style="accent-color: hsl(var(--primary))"
+                  />
+                  <span style="font-size: 13px; color: hsl(var(--foreground))">{{ ch.label }}</span>
+                </div>
+              </template>
+              <div v-else style="display: flex; flex-direction: column; gap: 6px">
+                <span style="font-size: 12px; color: hsl(var(--muted-foreground))">还没有可用的通知渠道</span>
+                <a
+                  href="/system/settings"
+                  target="_blank"
+                  style="font-size: 12px; color: hsl(var(--primary))"
+                >前往系统设置添加 →</a>
+              </div>
+              <!-- 已失效渠道：灰色删除线标注 -->
+              <div
+                v-for="id in invalidChannels"
+                :key="'inv-' + id"
+                style="display: flex; align-items: center; gap: 8px; padding: 4px 0"
+              >
+                <input type="checkbox" :checked="true" disabled style="accent-color: hsl(var(--muted-foreground))" />
+                <span
+                  style="font-size: 13px; color: hsl(var(--muted-foreground)); text-decoration: line-through; text-decoration-color: hsl(var(--muted-foreground));"
+                >渠道 #{{ id }} · 渠道已失效</span>
+              </div>
+              <div
+                v-if="form.notify_channel_ids.length === 0 && !notifyChannelsLoading"
+                style="margin-top: 6px; font-size: 12px; color: #f43f5e"
+              >请至少选择一个通知渠道</div>
+            </div>
+
+            <!-- 通知时段 -->
+            <div style="margin-top: 12px">
+              <div style="margin-bottom: 4px; font-size: 12px; color: hsl(var(--muted-foreground))">通知时段</div>
+              <div style="display: flex; align-items: center; gap: 8px">
+                <TimePicker
+                  :value="startDayjs"
+                  format="HH:mm"
+                  style="width: 100px"
+                  :disabled="unlimitedTime"
+                  @change="(t: any) => (form.notify_time_start = t ? t.format('HH:mm') : null)"
+                />
+                <span style="color: hsl(var(--muted-foreground))">至</span>
+                <TimePicker
+                  :value="endDayjs"
+                  format="HH:mm"
+                  style="width: 100px"
+                  :disabled="unlimitedTime"
+                  @change="(t: any) => (form.notify_time_end = t ? t.format('HH:mm') : null)"
+                />
+                <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: hsl(var(--muted-foreground)); cursor: pointer">
+                  <input type="checkbox" v-model="unlimitedTime" style="accent-color: hsl(var(--primary))" />
+                  不限时段
+                </label>
+              </div>
+            </div>
+
+            <!-- 通知频率 -->
+            <div style="margin-top: 12px">
+              <div style="margin-bottom: 4px; font-size: 12px; color: hsl(var(--muted-foreground))">通知频率</div>
+              <Select v-model:value="form.notify_frequency" :options="NOTIFY_FREQ_OPTIONS" style="width: 100%" />
+              <div v-if="notifyFreqWarn" style="margin-top: 4px; font-size: 12px; color: #eab308">
+                {{ notifyFreqWarn }}
+              </div>
+              <div v-else style="margin-top: 4px; font-size: 12px; color: hsl(var(--muted-foreground))">
+                {{ notifyFreqDesc }}
+              </div>
+            </div>
+
+            <!-- 仅在有新命中时通知 -->
+            <div style="margin-top: 12px; display: flex; align-items: center; justify-content: space-between">
+              <span style="font-size: 12px; color: hsl(var(--muted-foreground))">仅在有新命中时通知</span>
+              <Switch v-model:checked="form.notify_only_on_hit" size="small" />
+            </div>
+          </template>
+        </div>
+
         <div>
           <Switch v-model:checked="form.enabled" checked-children="启用" un-checked-children="停用" />
         </div>

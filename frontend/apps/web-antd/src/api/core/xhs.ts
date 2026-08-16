@@ -214,6 +214,12 @@ export namespace XhsApi {
     must_exclude: string[];
     interval_minutes: number;
     enabled: boolean;
+    notify_enabled: boolean;
+    notify_channel_ids: number[];
+    notify_time_start: null | string;
+    notify_time_end: null | string;
+    notify_frequency: 'daily' | 'realtime' | '1h' | '6h' | '12h';
+    notify_only_on_hit: boolean;
   }
 
   export interface TrackingTask extends TrackingTaskParams {

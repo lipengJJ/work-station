@@ -117,6 +117,34 @@ def _ensure_notification_config_schema() -> None:
         logger.exception("检查/补充 notification_config 表结构失败，部分通知通道可能不可用")
 
 
+def _ensure_tracking_task_notify_schema() -> None:
+    """追踪任务表补机器人通知相关列（幂等，老库兼容）。"""
+    try:
+        from sqlalchemy import inspect, text
+
+        inspector = inspect(engine)
+        if "xhs_tracking_tasks" not in inspector.get_table_names():
+            return
+        columns = {c["name"] for c in inspector.get_columns("xhs_tracking_tasks")}
+        adds = {
+            "notify_enabled": "BOOLEAN DEFAULT 0",
+            "notify_channel_ids": "TEXT DEFAULT '[]'",
+            "notify_time_start": "VARCHAR(8)",
+            "notify_time_end": "VARCHAR(8)",
+            "notify_frequency": "VARCHAR(16) DEFAULT 'realtime'",
+            "notify_only_on_hit": "BOOLEAN DEFAULT 1",
+            "notify_pending_hits": "INTEGER DEFAULT 0",
+            "notify_pending_since": "DATETIME",
+        }
+        with engine.begin() as conn:
+            for name, ddl in adds.items():
+                if name not in columns:
+                    conn.execute(text(f"ALTER TABLE xhs_tracking_tasks ADD COLUMN {name} {ddl}"))
+        logger.warning("xhs_tracking_tasks 表已补充机器人通知相关列")
+    except Exception:
+        logger.exception("补充 xhs_tracking_tasks 通知列失败")
+
+
 def init_db() -> None:
     # noqa: F401  各域的 models 子包只是被 import 一下确保类注册到 Base.metadata 上，
     # 不在这里直接用——按域拆分后模型定义各自归属 common/stock/xhs，不再有一个统一的
@@ -137,3 +165,4 @@ def init_db() -> None:
     ensure_push_log_topic_id()
     # 老库兼容：通知配置补列（sendkey/token）+ channel 唯一索引（多通道化）
     _ensure_notification_config_schema()
+    _ensure_tracking_task_notify_schema()

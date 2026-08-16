@@ -34,6 +34,17 @@ class XhsTrackingTask(Base):
     interval_minutes: Mapped[int] = mapped_column(Integer, default=60)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # ---- 机器人通知配置（系统设置 > 消息通知 的渠道，按任务个性化推送） ----
+    notify_enabled: Mapped[bool] = mapped_column(Boolean, default=False)  # 通知总开关
+    notify_channel_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON list[int] 已选渠道 id
+    notify_time_start: Mapped[str | None] = mapped_column(String(8), nullable=True)  # "HH:mm"，null=不限时段
+    notify_time_end: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    notify_frequency: Mapped[str] = mapped_column(String(16), default="realtime")  # realtime/1h/6h/12h/daily
+    notify_only_on_hit: Mapped[bool] = mapped_column(Boolean, default=True)  # 仅在有新命中时通知
+    # 汇总推送暂存：时段外/频率未到的命中合并
+    notify_pending_hits: Mapped[int] = mapped_column(Integer, default=0)
+    notify_pending_since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     status: Mapped[str] = mapped_column(String(16), default="idle")  # idle/running/failed
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_run_message: Mapped[str | None] = mapped_column(Text, nullable=True)
