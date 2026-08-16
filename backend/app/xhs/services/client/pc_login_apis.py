@@ -10,7 +10,7 @@ from loguru import logger
 from app.xhs.services.client.pc_apis import XHS_Apis
 from app.xhs.services.utils.http_util import REQUEST_TIMEOUT
 from app.xhs.services.utils.xhs_util import generate_headers, generate_xs_xs_common, splice_str
-from app.xhs.services.utils.common_util import generate_a1, generate_web_id
+from app.xhs.services.utils.common_util import fetch_sec_cookies, generate_a1, generate_web_id
 
 
 class XHSLoginApi:
@@ -99,9 +99,15 @@ class XHSLoginApi:
             'webId': web_id,
         }
 
-        sec_poison_id = self._fetch_sec_cookies(cookies)
-        if sec_poison_id:
-            cookies['sec_poison_id'] = sec_poison_id
+        # 风控指纹 cookie：sec_poison_id + websectiga（websectiga 缺失会导致请求被 461 风控拦截）
+        try:
+            sec_poison_id, websectiga = fetch_sec_cookies(cookies, self._get_sec_headers())
+            if sec_poison_id:
+                cookies['sec_poison_id'] = sec_poison_id
+            if websectiga:
+                cookies['websectiga'] = websectiga
+        except Exception:
+            logger.warning("fetch sec cookies(websectiga) failed，扫码产物可能被风控拦截", exc_info=True)
 
         gid = self._fetch_gid(cookies)
         if gid:
