@@ -181,12 +181,34 @@ def save_config(
 
 
 @router.post("/test", response_model=TestAllResult)
-def test_send(db: Session = Depends(get_db), _=Depends(get_current_user)):
-    """手动发送：向所有已启用通道实例发送一条测试消息，逐条反馈成功/失败。"""
+def test_send(
+    body: TestSendIn | None = None,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """手动发送测试消息：不传 channel = 向所有启用实例发送；传 channel+remark = 仅测试该实例。"""
     content = (
         "【统一工作台】消息通知测试\n"
         "这是一条测试消息，如果你能收到，说明当前通知通道配置正确。"
     )
+    if body and body.channel:
+        target = next(
+            (c for c in list_configs(db) if c.channel == body.channel and c.remark == (body.remark or "")),
+            None,
+        )
+        if not target:
+            return TestAllResult(success=False, total=0, success_count=0, message="未找到该渠道实例")
+        ok, msg = send_by_config(target, "测试消息", content, msgtype="text")
+        if not ok:
+            missing = config_missing_hint(target)
+            if missing:
+                ok, msg = False, missing
+        log_notification(db, target.channel, "测试消息", content, "success" if ok else "failed", None if ok else msg)
+        return TestAllResult(
+            success=ok, total=1, success_count=1 if ok else 0,
+            message="该渠道发送成功" if ok else f"发送失败：{msg}",
+            results=[{"channel": target.channel, "remark": target.remark, "success": ok, "message": msg}],
+        )
     configs = [c for c in list_configs(db) if c.enabled]
     if not configs:
         return TestAllResult(success=False, total=0, success_count=0, message="还没有启用的通知渠道")

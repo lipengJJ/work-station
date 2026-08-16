@@ -99,7 +99,8 @@ class SendResult(BaseModel):
 
 
 class TestSendIn(BaseModel):
-    channel: str | None = Field(default=None, max_length=32)  # 指定测试通道；不传=第一个启用通道
+    channel: str | None = Field(default=None, max_length=32)  # 指定测试通道；不传=全部启用通道
+    remark: str = Field(default="", max_length=64)  # 备注名（同类型多实例时定位具体实例）
 
 
 class ManualSendIn(BaseModel):

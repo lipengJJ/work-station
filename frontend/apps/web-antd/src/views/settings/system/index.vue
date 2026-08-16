@@ -4,8 +4,8 @@ import type { NotifyApi } from '#/api/core/notify';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Button, Drawer, Dropdown, Empty, Form, FormItem, Input, message, Modal, Select, Switch } from 'ant-design-vue';
-import { Bell, Boxes, KeyRound, MoreHorizontal, Plus, Send, Sparkles } from 'lucide-vue-next';
+import { Button, Drawer, Dropdown, Form, FormItem, Input, message, Modal, Select, Switch } from 'ant-design-vue';
+import { Bell, Boxes, KeyRound, MoreHorizontal, Plus, Sparkles } from 'lucide-vue-next';
 
 import { getChatConfigApi, setChatConfigApi } from '#/api/core/chat';
 import {
@@ -13,7 +13,7 @@ import {
   deleteNotifyConfigApi,
   getNotifyChannelsApi,
   listNotifyConfigsApi,
-  testNotifyAllApi,
+  testNotifySendApi,
   updateNotifyConfigApi,
 } from '#/api/core/notify';
 import XhsTokenManager from '../../xhs/_shared/XhsTokenManager.vue';
@@ -127,7 +127,6 @@ async function submitZhipu() {
 const notifyConfigs = ref<NotifyApi.NotificationConfig[]>([]);
 const channelMeta = ref<Record<string, NotifyApi.ChannelInfo>>({});
 const notifyLoading = ref(true);
-const manualSending = ref(false);
 
 const CHANNEL_ORDER = ['wecom_webhook', 'serverchan', 'pushplus'];
 const CHANNEL_LABEL: Record<string, string> = {
@@ -191,12 +190,14 @@ async function removeNotifyConfig(cfg: NotifyApi.NotificationConfig) {
   });
 }
 
-async function manualSend() {
-  manualSending.value = true;
+const testingId = ref<number | null>(null);
+
+async function testNotifyChannel(cfg: NotifyApi.NotificationConfig) {
+  testingId.value = cfg.id;
   try {
-    const res = await testNotifyAllApi();
+    const res = await testNotifySendApi(cfg.channel, cfg.remark);
     if (res.total === 0) {
-      message.warning('还没有启用的通知渠道');
+      message.warning('该渠道未配置，无法发送');
     } else if (res.success) {
       message.success(res.message);
     } else {
@@ -205,7 +206,7 @@ async function manualSend() {
   } catch (e: any) {
     message.error(`发送失败：${e.message}`);
   } finally {
-    manualSending.value = false;
+    testingId.value = null;
   }
 }
 
@@ -341,70 +342,75 @@ onMounted(() => {
         </div>
       </section>
 
-      <!-- ============================ 区块二：消息通知 ============================ -->
-      <section class="ss-section">
-        <div class="ss-section-head">
-          <div>
-            <h3>消息通知</h3>
-            <p>任务完成 / 失败时自动推送，可配置多个渠道同时接收</p>
+      <!-- ============================ 区块二：消息通知（与凭证同构的行卡片） ============================ -->
+      <template v-if="notifyLoading">
+        <div class="ss-loading">加载中…</div>
+      </template>
+
+      <!-- 未配置任何渠道：单行提示 + 添加 -->
+      <template v-else-if="!notifyConfigs.length">
+        <div class="ss-row">
+          <span class="ss-dot no" />
+          <span class="ss-icon ss-icon--notify"><Bell class="size-5" /></span>
+          <div class="ss-main">
+            <div class="ss-name-line">
+              <span class="ss-name">消息通知</span>
+              <span class="ss-pill">未配置</span>
+            </div>
+            <p class="ss-desc">任务完成 / 失败时自动推送，可配置多个渠道</p>
           </div>
-          <div class="ss-head-actions">
-            <Button size="small" class="ss-btn" :loading="manualSending" @click="manualSend">
-              <Send class="mr-1 size-3" />
-              手动发送
-            </Button>
-            <Button size="small" type="primary" @click="openAddDrawer">
+          <div class="ss-actions">
+            <Button type="primary" size="small" class="ss-add-btn" @click="openAddDrawer">
               <Plus class="mr-1 size-3" />
               添加渠道
             </Button>
           </div>
         </div>
+      </template>
 
-        <div v-if="notifyLoading" class="ss-loading">加载中…</div>
-        <div v-else-if="notifyConfigs.length" class="ss-list">
-          <div v-for="cfg in notifyConfigs" :key="cfg.id" class="ss-row">
-            <span class="ss-dot" :class="cfg.enabled ? 'ok' : 'no'" />
-            <span class="ss-icon" :class="`ss-icon--${cfg.channel}`">
-              <Bell class="size-4" />
-            </span>
-            <div class="ss-main">
-              <div class="ss-name-line">
-                <span class="ss-name">{{ configLabel(cfg) }}</span>
-                <span v-if="!isConfigured(cfg)" class="ss-pill">未配置</span>
-              </div>
-              <p class="ss-desc">{{ channelMeta[cfg.channel]?.description || '任务完成 / 失败时自动推送' }}</p>
+      <!-- 已配置渠道：每个一行，结构完全一致 -->
+      <template v-else>
+        <div v-for="cfg in notifyConfigs" :key="cfg.id" class="ss-row">
+          <span class="ss-dot" :class="isConfigured(cfg) && cfg.enabled ? 'ok' : 'no'" :title="isConfigured(cfg) && cfg.enabled ? '已配置且已启用' : '未配置或已停用'" />
+          <span class="ss-icon" :class="`ss-icon--${cfg.channel}`">
+            <Bell class="size-5" />
+          </span>
+          <div class="ss-main">
+            <div class="ss-name-line">
+              <span class="ss-name">{{ configLabel(cfg) }}</span>
+              <span v-if="!isConfigured(cfg)" class="ss-pill">未配置</span>
             </div>
-            <div class="ss-actions">
-              <Button size="small" class="ss-btn" @click="openEditDrawer(cfg)">编辑</Button>
-              <Switch size="small" :checked="cfg.enabled" @change="(v: string | number | boolean) => toggleNotifyEnabled(cfg, Boolean(v))" />
-              <Dropdown>
-                <Button size="small" type="text" class="!px-1">
-                  <MoreHorizontal class="size-4" />
-                </Button>
-                <template #overlay>
-                  <div class="rounded-lg border border-slate-700/50 bg-slate-900/90 p-1 shadow-xl">
-                    <Button size="small" type="text" danger block class="!text-left" @click="removeNotifyConfig(cfg)">
-                      删除
-                    </Button>
-                  </div>
-                </template>
-              </Dropdown>
-            </div>
+            <p class="ss-desc">{{ channelMeta[cfg.channel]?.description || '任务通知推送到该渠道' }}</p>
+          </div>
+          <div class="ss-actions">
+            <Button size="small" class="ss-btn" @click="openEditDrawer(cfg)">编辑</Button>
+            <Switch size="small" :checked="cfg.enabled" @change="(v: string | number | boolean) => toggleNotifyEnabled(cfg, Boolean(v))" />
+            <Dropdown>
+              <Button size="small" type="text" class="!px-1">
+                <MoreHorizontal class="size-4" />
+              </Button>
+              <template #overlay>
+                <div class="rounded-lg border border-slate-700/50 bg-slate-900/90 p-1 shadow-xl">
+                  <Button size="small" type="text" block class="!text-left" :loading="testingId === cfg.id" @click="testNotifyChannel(cfg)">
+                    手动发送
+                  </Button>
+                  <Button size="small" type="text" danger block class="!text-left" @click="removeNotifyConfig(cfg)">
+                    删除
+                  </Button>
+                </div>
+              </template>
+            </Dropdown>
           </div>
         </div>
-        <Empty v-else class="ss-empty">
-          <template #description>
-            <div class="flex flex-col items-center gap-2">
-              <span class="text-[hsl(var(--foreground))]">还没有配置通知渠道</span>
-              <span class="text-xs text-[hsl(var(--muted-foreground))]">添加后任务完成或失败会自动推送</span>
-              <Button size="small" type="primary" @click="openAddDrawer">
-                <Plus class="mr-1 size-3" />
-                添加渠道
-              </Button>
-            </div>
-          </template>
-        </Empty>
-      </section>
+
+        <!-- 虚线占位：+ 添加渠道 -->
+        <div class="ss-row ss-row--dashed" @click="openAddDrawer">
+          <span class="ss-add-placeholder">
+            <Plus class="mr-1 size-3" />
+            添加渠道
+          </span>
+        </div>
+      </template>
     </div>
 
     <!-- ============================ AI 模型配置弹窗 ============================ -->
@@ -546,12 +552,7 @@ onMounted(() => {
 .ss-section + .ss-section {
   margin-top: 32px;
 }
-.ss-section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
+
 .ss-section-head h3 {
   font-size: 16px;
   font-weight: 600;
@@ -562,12 +563,7 @@ onMounted(() => {
   font-size: 13px;
   color: hsl(var(--muted-foreground));
 }
-.ss-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-/* ==================== 统一行组件 ==================== */
+
 .ss-list {
   display: flex;
   flex-direction: column;
@@ -696,6 +692,33 @@ onMounted(() => {
   padding: 32px;
   text-align: center;
   color: hsl(var(--muted-foreground));
+}
+/* 消息通知默认图标色 */
+.ss-icon--notify {
+  background: #0ea5e9;
+}
+/* 已配置渠道下方的虚线「+ 添加渠道」占位行 */
+.ss-row--dashed {
+  justify-content: center;
+  border-style: dashed;
+  border-color: hsl(var(--border));
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ss-row--dashed:hover {
+  background: hsl(var(--accent));
+  border-color: hsl(var(--primary));
+}
+.ss-add-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+}
+.ss-row--dashed:hover .ss-add-placeholder {
+  color: hsl(var(--primary));
 }
 /* ==================== 空态 ==================== */
 .ss-empty {

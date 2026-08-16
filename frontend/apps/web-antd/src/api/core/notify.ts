@@ -116,8 +116,14 @@ export async function testNotifyAllApi() {
   }>('/notify/test');
 }
 
-export async function testNotifySendApi(channel?: string) {
-  return requestClient.post<NotifyApi.SendResult>('/notify/test', channel ? { channel } : {});
+export async function testNotifySendApi(channel?: string, remark = '') {
+  return requestClient.post<{
+    success: boolean;
+    total: number;
+    success_count: number;
+    message: string;
+    results: { channel: string; remark: string; success: boolean; message: string }[];
+  }>('/notify/test', channel ? { channel, remark } : {});
 }
 
 /** 手动发送：channel 可选（不传 = 第一个启用通道） */
