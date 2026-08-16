@@ -117,6 +117,41 @@ def _ensure_notification_config_schema() -> None:
         logger.exception("检查/补充 notification_config 表结构失败，部分通知通道可能不可用")
 
 
+def _ensure_tracking_ai_schema() -> None:
+    """追踪任务 AI 筛选相关列（任务表 3 列 + 命中表 6 列，幂等）。"""
+    try:
+        from sqlalchemy import inspect, text
+
+        inspector = inspect(engine)
+        task_adds = {
+            "ai_filter_enabled": "BOOLEAN DEFAULT 0",
+            "ai_filter_prompt": "TEXT",
+            "ai_filter_min_confidence": "FLOAT DEFAULT 0.6",
+        }
+        hit_adds = {
+            "ai_process_status": "VARCHAR(16) DEFAULT 'pending'",
+            "ai_structured_data": "TEXT",
+            "ai_is_match": "BOOLEAN",
+            "ai_match_reason": "TEXT",
+            "ai_confidence": "FLOAT",
+            "ai_raw_response": "TEXT",
+        }
+        with engine.begin() as conn:
+            if "xhs_tracking_tasks" in inspector.get_table_names():
+                cols = {c["name"] for c in inspector.get_columns("xhs_tracking_tasks")}
+                for name, ddl in task_adds.items():
+                    if name not in cols:
+                        conn.execute(text(f"ALTER TABLE xhs_tracking_tasks ADD COLUMN {name} {ddl}"))
+            if "xhs_tracking_hits" in inspector.get_table_names():
+                cols2 = {c["name"] for c in inspector.get_columns("xhs_tracking_hits")}
+                for name, ddl in hit_adds.items():
+                    if name not in cols2:
+                        conn.execute(text(f"ALTER TABLE xhs_tracking_hits ADD COLUMN {name} {ddl}"))
+        logger.warning("追踪任务 AI 筛选相关列已补充")
+    except Exception:
+        logger.exception("补充追踪任务 AI 筛选列失败")
+
+
 def _ensure_tracking_task_notify_schema() -> None:
     """追踪任务表补机器人通知相关列（幂等，老库兼容）。"""
     try:
@@ -166,3 +201,4 @@ def init_db() -> None:
     # 老库兼容：通知配置补列（sendkey/token）+ channel 唯一索引（多通道化）
     _ensure_notification_config_schema()
     _ensure_tracking_task_notify_schema()
+    _ensure_tracking_ai_schema()

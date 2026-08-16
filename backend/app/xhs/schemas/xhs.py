@@ -127,3 +127,6 @@ class TrackingTaskIn(BaseModel):
     notify_time_end: str | None = None
     notify_frequency: str = "realtime"  # realtime/1h/6h/12h/daily
     notify_only_on_hit: bool = True
+    ai_filter_enabled: bool = False
+    ai_filter_prompt: str | None = None
+    ai_filter_min_confidence: float = 0.6

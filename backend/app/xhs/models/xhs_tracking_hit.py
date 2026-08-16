@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -23,4 +23,13 @@ class XhsTrackingHit(Base):
     note_id: Mapped[str] = mapped_column(String(64), index=True)
     matched: Mapped[bool] = mapped_column(Boolean, default=False)
     note_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ---- AI 预处理 + 智能筛选结果（阶段 2/3） ----
+    ai_process_status: Mapped[str] = mapped_column(String(16), default="pending")  # pending/success/failed
+    ai_structured_data: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON 结构化字段
+    ai_is_match: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    ai_match_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)  # 模型原始返回（排查解析失败）
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

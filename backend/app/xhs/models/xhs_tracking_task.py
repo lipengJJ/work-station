@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -44,6 +44,11 @@ class XhsTrackingTask(Base):
     # 汇总推送暂存：时段外/频率未到的命中合并
     notify_pending_hits: Mapped[int] = mapped_column(Integer, default=0)
     notify_pending_since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # ---- AI 智能筛选配置（阶段 3，自定义 Prompt） ----
+    ai_filter_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_filter_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)  # 用户 Prompt（不含系统追加）
+    ai_filter_min_confidence: Mapped[float] = mapped_column(Float, default=0.6)
 
     status: Mapped[str] = mapped_column(String(16), default="idle")  # idle/running/failed
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

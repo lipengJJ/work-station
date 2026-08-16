@@ -24,7 +24,7 @@ from app.common.models import Task
 from app.common.services.notify_service import notify_task_result
 from app.xhs.models import XhsTrackingHit, XhsTrackingTask
 from app.xhs.services.xhs_errors import XhsAuthError
-from app.xhs.services import note_cache, note_preprocess, token_store
+from app.xhs.services import ai_filter, note_cache, note_preprocess, note_structurer, token_store
 from app.xhs.services.spider import Data_Spider
 
 _JOB_ID_PREFIX = "xhs_tracking_"
@@ -73,8 +73,16 @@ def _in_notify_window(task) -> bool:
         return True
 
 
-def notify_task_hits(db: Session, tracking_task_id: int, new_hits: int) -> None:
-    """按任务的机器人通知配置评估并推送（渠道/时段/频率/仅新命中），异常不阻塞任务。"""
+def notify_task_hits(
+    db: Session,
+    tracking_task_id: int,
+    new_hits: int,
+    ai_matched_count: int = 0,
+    ai_enabled: bool = False,
+    ai_partial_failed: bool = False,
+) -> None:
+    """按任务的机器人通知配置评估并推送（渠道/时段/频率/仅新命中），异常不阻塞任务。
+    AI 筛选开启时用 AI 命中数，否则用硬规则命中数。"""
     try:
         task = db.get(XhsTrackingTask, tracking_task_id)
         if not task or not task.notify_enabled:
@@ -84,21 +92,22 @@ def notify_task_hits(db: Session, tracking_task_id: int, new_hits: int) -> None:
         channel_ids = json.loads(task.notify_channel_ids or "[]")
         if not channel_ids:
             return
-        title = f"追踪任务「{task.name}」"
+        hit_count = ai_matched_count if ai_enabled else new_hits
+        title = f"【追踪任务】{task.name} 新增 {hit_count} 条符合要求的结果"
         in_window = _in_notify_window(task)
         freq = _FREQUENCY_MINUTES.get(task.notify_frequency, 0)
 
         # 时段外：命中暂存，等进入时段后合并推送
         if not in_window:
-            if new_hits > 0:
-                task.notify_pending_hits = (task.notify_pending_hits or 0) + new_hits
+            if hit_count > 0:
+                task.notify_pending_hits = (task.notify_pending_hits or 0) + hit_count
                 if not task.notify_pending_since:
                     task.notify_pending_since = datetime.now(timezone.utc)
                 db.commit()
             return
 
         pending = task.notify_pending_hits or 0
-        total = pending + new_hits
+        total = pending + hit_count
 
         # 无新命中（含无暂存）：按「仅新命中」开关决定是否发空消息
         if total == 0:
@@ -117,18 +126,89 @@ def notify_task_hits(db: Session, tracking_task_id: int, new_hits: int) -> None:
                 return
 
         # 推送（合并暂存 + 本次）
-        content = (
-            f"关键词「{task.keyword}」新增命中 {total} 篇"
-            + (f"（含暂存 {pending} 篇）" if pending else "")
-            + "\n点击查看：https://www.xiaohongshu.com/search_result?keyword="
-            + task.keyword
-        )
+        if ai_enabled:
+            content = _build_ai_notify_content(db, task, pending, total, ai_partial_failed)
+        else:
+            content = (
+                f"关键词「{task.keyword}」新增命中 {total} 篇"
+                + (f"（含暂存 {pending} 篇）" if pending else "")
+                + "\n点击查看：https://www.xiaohongshu.com/search_result?keyword="
+                + task.keyword
+            )
         send_task_hits_to_channels(db, channel_ids, title, content)
         task.notify_pending_hits = 0
         task.notify_pending_since = None
         db.commit()
     except Exception:
         logger.exception(f"机器人通知评估失败（任务 {tracking_task_id}）")
+
+
+def _build_ai_notify_content(db: Session, task, pending: int, total: int, partial_failed: bool) -> str:
+    """AI 命中通知消息：按条组织 + 底部汇总 + 长度控制（最多 20 条）。"""
+    from app.xhs.models import XhsTrackingHit
+
+    hits = (
+        db.query(XhsTrackingHit)
+        .filter(
+            XhsTrackingHit.tracking_task_id == task.id,
+            XhsTrackingHit.ai_is_match.is_(True),
+            XhsTrackingHit.ai_confidence >= (task.ai_filter_min_confidence or 0.6),
+        )
+        .order_by(XhsTrackingHit.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    lines = []
+    for i, h in enumerate(hits, 1):
+        note = {}
+        try:
+            note = json.loads(h.note_json or "{}")
+        except (ValueError, TypeError):
+            pass
+        title = note.get("title") or f"笔记 {h.note_id}"
+        structured = {}
+        try:
+            structured = json.loads(h.ai_structured_data or "{}")
+        except (ValueError, TypeError):
+            pass
+        key_info = " / ".join(
+            str(v) for v in structured.values() if isinstance(v, (str, int, float)) and v
+        )[:80]
+        lines.append(
+            f"{i}. {title}"
+            + (f"\n   {key_info}" if key_info else "")
+            + f"\n   命中理由：{h.ai_match_reason or '无'}"
+            + f"\n   链接：https://www.xiaohongshu.com/explore/{h.note_id}"
+        )
+    content = "\n\n".join(lines)
+    if total > 20:
+        content += f"\n\n另有 {total - 20} 条，请前往系统查看"
+    if pending:
+        content += f"\n\n（含暂存 {pending} 篇）"
+    content += f"\n\n本次共采集 {task.last_hit_count or 0} 条，AI 判定符合 {total} 条"
+    if partial_failed:
+        content += "\n⚠️ 部分 AI 筛选调用失败，结果可能不完整"
+    return content
+
+
+def _last_ai_match_count(db: Session, tracking_task_id: int) -> int | None:
+    """最近一次执行的 AI 筛选命中数（取最近一次有 AI 结果的行数）。"""
+    from app.xhs.models import XhsTrackingHit
+
+    rows = (
+        db.query(XhsTrackingHit)
+        .filter(
+            XhsTrackingHit.tracking_task_id == tracking_task_id,
+            XhsTrackingHit.ai_is_match.is_(True),
+        )
+        .order_by(XhsTrackingHit.created_at.desc())
+        .all()
+    )
+    if not rows:
+        return None
+    # 只统计最近一次任务执行产生的结果（created_at 相同批次）
+    latest = rows[0].created_at
+    return sum(1 for r in rows if r.created_at == latest)
 
 
 def _total_hit_count(db: Session, tracking_task_id: int) -> int:
@@ -171,10 +251,14 @@ def serialize_task(db: Session, task: XhsTrackingTask) -> dict:
         "notify_time_end": task.notify_time_end,
         "notify_frequency": task.notify_frequency,
         "notify_only_on_hit": task.notify_only_on_hit,
+        "ai_filter_enabled": task.ai_filter_enabled,
+        "ai_filter_prompt": task.ai_filter_prompt,
+        "ai_filter_min_confidence": task.ai_filter_min_confidence,
         "status": task.status,
         "last_run_at": task.last_run_at.isoformat() if task.last_run_at else None,
         "last_run_message": task.last_run_message,
         "last_hit_count": task.last_hit_count,
+        "last_ai_match_count": _last_ai_match_count(db, task.id),
         "total_hit_count": _total_hit_count(db, task.id),
         "next_run_at": _next_run_at(task.id),
         "created_at": task.created_at.isoformat() if task.created_at else None,
@@ -209,6 +293,9 @@ def create_tracking_task(db: Session, params: dict) -> dict:
         notify_time_end=params.get("notify_time_end"),
         notify_frequency=params.get("notify_frequency", "realtime"),
         notify_only_on_hit=params.get("notify_only_on_hit", True),
+        ai_filter_enabled=params.get("ai_filter_enabled", False),
+        ai_filter_prompt=params.get("ai_filter_prompt"),
+        ai_filter_min_confidence=params.get("ai_filter_min_confidence", 0.6),
     )
     db.add(task)
     db.commit()
@@ -239,6 +326,9 @@ def update_tracking_task(db: Session, tracking_task_id: int, params: dict) -> Op
     task.notify_time_end = params.get("notify_time_end", task.notify_time_end)
     task.notify_frequency = params.get("notify_frequency", task.notify_frequency)
     task.notify_only_on_hit = params.get("notify_only_on_hit", task.notify_only_on_hit)
+    task.ai_filter_enabled = params.get("ai_filter_enabled", task.ai_filter_enabled)
+    task.ai_filter_prompt = params.get("ai_filter_prompt", task.ai_filter_prompt)
+    task.ai_filter_min_confidence = params.get("ai_filter_min_confidence", task.ai_filter_min_confidence)
     db.commit()
     db.refresh(task)
     if task.enabled:
@@ -272,6 +362,13 @@ def list_hits(db: Session, tracking_task_id: int) -> list[dict]:
             continue
         note = json.loads(row.note_json)
         note["_hit_id"] = row.id
+        # AI 预处理 + 筛选结果（供列表展示与「仅看 AI 命中」筛选）
+        note["ai_process_status"] = row.ai_process_status
+        note["ai_structured_data"] = row.ai_structured_data
+        note["ai_is_match"] = row.ai_is_match
+        note["ai_match_reason"] = row.ai_match_reason
+        note["ai_confidence"] = row.ai_confidence
+        note["ai_raw_response"] = row.ai_raw_response
         hits.append(note)
     return hits
 
@@ -353,6 +450,7 @@ def run_scan(tracking_task_id: int) -> None:
             }
 
             new_hit_count = 0
+            new_hits: list = []
             for n in raw_notes:
                 note_id = n.get("id")
                 if not note_id or note_id in existing_ids:
@@ -389,7 +487,56 @@ def run_scan(tracking_task_id: int) -> None:
                 )
                 if matched:
                     new_hit_count += 1
+                    new_hits.append(hit)
                 db.commit()
+
+            # 阶段 2/3：AI 结构化预处理 + 智能筛选（仅开启时）
+            ai_matched_count = 0
+            ai_partial_failed = False
+            if task.ai_filter_enabled and new_hits:
+                api_key, _model = None, None
+                try:
+                    from app.common.services.zhipu_config import get_zhipu_config
+
+                    api_key, _model = get_zhipu_config(db)
+                except Exception:
+                    api_key = None
+                if api_key:
+                    try:
+                        # 阶段 2：复用笔记管理的 AI 数据处理（并发结构化，结果存 XhsNoteStructured）
+                        note_dicts = []
+                        for h in new_hits:
+                            try:
+                                nd = json.loads(h.note_json or "{}")
+                                nd["note_id"] = nd.get("note_id") or h.note_id
+                                nd["note_url"] = nd.get("note_url") or f"https://www.xiaohongshu.com/explore/{h.note_id}"
+                                note_dicts.append(nd)
+                            except (ValueError, TypeError):
+                                continue
+                        note_structurer.structure_notes_concurrently(db, note_dicts)
+                        # 取结构化结果
+                        structured_map = note_structurer.get_structured_map(
+                            db, [h.note_id for h in new_hits]
+                        )
+                        # 阶段 3：自定义 Prompt 智能筛选（仅预处理成功的）
+                        processable = []
+                        for h in new_hits:
+                            h.ai_process_status = "pending"
+                            if h.note_id in structured_map:
+                                processable.append(h)
+                        if processable:
+                            res = ai_filter.filter_hits(db, task, processable, structured_map)
+                            ai_matched_count = len(res["matched"])
+                            ai_partial_failed = res["partial_failed"]
+                            if ai_partial_failed:
+                                task.last_run_message += f"；AI 筛选部分失败（{res['failed']}/{res['total']}）"
+                    except Exception:
+                        logger.exception(f"追踪任务 {tracking_task_id} AI 筛选阶段异常")
+                else:
+                    for h in new_hits:
+                        h.ai_process_status = "failed"
+                        h.ai_raw_response = "[未配置数据处理模型]"
+                    db.commit()
 
             task.status = "idle"
             task.last_run_message = f"扫描完成，本次新增命中 {new_hit_count} 篇"
@@ -401,7 +548,12 @@ def run_scan(tracking_task_id: int) -> None:
             )
             db.commit()
             notify_task_result(new_task_id)
-            notify_task_hits(db, tracking_task_id, new_hit_count)
+            notify_task_hits(
+                db, tracking_task_id, new_hit_count,
+                ai_matched_count=ai_matched_count,
+                ai_enabled=task.ai_filter_enabled,
+                ai_partial_failed=ai_partial_failed,
+            )
         except XhsAuthError as e:
             logger.error(f"追踪任务 {tracking_task_id} 因登录态失效终止: {e}")
             task.status = "failed"

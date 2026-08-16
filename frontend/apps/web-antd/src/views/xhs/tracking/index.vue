@@ -12,6 +12,7 @@ import {
   Button,
   Carousel,
   Col,
+  Drawer,
   Dropdown,
   Image,
   Input,
@@ -27,7 +28,7 @@ import {
   TimePicker,
   Tooltip,
 } from 'ant-design-vue';
-import { ArrowLeft, Bell, MoreHorizontal, Plus } from 'lucide-vue-next';
+import { ArrowLeft, Bell, MoreHorizontal, Plus, Sparkles } from 'lucide-vue-next';
 
 import {
   buildXhsMediaProxyUrl,
@@ -129,6 +130,9 @@ function defaultForm(): XhsApi.TrackingTaskParams {
     notify_time_end: '22:00',
     notify_frequency: 'realtime',
     notify_only_on_hit: true,
+    ai_filter_enabled: false,
+    ai_filter_prompt: AI_DEFAULT_PROMPT,
+    ai_filter_min_confidence: 0.6,
   };
 }
 
@@ -202,6 +206,135 @@ watch(
     }
   },
 );
+// ==================== AI 智能筛选 ====================
+const AI_DEFAULT_PROMPT = `你是一个内容筛选助手。请判断下面这条小红书笔记是否符合用户的需求。
+
+用户需求：
+在「{{keyword}}」相关的笔记中，找出真正有价值的内容。
+（请在此处详细描述你的筛选标准，例如：只要本地个人出售的二手商品，
+排除代购、求购、商家广告、无实质内容的引流帖）
+
+笔记内容：
+标题：{{note_title}}
+正文：{{note_content}}
+结构化信息：{{note_structured}}
+发布时间：{{note_publish_time}}
+互动数据：点赞 {{note_likes}} · 收藏 {{note_collects}} · 评论 {{note_comments}}
+
+判断时请注意：
+- 宁可漏过，不要误报
+- 无法确定时判定为不符合`;
+
+const AI_SYSTEM_APPEND = `请严格以 JSON 格式返回，不要包含任何其他内容：
+{
+  "is_match": true 或 false,
+  "match_reason": "一句话说明判断理由，20 字以内",
+  "confidence": 0 到 1 之间的小数
+}`;
+
+const AI_VARIABLES: { key: string; desc: string }[] = [
+  { key: 'keyword', desc: '任务的搜索关键词' },
+  { key: 'task_name', desc: '任务名称' },
+  { key: 'note_title', desc: '笔记标题' },
+  { key: 'note_content', desc: '笔记正文' },
+  { key: 'note_structured', desc: 'AI 预处理提取的结构化字段（JSON）' },
+  { key: 'note_publish_time', desc: '笔记发布时间' },
+  { key: 'note_author', desc: '作者昵称' },
+  { key: 'note_likes', desc: '点赞数' },
+  { key: 'note_collects', desc: '收藏数' },
+  { key: 'note_comments', desc: '评论数' },
+  { key: 'note_url', desc: '笔记链接' },
+];
+
+const AI_CONFIDENCE_OPTIONS = [
+  { value: 0, label: '不限' },
+  { value: 0.6, label: '0.6 以上' },
+  { value: 0.8, label: '0.8 以上' },
+];
+
+// 数据处理模型是否已配置（系统设置 zhipu）
+const zhipuConfigured = ref(true);
+async function checkZhipuConfig() {
+  try {
+    const { listApiConfigsApi } = await import('#/api/core/system');
+    const configs = (await listApiConfigsApi()) as { name: string; value: string }[];
+    zhipuConfigured.value = !!configs.find((c) => c.name === 'zhipu_api_key')?.value;
+  } catch {
+    zhipuConfigured.value = false;
+  }
+}
+
+const promptTextarea = ref<HTMLTextAreaElement | null>(null);
+const promptScrollTop = ref(0);
+const promptScrollLeft = ref(0);
+
+// Prompt 高亮渲染（{{变量}} 高亮）
+const promptHighlighted = computed(() => {
+  const text = form.ai_filter_prompt || '';
+  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, name) => {
+    const known = AI_VARIABLES.some((v) => v.key === name);
+    const color = known ? '#22c55e' : '#f43f5e';
+    return `<span style="color:${color};font-weight:600">${m}</span>`;
+  });
+});
+const promptChars = computed(() => (form.ai_filter_prompt || '').length);
+
+function promptVarText(key: string): string {
+  return `{{${key}}}`;
+}
+
+function insertPromptVariable(key: string) {
+  const ta = promptTextarea.value;
+  if (!ta) {
+    form.ai_filter_prompt = (form.ai_filter_prompt || '') + `{{${key}}}`;
+    return;
+  }
+  const start = ta.selectionStart ?? (form.ai_filter_prompt || '').length;
+  const end = ta.selectionEnd ?? start;
+  const cur = form.ai_filter_prompt || '';
+  form.ai_filter_prompt = cur.slice(0, start) + `{{${key}}}` + cur.slice(end);
+  requestAnimationFrame(() => {
+    ta.focus();
+    ta.selectionStart = ta.selectionEnd = start + key.length + 4;
+  });
+}
+
+function onPromptInput(e: Event) {
+  const ta = e.target as HTMLTextAreaElement;
+  if (ta.value.length > 4000) {
+    ta.value = ta.value.slice(0, 4000);
+    form.ai_filter_prompt = ta.value;
+  }
+  promptScrollTop.value = ta.scrollTop;
+  promptScrollLeft.value = ta.scrollLeft;
+}
+
+// 试跑
+const tryRunOpen = ref(false);
+const tryRunLoading = ref(false);
+const tryRunSummary = ref('');
+const tryRunItems = ref<
+  { note_id: string; title: string; ok: boolean; is_match?: boolean; match_reason?: string; confidence?: number; elapsed?: number; error?: string; raw?: string }[]
+>([]);
+async function runAiTry() {
+  if (!form.ai_filter_prompt?.trim()) {
+    message.warning('请先填写筛选 Prompt');
+    return;
+  }
+  tryRunLoading.value = true;
+  try {
+    const { aiTryRunApi } = await import('#/api/core/xhs');
+    const res = await aiTryRunApi(editingId.value!, { prompt: form.ai_filter_prompt });
+    tryRunSummary.value = res.summary || '';
+    tryRunItems.value = res.items || [];
+    tryRunOpen.value = true;
+  } catch (e: any) {
+    message.error(`试跑失败：${e.message}`);
+  } finally {
+    tryRunLoading.value = false;
+  }
+}
+
 function toggleChannel(id: number) {
   const idx = form.notify_channel_ids.indexOf(id);
   if (idx >= 0) {
@@ -230,6 +363,7 @@ function openCreateModal() {
   Object.assign(form, defaultForm());
   editingId.value = undefined;
   loadNotifyChannels();
+  checkZhipuConfig();
   editModalOpen.value = true;
 }
 
@@ -252,9 +386,13 @@ function openEditModal(task: XhsApi.TrackingTask) {
     notify_time_end: task.notify_time_end,
     notify_frequency: task.notify_frequency,
     notify_only_on_hit: task.notify_only_on_hit,
+    ai_filter_enabled: task.ai_filter_enabled,
+    ai_filter_prompt: task.ai_filter_prompt || AI_DEFAULT_PROMPT,
+    ai_filter_min_confidence: task.ai_filter_min_confidence ?? 0.6,
   });
   editingId.value = task.id;
   loadNotifyChannels();
+  checkZhipuConfig();
   editModalOpen.value = true;
 }
 
@@ -266,6 +404,26 @@ async function submitForm() {
   if (form.notify_enabled && form.notify_channel_ids.length === 0) {
     message.error('请至少选择一个通知渠道');
     return;
+  }
+  if (form.ai_filter_enabled && !form.ai_filter_prompt?.trim()) {
+    message.error('请填写筛选 Prompt');
+    return;
+  }
+  if (
+    form.ai_filter_enabled &&
+    !/\{\{\s*note_\w+\s*\}\}/.test(form.ai_filter_prompt || '')
+  ) {
+    const ok = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: 'Prompt 未引用笔记内容',
+        content: 'Prompt 中未引用笔记内容，模型将无法判断具体笔记，确定保存吗？',
+        okText: '确定保存',
+        cancelText: '取消',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!ok) return;
   }
   submitting.value = true;
   try {
@@ -304,6 +462,9 @@ async function toggleEnabled(task: XhsApi.TrackingTask, enabled: boolean) {
       notify_time_end: task.notify_time_end,
       notify_frequency: task.notify_frequency,
       notify_only_on_hit: task.notify_only_on_hit,
+      ai_filter_enabled: task.ai_filter_enabled,
+      ai_filter_prompt: task.ai_filter_prompt,
+      ai_filter_min_confidence: task.ai_filter_min_confidence,
     });
     task.enabled = updated.enabled;
     task.next_run_at = updated.next_run_at;
@@ -348,7 +509,14 @@ function removeTask(task: XhsApi.TrackingTask) {
 const selectedTask = ref<XhsApi.TrackingTask>();
 const hits = ref<XhsApi.TrackingHit[]>([]);
 const hitsLoading = ref(false);
-const hitGroups = computed(() => groupNotesByRecency(hits.value));
+const aiOnlyFilter = ref(false);
+const hitGroups = computed(() => {
+  const base = aiOnlyFilter.value ? hits.value.filter((h) => h.ai_is_match === true) : hits.value;
+  return groupNotesByRecency(base);
+});
+function aiMatchedCount(): number {
+  return hits.value.filter((h) => h.ai_is_match === true).length;
+}
 
 async function fetchHits(taskId: number) {
   hitsLoading.value = true;
@@ -453,6 +621,7 @@ fetchTasks();
                 <tr>
                   <th class="px-4 py-3">主题 / 关键词 / 状态</th>
                   <th class="px-4 py-3">本次新增</th>
+                  <th class="px-4 py-3">AI 命中</th>
                   <th class="px-4 py-3">累计命中</th>
                   <th class="px-4 py-3">下次检查 / 频率</th>
                   <th class="px-4 py-3">启停</th>
@@ -471,6 +640,14 @@ fetchTasks();
                         </span>
                       </Tooltip>
                     </div>
+                    <div v-if="task.ai_filter_enabled" class="mt-0.5 flex items-center gap-1 text-xs">
+                      <Tooltip title="已开启 AI 智能筛选">
+                        <span class="inline-flex items-center gap-0.5 text-[#a78bfa]">
+                          <Sparkles class="size-3" />
+                          AI 筛选
+                        </span>
+                      </Tooltip>
+                    </div>
                     <div class="mt-0.5 flex items-center gap-2 text-[11px] text-[hsl(var(--muted-foreground))]">
                       <span>{{ task.keyword }}</span>
                     </div>
@@ -483,6 +660,7 @@ fetchTasks();
                     </div>
                   </td>
                   <td class="px-4 py-3 font-mono text-[hsl(var(--foreground))]">{{ task.last_hit_count }}</td>
+                  <td class="px-4 py-3 font-mono" :class="task.ai_filter_enabled ? 'text-[#a78bfa]' : 'text-[hsl(var(--muted-foreground))]'">{{ task.ai_filter_enabled ? (task.last_ai_match_count ?? '—') : '—' }}</td>
                   <td class="px-4 py-3 font-mono text-[hsl(var(--foreground))]">{{ task.total_hit_count }}</td>
                   <td class="px-4 py-3 text-[hsl(var(--muted-foreground))]">
                     <template v-if="task.next_run_at">
@@ -552,11 +730,21 @@ fetchTasks();
             <p class="text-sm font-semibold text-[hsl(var(--foreground))]">还没有命中的笔记</p>
             <p class="text-xs text-[hsl(var(--muted-foreground))]">等下一次扫描，或者返回列表点「立即运行」试试</p>
           </div>
+          <div v-else-if="selectedTask.ai_filter_enabled" class="mb-3 flex items-center gap-3">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: hsl(var(--muted-foreground)); cursor: pointer">
+              <input type="checkbox" v-model="aiOnlyFilter" style="accent-color: hsl(var(--primary))" />
+              仅看 AI 命中
+            </label>
+            <span class="text-[11px] text-[hsl(var(--muted-foreground))]">
+              {{ aiMatchedCount() }} 条 AI 命中
+            </span>
+          </div>
           <div v-else class="overflow-x-auto">
             <table class="w-full text-left text-xs">
               <thead class="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] font-mono text-[11px] text-[hsl(var(--muted-foreground))] uppercase">
                 <tr>
                   <th class="px-4 py-3">笔记信息</th>
+                  <th class="px-4 py-3">AI 判定</th>
                   <th class="px-4 py-3">发布时间</th>
                   <th class="px-4 py-3">点赞</th>
                   <th class="px-4 py-3">评论</th>
@@ -586,6 +774,16 @@ fetchTasks();
                           <div class="text-[11px] text-[hsl(var(--muted-foreground))]">{{ note.nickname }}</div>
                         </div>
                       </div>
+                    </td>
+                    <td class="px-4 py-3">
+                      <span v-if="note.ai_is_match === true" class="inline-flex items-center gap-1 text-[#22c55e]">
+                        <Sparkles class="size-3" />
+                        {{ note.ai_confidence ? '命中 ' + note.ai_confidence : '命中' }}
+                      </span>
+                      <span v-else-if="note.ai_is_match === false" class="text-[hsl(var(--muted-foreground))]">不符合</span>
+                      <span v-else-if="note.ai_process_status === 'failed'" class="text-[#eab308]">AI 失败</span>
+                      <span v-else class="text-[hsl(var(--muted-foreground))]">—</span>
+                      <div v-if="note.ai_match_reason" class="text-[10px] text-[hsl(var(--muted-foreground))]" :title="note.ai_match_reason">{{ note.ai_match_reason }}</div>
                     </td>
                     <td class="px-4 py-3 text-[hsl(var(--muted-foreground))]">{{ note.upload_time }}</td>
                     <td class="px-4 py-3 font-mono text-[hsl(var(--muted-foreground))]">{{ note.liked_count }}</td>
@@ -666,6 +864,123 @@ fetchTasks();
             style="width: 100%"
             placeholder="比如：求购、已出"
           />
+        </div>
+
+        <!-- ==================== AI 智能筛选 ==================== -->
+        <div class="rounded-lg border" style="padding: 12px 14px; border-color: hsl(var(--border)); background: hsl(var(--muted) / 0.3)">
+          <div style="display: flex; align-items: center; justify-content: space-between">
+            <span style="font-size: 13px; font-weight: 600; color: hsl(var(--foreground))">AI 智能筛选</span>
+            <Tooltip v-if="!zhipuConfigured" title="需先在系统设置中配置数据处理模型">
+              <span style="display: inline-flex; align-items: center">
+                <Switch v-model:checked="form.ai_filter_enabled" :disabled="true" checked-children="开" un-checked-children="关" />
+              </span>
+            </Tooltip>
+            <Switch
+              v-else
+              v-model:checked="form.ai_filter_enabled"
+              checked-children="开"
+              un-checked-children="关"
+            />
+          </div>
+
+          <template v-if="form.ai_filter_enabled">
+            <div v-if="!zhipuConfigured" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px">
+              <span style="font-size: 12px; color: #f43f5e">需先在系统设置中配置数据处理模型</span>
+              <a href="/system/settings" target="_blank" style="font-size: 12px; color: hsl(var(--primary))">前往配置 →</a>
+            </div>
+            <template v-else>
+              <!-- 筛选 Prompt -->
+              <div style="margin-top: 12px">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px">
+                  <span style="font-size: 12px; color: hsl(var(--muted-foreground))">筛选 Prompt</span>
+                  <span style="display: flex; gap: 8px">
+                    <a
+                      style="font-size: 12px; color: hsl(var(--primary)); cursor: pointer"
+                      @click="form.ai_filter_prompt = AI_DEFAULT_PROMPT"
+                    >恢复默认</a>
+                    <Dropdown>
+                      <a style="font-size: 12px; color: hsl(var(--primary)); cursor: pointer">插入变量 ▾</a>
+                      <template #overlay>
+                        <div class="rounded-lg border border-slate-700/50 bg-slate-900/90 p-1 shadow-xl" style="max-height: 300px; overflow-y: auto">
+                          <div
+                            v-for="v in AI_VARIABLES"
+                            :key="v.key"
+                            class="cursor-pointer px-3 py-1.5 text-xs hover:bg-slate-700/40"
+                            style="color: hsl(var(--foreground))"
+                            @click="insertPromptVariable(v.key)"
+                          >
+                            <code class="text-[#22c55e]">{{ promptVarText(v.key) }}</code>
+                            <span class="ml-2 text-[hsl(var(--muted-foreground))]">{{ v.desc }}</span>
+                          </div>
+                        </div>
+                      </template>
+                    </Dropdown>
+                  </span>
+                </div>
+                <!-- 高亮文本域（overlay 技术：背景 pre 渲染高亮，textarea 透明文字） -->
+                <div style="position: relative; border: 1px solid hsl(var(--border)); border-radius: 8px; overflow: hidden">
+                  <pre
+                    aria-hidden="true"
+                    class="ai-prompt-pre"
+                    :style="{
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      padding: '8px 10px',
+                      margin: 0,
+                      minHeight: '190px',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      color: 'transparent',
+                      transform: `translate(${-promptScrollLeft}px, ${-promptScrollTop}px)`,
+                    }"
+                  ><span v-html="promptHighlighted" /></pre>
+                  <textarea
+                    ref="promptTextarea"
+                    v-model="form.ai_filter_prompt"
+                    rows="10"
+                    :maxlength="4000"
+                    style="position: absolute; inset: 0; width: 100%; height: 100%; resize: vertical; background: transparent; color: transparent; caret-color: hsl(var(--foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.5; padding: 8px 10px; border: none; outline: none; white-space: pre-wrap; overflow: auto"
+                    @input="onPromptInput"
+                    @scroll="onPromptInput"
+                    :placeholder="'描述你的筛选标准，可用 {{ 插入变量…'"
+                  />
+                </div>
+                <div style="margin-top: 4px; font-size: 11px; color: hsl(var(--muted-foreground)); text-align: right">
+                  {{ promptChars }}/4000
+                </div>
+              </div>
+
+              <!-- 系统追加格式（只读折叠） -->
+              <div style="margin-top: 8px; font-size: 12px; color: hsl(var(--muted-foreground))">
+                ⓘ 系统会自动追加输出格式要求，你无需在 Prompt 中描述返回格式
+              </div>
+              <details style="margin-top: 6px; font-size: 12px">
+                <summary style="cursor: pointer; color: hsl(var(--muted-foreground))">▸ 系统追加的输出格式（不可编辑）</summary>
+                <pre
+                  class="ai-prompt-pre"
+                  style="margin-top: 6px; padding: 8px 10px; border-radius: 8px; background: hsl(var(--muted) / 0.4); border: 1px solid hsl(var(--border)); font-size: 12px; line-height: 1.5; color: hsl(var(--muted-foreground)); white-space: pre-wrap"
+                >{{ AI_SYSTEM_APPEND }}</pre>
+              </details>
+
+              <!-- 最低置信度 -->
+              <div style="margin-top: 12px; display: flex; align-items: center; justify-content: space-between">
+                <span style="font-size: 12px; color: hsl(var(--muted-foreground))">最低置信度</span>
+                <Select
+                  v-model:value="form.ai_filter_min_confidence"
+                  :options="AI_CONFIDENCE_OPTIONS"
+                  style="width: 140px"
+                />
+              </div>
+
+              <!-- 试跑 -->
+              <div style="margin-top: 12px">
+                <Button size="small" :loading="tryRunLoading" :disabled="!form.ai_filter_prompt?.trim()" @click="runAiTry">
+                  🧪 用最近采集的数据试跑
+                </Button>
+              </div>
+            </template>
+          </template>
         </div>
 
         <!-- ==================== 机器人通知 ==================== -->
@@ -778,6 +1093,41 @@ fetchTasks();
         </div>
       </div>
     </Modal>
+
+    <!-- ==================== AI 试跑结果抽屉 ==================== -->
+    <Drawer v-model:open="tryRunOpen" title="AI 筛选试跑结果" width="560px">
+      <div v-if="tryRunSummary" style="margin-bottom: 12px; padding: 10px 12px; border-radius: 8px; background: hsl(var(--muted) / 0.3); border: 1px solid hsl(var(--border)); font-size: 13px; font-weight: 600; color: hsl(var(--foreground))">
+        {{ tryRunSummary }}
+      </div>
+      <div v-if="!tryRunItems.length" style="padding: 24px 0; text-align: center; font-size: 13px; color: hsl(var(--muted-foreground))">
+        {{ tryRunSummary === '该任务还没有采集数据，请先运行一次' ? '该任务还没有采集数据，请先运行一次' : '暂无试跑结果' }}
+      </div>
+      <div v-for="(item, idx) in tryRunItems" :key="item.note_id" style="padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid hsl(var(--border)); background: hsl(var(--card))">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+          <span style="font-size: 13px; font-weight: 600; color: hsl(var(--foreground)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ idx + 1 }}. {{ item.title }}</span>
+          <span
+            v-if="item.ok"
+            style="flex-shrink: 0; font-size: 12px; font-weight: 600"
+            :style="{ color: item.is_match ? '#22c55e' : '#f43f5e' }"
+          >{{ item.is_match ? '✓ 符合' : '✗ 不符合' }}</span>
+          <span v-else style="flex-shrink: 0; font-size: 12px; color: #eab308">解析失败</span>
+        </div>
+        <template v-if="item.ok">
+          <div style="margin-top: 6px; font-size: 12px; color: hsl(var(--muted-foreground))">
+            置信度：{{ item.confidence }} · 耗时 {{ item.elapsed }}s
+          </div>
+          <div v-if="item.match_reason" style="margin-top: 4px; font-size: 12px; color: hsl(var(--muted-foreground))">
+            命中理由：{{ item.match_reason }}
+          </div>
+        </template>
+        <div v-else-if="item.error" style="margin-top: 6px; font-size: 12px; color: #eab308">
+          {{ item.error }}
+        </div>
+        <div v-if="item.raw" style="margin-top: 6px">
+          <pre style="font-size: 11px; color: hsl(var(--muted-foreground)); white-space: pre-wrap; word-break: break-all; margin: 0">{{ item.raw }}</pre>
+        </div>
+      </div>
+    </Drawer>
 
     <!-- 命中笔记详情 -->
     <Modal

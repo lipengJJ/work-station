@@ -220,6 +220,9 @@ export namespace XhsApi {
     notify_time_end: null | string;
     notify_frequency: 'daily' | 'realtime' | '1h' | '6h' | '12h';
     notify_only_on_hit: boolean;
+    ai_filter_enabled: boolean;
+    ai_filter_prompt: null | string;
+    ai_filter_min_confidence: number;
   }
 
   export interface TrackingTask extends TrackingTaskParams {
@@ -228,6 +231,7 @@ export namespace XhsApi {
     last_run_at: null | string;
     last_run_message: null | string;
     last_hit_count: number;
+    last_ai_match_count: null | number;
     total_hit_count: number;
     next_run_at: null | string;
     created_at: string;
@@ -235,6 +239,12 @@ export namespace XhsApi {
 
   export interface TrackingHit extends Note {
     _hit_id: number;
+    ai_process_status?: 'failed' | 'pending' | 'success';
+    ai_structured_data?: null | string;
+    ai_is_match?: null | boolean;
+    ai_match_reason?: null | string;
+    ai_confidence?: null | number;
+    ai_raw_response?: null | string;
   }
 
   export interface ReportListItem {
@@ -636,6 +646,26 @@ export async function deleteXhsTrackingTaskApi(taskId: number) {
 
 export async function runXhsTrackingTaskNowApi(taskId: number) {
   return requestClient.post<{ success: boolean }>(`/xhs/tracking-tasks/${taskId}/run-now`);
+}
+
+export async function aiTryRunApi(
+  taskId: number,
+  body: { prompt: string },
+) {
+  return requestClient.post<{
+    items: {
+      note_id: string;
+      title: string;
+      ok: boolean;
+      is_match?: boolean;
+      match_reason?: string;
+      confidence?: number;
+      elapsed?: number;
+      error?: string;
+      raw?: string;
+    }[];
+    summary: string;
+  }>(`/xhs/tracking-tasks/${taskId}/ai-try-run`, body);
 }
 
 export async function listXhsTrackingHitsApi(taskId: number) {
