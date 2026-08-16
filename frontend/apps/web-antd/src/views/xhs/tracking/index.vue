@@ -265,19 +265,20 @@ async function checkZhipuConfig() {
 }
 
 const promptTextarea = ref<HTMLTextAreaElement | null>(null);
-const promptScrollTop = ref(0);
-const promptScrollLeft = ref(0);
-
-// Prompt 高亮渲染（{{变量}} 高亮）
-const promptHighlighted = computed(() => {
-  const text = form.ai_filter_prompt || '';
-  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, name) => {
-    const known = AI_VARIABLES.some((v) => v.key === name);
-    const color = known ? '#22c55e' : '#f43f5e';
-    return `<span style="color:${color};font-weight:600">${m}</span>`;
-  });
-});
 const promptChars = computed(() => (form.ai_filter_prompt || '').length);
+
+// 当前 Prompt 中已使用的变量（去重，展示在文本域下方）
+const promptUsedVars = computed(() => {
+  const text = form.ai_filter_prompt || '';
+  const found: string[] = [];
+  const re = /\{\{\s*(\w+)\s*\}\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const name = m[1] as string;
+    if (!found.includes(name)) found.push(name);
+  }
+  return found;
+});
 
 function promptVarText(key: string): string {
   return `{{${key}}}`;
@@ -289,24 +290,14 @@ function insertPromptVariable(key: string) {
     form.ai_filter_prompt = (form.ai_filter_prompt || '') + `{{${key}}}`;
     return;
   }
-  const start = ta.selectionStart ?? (form.ai_filter_prompt || '').length;
-  const end = ta.selectionEnd ?? start;
+  const start = (ta.selectionStart ?? (form.ai_filter_prompt || '').length) as number;
+  const end = (ta.selectionEnd ?? start) as number;
   const cur = form.ai_filter_prompt || '';
   form.ai_filter_prompt = cur.slice(0, start) + `{{${key}}}` + cur.slice(end);
   requestAnimationFrame(() => {
     ta.focus();
     ta.selectionStart = ta.selectionEnd = start + key.length + 4;
   });
-}
-
-function onPromptInput(e: Event) {
-  const ta = e.target as HTMLTextAreaElement;
-  if (ta.value.length > 4000) {
-    ta.value = ta.value.slice(0, 4000);
-    form.ai_filter_prompt = ta.value;
-  }
-  promptScrollTop.value = ta.scrollTop;
-  promptScrollLeft.value = ta.scrollLeft;
 }
 
 // 试跑
@@ -917,34 +908,24 @@ fetchTasks();
                     </Dropdown>
                   </span>
                 </div>
-                <!-- 高亮文本域（overlay 技术：背景 pre 渲染高亮，textarea 透明文字） -->
-                <div style="position: relative; border: 1px solid hsl(var(--border)); border-radius: 8px; overflow: hidden">
-                  <pre
-                    aria-hidden="true"
-                    class="ai-prompt-pre"
-                    :style="{
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-                      fontSize: '13px',
-                      lineHeight: '1.5',
-                      padding: '8px 10px',
-                      margin: 0,
-                      minHeight: '190px',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      color: 'transparent',
-                      transform: `translate(${-promptScrollLeft}px, ${-promptScrollTop}px)`,
-                    }"
-                  ><span v-html="promptHighlighted" /></pre>
-                  <textarea
-                    ref="promptTextarea"
-                    v-model="form.ai_filter_prompt"
-                    rows="10"
-                    :maxlength="4000"
-                    style="position: absolute; inset: 0; width: 100%; height: 100%; resize: vertical; background: transparent; color: transparent; caret-color: hsl(var(--foreground)); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.5; padding: 8px 10px; border: none; outline: none; white-space: pre-wrap; overflow: auto"
-                    @input="onPromptInput"
-                    @scroll="onPromptInput"
-                    :placeholder="'描述你的筛选标准，可用 {{ 插入变量…'"
-                  />
+                <!-- 普通等宽文本域（方案 A：不 overlay 高亮，下方展示已用变量标签） -->
+                <textarea
+                  ref="promptTextarea"
+                  v-model="form.ai_filter_prompt"
+                  rows="10"
+                  :maxlength="4000"
+                  style="width: 100%; resize: vertical; background: hsl(var(--card)); color: #E5E7EB; caret-color: #E5E7EB; border: 1px solid hsl(var(--border)); border-radius: 8px; outline: none; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.5; padding: 8px 10px; white-space: pre-wrap; word-break: break-word"
+                  placeholder="描述你的筛选标准，可用 {{ 插入变量…"
+                />
+                <!-- 已使用变量标签 -->
+                <div v-if="promptUsedVars.length" style="margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+                  <span style="font-size: 11px; color: hsl(var(--muted-foreground))">已使用变量：</span>
+                  <span
+                    v-for="v in promptUsedVars"
+                    :key="v"
+                    class="rounded-full px-2 py-0.5"
+                    style="font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #4ADE80; background: rgba(74, 222, 128, 0.12); border: 1px solid rgba(74, 222, 128, 0.25)"
+                  >{{ promptVarText(v) }}</span>
                 </div>
                 <div style="margin-top: 4px; font-size: 11px; color: hsl(var(--muted-foreground)); text-align: right">
                   {{ promptChars }}/4000
