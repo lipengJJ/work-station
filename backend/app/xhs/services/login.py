@@ -24,6 +24,20 @@ _pending_phone: Dict[str, dict] = {}
 _TTL_SECONDS = 10 * 60
 
 
+def _log_login_result(source: str, cookies_str: str, has_session: bool) -> None:
+    """登录落库前打日志：校验登录态是否完整（web_session 是否存在）。"""
+    keys = sorted({k.split("=", 1)[0] for k in cookies_str.split("; ") if "=" in k})
+    from loguru import logger
+
+    if has_session:
+        logger.info(f"小红书登录成功({source})：cookie {len(keys)} 项含 web_session，已落库")
+    else:
+        logger.warning(
+            f"小红书登录({source})落库的 cookie 缺少 web_session（{len(keys)} 项: {keys}），"
+            "登录态可能无效，后续请求可能报「登录已过期」"
+        )
+
+
 def _cleanup(store: dict) -> None:
     now = time.time()
     for key in [k for k, v in store.items() if now - v["ts"] > _TTL_SECONDS]:
@@ -78,6 +92,7 @@ def poll_qrcode_login(db: Session, qr_id: str) -> dict:
         _pending_qrcode.pop(qr_id, None)
         _, user_info, cookies = _login_api.get_user_info(cookies)
         cookies_str = _login_api.cookies_to_str(cookies)
+        _log_login_result("qrcode", cookies_str, has_session="web_session" in cookies)
         token_store.set_cookies_str(db, cookies_str)
         return {"status": "success", "nickname": user_info.get("nickname", "未知")}
 
@@ -116,5 +131,6 @@ def verify_phone_login(db: Session, phone: str, code: str, zone: str = "86") -> 
     _pending_phone.pop(phone, None)
     _, user_info, cookies = _login_api.get_user_info(result["cookies"])
     cookies_str = _login_api.cookies_to_str(cookies)
+    _log_login_result("phone", cookies_str, has_session="web_session" in cookies)
     token_store.set_cookies_str(db, cookies_str)
     return {"success": True, "nickname": user_info.get("nickname", "未知")}
