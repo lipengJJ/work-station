@@ -17,9 +17,10 @@ from app.core.scheduler import shutdown_scheduler, start_scheduler
 
 setup_logging()
 from app.analysis.controllers import analyses as analyses_api
-from app.ai_trending.controllers import push as ai_trending_push_api
-from app.ai_trending.controllers import topic as ai_trending_topic_api
-from app.ai_trending.controllers import trending as ai_trending_api
+from app.hotlist.controllers import digest as hotlist_digest_api
+from app.hotlist.controllers import hotlist as hotlist_api
+from app.hotlist.controllers import rules as hotlist_rules_api
+from app.hotlist.controllers import sources as hotlist_sources_api
 from app.resource.controllers import resource as resource_api
 from app.skills.controllers import skills as skills_api
 from app.skills.services import registry_service as skills_registry
@@ -55,10 +56,12 @@ async def lifespan(app: FastAPI):
     xhs_tasks.requeue_pending_tasks()
     xhs_tasks.start_worker()
     xhs_tracking.register_all_enabled_jobs()
-    # AI 开发热点聚合：每源独立 cron job + 每日清理 job
-    from app.ai_trending.services import scheduler_jobs as ai_trending_scheduler_jobs
+    # 热点聚合：源字典 seed + 每源独立 cron job + 推送 job + 每日清理 job
+    from app.hotlist.services import scheduler_jobs as hotlist_scheduler_jobs
+    from app.hotlist.services import source_service as hotlist_source_service
 
-    ai_trending_scheduler_jobs.register_all_enabled_jobs()
+    hotlist_source_service.seed_default_sources()
+    hotlist_scheduler_jobs.register_all_enabled_jobs()
     # 签名脚本缺失检测：clone 仓库后 backend/static 没有逆向签名脚本时给出明确提示
     # （不影响启动，评论等页面级功能正常；搜索/详情接口首次使用时会再次报错）
     try:
@@ -124,9 +127,10 @@ def create_app() -> FastAPI:
     app.include_router(xhs_analysis_api.router)
     app.include_router(xhs_tracking_api.router)
     app.include_router(resource_api.router)
-    app.include_router(ai_trending_api.router)
-    app.include_router(ai_trending_push_api.router)
-    app.include_router(ai_trending_topic_api.router)
+    app.include_router(hotlist_api.router)
+    app.include_router(hotlist_sources_api.router)
+    app.include_router(hotlist_rules_api.router)
+    app.include_router(hotlist_digest_api.router)
     app.include_router(datacenter_router)
 
     return app
