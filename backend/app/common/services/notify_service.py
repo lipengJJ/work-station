@@ -9,8 +9,11 @@
 """
 from __future__ import annotations
 
+import smtplib
 import threading
 from datetime import datetime, timezone
+from email.header import Header
+from email.mime.text import MIMEText
 from typing import Any, Optional
 
 import requests
@@ -26,6 +29,7 @@ WECOM_WEBHOOK_BASE = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
 # Server酱 发送地址前缀：实际请求 https://sctapi.ftqq.com/{sendkey}.send（form: title + desp）
 SERVERCHAN_BASE = "https://sctapi.ftqq.com"
 REQUEST_TIMEOUT = 8  # 秒：5-10s 区间内，既不让任务线程等太久，也给弱网留余量
+EMAIL_TIMEOUT = 15  # 秒：SMTP 握手 + 登录 + 发信比一次 HTTP 调用慢，留宽松一点
 
 # 模块 / 任务类型的中文展示名（通知正文可读性；没有注册的 fallback 用原始值）
 _MODULE_LABELS = {
@@ -101,6 +105,26 @@ CHANNEL_REGISTRY: dict[str, dict[str, Any]] = {
                 "placeholder": "xxxxxxxxxxxxxxxx",
                 "extra": "前往 https://www.pushplus.plus 微信扫码关注获取 Token",
             },
+        ],
+    },
+    "email": {
+        "label": "邮件",
+        "icon": "mail",
+        "description": "通过 SMTP 发到指定邮箱，不依赖第三方推送服务",
+        "capabilities": ["text"],
+        "fields": [
+            {"key": "smtp_host", "label": "SMTP 服务器", "type": "text", "mono": True, "placeholder": "smtp.qq.com"},
+            {"key": "smtp_port", "label": "端口", "type": "text", "placeholder": "465（SSL）或 587（STARTTLS）"},
+            {"key": "smtp_user", "label": "发件邮箱", "type": "text", "mono": True, "placeholder": "your@qq.com"},
+            {
+                "key": "smtp_password",
+                "label": "密码 / 授权码",
+                "type": "password",
+                "mono": True,
+                "extra": "QQ/163 等邮箱通常要用「客户端授权码」，不是登录密码",
+            },
+            {"key": "smtp_use_ssl", "label": "使用 SSL（465 端口）", "type": "switch"},
+            {"key": "email_to", "label": "收件邮箱", "type": "text", "placeholder": "a@example.com, b@example.com", "extra": "逗号分隔支持多个"},
         ],
     },
 }
@@ -218,6 +242,58 @@ def send_serverchan(sendkey: str, title: str, desp: str = "") -> tuple[bool, str
     return False, f"Server酱 返回错误：code={data.get('code')}, message={data.get('message')}"
 
 
+def send_email(
+    smtp_host: str,
+    smtp_port: int,
+    smtp_user: str,
+    smtp_password: str,
+    use_ssl: bool,
+    to_addrs: list[str],
+    title: str,
+    content: str,
+) -> tuple[bool, str]:
+    """
+    通过 SMTP 发送一封纯文本邮件。use_ssl=True 走 SMTP_SSL 直连（常见 465 端口）；
+    False 走明文连接 + STARTTLS（常见 587 端口）。标准库实现，不引入新依赖。
+
+    返回 (是否成功, 错误信息/成功提示)。任何异常都不向上抛——与其余通道同风格，
+    通知失败不影响任务主流程。
+    """
+    smtp_host = (smtp_host or "").strip()
+    smtp_user = (smtp_user or "").strip()
+    smtp_password = smtp_password or ""
+    to_addrs = [a.strip() for a in to_addrs if a.strip()]
+    if not smtp_host or not smtp_user or not smtp_password:
+        return False, "SMTP 配置不完整（服务器 / 发件邮箱 / 密码）"
+    if not to_addrs:
+        return False, "未配置收件邮箱"
+
+    msg = MIMEText(content or "", "plain", "utf-8")
+    msg["Subject"] = Header(title or "【统一工作台】通知", "utf-8")
+    msg["From"] = smtp_user
+    msg["To"] = ", ".join(to_addrs)
+
+    port = smtp_port or (465 if use_ssl else 587)
+    server: smtplib.SMTP | None = None
+    try:
+        if use_ssl:
+            server = smtplib.SMTP_SSL(smtp_host, port, timeout=EMAIL_TIMEOUT)
+        else:
+            server = smtplib.SMTP(smtp_host, port, timeout=EMAIL_TIMEOUT)
+            server.starttls()
+        server.login(smtp_user, smtp_password)
+        server.sendmail(smtp_user, to_addrs, msg.as_string())
+        return True, "发送成功"
+    except Exception as e:  # noqa: BLE001  通知失败不向上抛
+        return False, f"发送邮件失败：{e}"
+    finally:
+        if server is not None:
+            try:
+                server.quit()
+            except Exception:  # noqa: BLE001  quit 失败不影响发送结果判定
+                pass
+
+
 def normalize_channel(channel: Optional[str]) -> str:
     """channel 归一化：空值回退 wecom_webhook（保持老库/旧调用兼容）；未知值原样返回，由下游兜底。"""
     return (channel or "").strip() or "wecom_webhook"
@@ -226,7 +302,8 @@ def normalize_channel(channel: Optional[str]) -> str:
 def config_missing_hint(config: Optional[NotificationConfig]) -> Optional[str]:
     """
     按 channel 检查配置是否齐全；缺关键参数时返回给用户看的提示，齐全返回 None。
-    serverchan 通道检查 SendKey；pushplus（未实现）提示未接入；其余按企业微信检查 webhook。
+    serverchan 通道检查 SendKey；pushplus（未实现）提示未接入；email 检查 SMTP 四件套 +
+    收件邮箱；其余按企业微信检查 webhook。
     """
     if config is None:
         return "尚未配置 webhook 地址，请先填写并保存"
@@ -237,6 +314,16 @@ def config_missing_hint(config: Optional[NotificationConfig]) -> Optional[str]:
         return None
     if channel == "pushplus":
         return "PushPlus 通道暂未接入，敬请期待"
+    if channel == "email":
+        if not (config.smtp_host or "").strip():
+            return "尚未配置 SMTP 服务器地址"
+        if not (config.smtp_user or "").strip():
+            return "尚未配置发件邮箱"
+        if not (config.smtp_password or "").strip():
+            return "尚未配置邮箱密码/授权码"
+        if not (config.email_to or "").strip():
+            return "尚未配置收件邮箱"
+        return None
     if not (config.webhook_url or "").strip():
         return "尚未配置 webhook 地址，请先填写并保存"
     return None
@@ -263,6 +350,7 @@ def send_by_config(
     按配置的 channel 分发到对应通道：
     - serverchan：POST Server酱（title=消息标题，desp=markdown 正文）；
     - pushplus：占位通道，暂未实现；
+    - email：SMTP 发送（title=邮件标题，content=正文）；
     - 其他（含空/未知 channel）：沿用企业微信机器人逻辑。
     """
     channel = normalize_channel(config.channel)
@@ -270,6 +358,12 @@ def send_by_config(
         return send_serverchan(config.sendkey, title, content)
     if channel == "pushplus":
         return False, "PushPlus 通道暂未接入"
+    if channel == "email":
+        to_addrs = [a for a in (config.email_to or "").split(",")]
+        return send_email(
+            config.smtp_host, config.smtp_port, config.smtp_user, config.smtp_password,
+            config.smtp_use_ssl, to_addrs, title, content,
+        )
     return send_wecom_message(config.webhook_url, content, msgtype=msgtype, mentioned_list=mentioned_list)
 
 
@@ -300,6 +394,12 @@ def upsert_config(
     token: str = "",
     enabled: bool = False,
     mention_all: bool = False,
+    smtp_host: str = "",
+    smtp_port: int = 465,
+    smtp_user: str = "",
+    smtp_password: str = "",
+    smtp_use_ssl: bool = True,
+    email_to: str = "",
 ) -> NotificationConfig:
     """保存单通道配置（upsert：按 channel 覆盖）。"""
     channel = normalize_channel(channel)
@@ -312,6 +412,12 @@ def upsert_config(
     config.token = (token or "").strip()
     config.enabled = enabled
     config.mention_all = mention_all
+    config.smtp_host = (smtp_host or "").strip()
+    config.smtp_port = smtp_port or 465
+    config.smtp_user = (smtp_user or "").strip()
+    config.smtp_password = smtp_password or ""
+    config.smtp_use_ssl = smtp_use_ssl
+    config.email_to = (email_to or "").strip()
     db.commit()
     db.refresh(config)
     return config
@@ -333,6 +439,8 @@ def list_channel_infos(db: Session) -> list[dict[str, Any]]:
                 summary = _mask_value(config.sendkey)
             elif channel == "pushplus":
                 summary = _mask_value(config.token)
+            elif channel == "email":
+                summary = config.email_to or ""
             else:
                 summary = (config.webhook_url or "")[:64] + ("…" if len(config.webhook_url or "") > 64 else "")
         infos.append(

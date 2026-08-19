@@ -68,6 +68,12 @@ def _default_config_out(channel: str) -> NotificationConfigOut:
         token="",
         enabled=False,
         mention_all=False,
+        smtp_host="",
+        smtp_port=465,
+        smtp_user="",
+        smtp_password="",
+        smtp_use_ssl=True,
+        email_to="",
         created_at=now,
         updated_at=now,
     )
@@ -102,6 +108,12 @@ def create_config(
         token=body.token,
         enabled=body.enabled,
         mention_all=body.mention_all,
+        smtp_host=body.smtp_host,
+        smtp_port=body.smtp_port,
+        smtp_user=body.smtp_user,
+        smtp_password=body.smtp_password,
+        smtp_use_ssl=body.smtp_use_ssl,
+        email_to=body.email_to,
     )
     db.add(config)
     db.commit()
@@ -128,6 +140,17 @@ def update_config(
         config.token = body.token
     if body.remark:
         config.remark = body.remark
+    if body.smtp_host:
+        config.smtp_host = body.smtp_host
+    if body.smtp_port:
+        config.smtp_port = body.smtp_port
+    if body.smtp_user:
+        config.smtp_user = body.smtp_user
+    if body.smtp_password:
+        config.smtp_password = body.smtp_password
+    if body.email_to:
+        config.email_to = body.email_to
+    config.smtp_use_ssl = body.smtp_use_ssl
     config.enabled = body.enabled
     config.mention_all = body.mention_all
     db.commit()
@@ -177,6 +200,12 @@ def save_config(
         token=body.token,
         enabled=body.enabled,
         mention_all=body.mention_all,
+        smtp_host=body.smtp_host,
+        smtp_port=body.smtp_port,
+        smtp_user=body.smtp_user,
+        smtp_password=body.smtp_password,
+        smtp_use_ssl=body.smtp_use_ssl,
+        email_to=body.email_to,
     )
 
 

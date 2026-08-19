@@ -67,6 +67,14 @@ def _ensure_notification_config_schema() -> None:
                     )
                 )
                 logger.warning("notification_config 表已补充 token 列（PushPlus 预留通道）")
+            if "smtp_host" not in columns:
+                conn.execute(text("ALTER TABLE notification_config ADD COLUMN smtp_host VARCHAR(255) DEFAULT ''"))
+                conn.execute(text("ALTER TABLE notification_config ADD COLUMN smtp_port INTEGER DEFAULT 465"))
+                conn.execute(text("ALTER TABLE notification_config ADD COLUMN smtp_user VARCHAR(255) DEFAULT ''"))
+                conn.execute(text("ALTER TABLE notification_config ADD COLUMN smtp_password VARCHAR(255) DEFAULT ''"))
+                conn.execute(text("ALTER TABLE notification_config ADD COLUMN smtp_use_ssl BOOLEAN DEFAULT 1"))
+                conn.execute(text("ALTER TABLE notification_config ADD COLUMN email_to VARCHAR(512) DEFAULT ''"))
+                logger.warning("notification_config 表已补充 email 通道相关列（SMTP）")
         # 多实例化：移除 channel 唯一索引（同类型可配多个实例）；老库补 remark 列；
         # SQLite 老表内嵌 UNIQUE 约束生成的 autoindex 无法 DROP，只能重建表移除。
         with engine.begin() as conn:
@@ -86,6 +94,8 @@ def _ensure_notification_config_schema() -> None:
                 )
             ).fetchall()
             if auto_rows:
+                # 这个重建分支只在「从没跑过多实例化迁移」的老库上触发；此时上面几步已经把
+                # email 相关列加上了，这里的列表必须跟着补，否则重建完这些列就白加了。
                 conn.execute(
                     text(
                         "CREATE TABLE notification_config_new ("
@@ -97,6 +107,12 @@ def _ensure_notification_config_schema() -> None:
                         "token VARCHAR(256) DEFAULT '', "
                         "enabled BOOLEAN DEFAULT 0, "
                         "mention_all BOOLEAN DEFAULT 0, "
+                        "smtp_host VARCHAR(255) DEFAULT '', "
+                        "smtp_port INTEGER DEFAULT 465, "
+                        "smtp_user VARCHAR(255) DEFAULT '', "
+                        "smtp_password VARCHAR(255) DEFAULT '', "
+                        "smtp_use_ssl BOOLEAN DEFAULT 1, "
+                        "email_to VARCHAR(512) DEFAULT '', "
                         "created_at DATETIME, "
                         "updated_at DATETIME)"
                     )
@@ -104,9 +120,12 @@ def _ensure_notification_config_schema() -> None:
                 conn.execute(
                     text(
                         "INSERT INTO notification_config_new (id, channel, remark, webhook_url, "
-                        "sendkey, token, enabled, mention_all, created_at, updated_at) "
+                        "sendkey, token, enabled, mention_all, smtp_host, smtp_port, smtp_user, "
+                        "smtp_password, smtp_use_ssl, email_to, created_at, updated_at) "
                         "SELECT id, channel, COALESCE(remark, ''), webhook_url, sendkey, token, "
-                        "enabled, mention_all, created_at, updated_at FROM notification_config"
+                        "enabled, mention_all, COALESCE(smtp_host, ''), COALESCE(smtp_port, 465), "
+                        "COALESCE(smtp_user, ''), COALESCE(smtp_password, ''), COALESCE(smtp_use_ssl, 1), "
+                        "COALESCE(email_to, ''), created_at, updated_at FROM notification_config"
                     )
                 )
                 conn.execute(text("DROP TABLE notification_config"))

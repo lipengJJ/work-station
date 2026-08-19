@@ -14,6 +14,12 @@ class NotificationConfigOut(BaseModel):
     token: str
     enabled: bool
     mention_all: bool
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_use_ssl: bool = True
+    email_to: str = ""
     created_at: datetime
     updated_at: datetime
 
@@ -27,6 +33,12 @@ class NotificationConfigIn(BaseModel):
     token: str = Field(default="", max_length=256)  # PushPlus Token（预留）
     enabled: bool = False
     mention_all: bool = False
+    smtp_host: str = Field(default="", max_length=255)  # SMTP 服务器地址
+    smtp_port: int = 465
+    smtp_user: str = Field(default="", max_length=255)  # 发件邮箱（同时用作登录账号）
+    smtp_password: str = Field(default="", max_length=255)  # SMTP 密码/授权码
+    smtp_use_ssl: bool = True  # True=SSL(常见465)；False=STARTTLS(常见587)
+    email_to: str = Field(default="", max_length=512)  # 收件邮箱，逗号分隔支持多个
 
 
 class ChannelFieldDef(BaseModel):

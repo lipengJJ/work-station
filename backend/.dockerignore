@@ -10,3 +10,8 @@ logs/
 .env
 
 node_modules/
+
+# 生产镜像不需要：测试/维护脚本/杂散 lockfile（本项目走 npm，这个 pnpm 锁文件是早期重构的残留）
+tests/
+scripts/
+pnpm-lock.yaml

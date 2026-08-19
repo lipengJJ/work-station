@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -12,7 +12,7 @@ class NotificationConfig(Base):
     """
     系统设置 > 消息通知：通知通道配置（**支持同类型多实例**）。
     channel 表示渠道类型（wecom_webhook=企业微信群机器人；serverchan=Server酱；
-    pushplus=PushPlus），同一类型可配置多个实例（如两个不同的企微群机器人），
+    pushplus=PushPlus；email=SMTP 邮件），同一类型可配置多个实例（如两个不同的企微群机器人），
     用 remark 备注名区分。每个实例独立 enabled，任务完成/失败通知扇出到所有启用实例。
     """
 
@@ -26,6 +26,13 @@ class NotificationConfig(Base):
     token: Mapped[str] = mapped_column(String(256), default="")  # PushPlus Token（预留通道）
     enabled: Mapped[bool] = mapped_column(default=False)  # 本实例开关：关闭时不发任务通知
     mention_all: Mapped[bool] = mapped_column(default=False)  # text 消息是否 @所有人（企业微信）
+    # ---- email 通道（SMTP）----
+    smtp_host: Mapped[str] = mapped_column(String(255), default="")  # 如 smtp.qq.com
+    smtp_port: Mapped[int] = mapped_column(Integer, default=465)
+    smtp_user: Mapped[str] = mapped_column(String(255), default="")  # 发件邮箱，同时用作登录账号
+    smtp_password: Mapped[str] = mapped_column(String(255), default="")  # SMTP 密码/授权码
+    smtp_use_ssl: Mapped[bool] = mapped_column(Boolean, default=True)  # True=SSL(常见465)；False=STARTTLS(常见587)
+    email_to: Mapped[str] = mapped_column(String(512), default="")  # 收件邮箱，逗号分隔支持多个
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )

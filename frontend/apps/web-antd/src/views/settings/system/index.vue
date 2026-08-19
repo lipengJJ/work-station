@@ -4,7 +4,7 @@ import type { NotifyApi } from '#/api/core/notify';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
-import { Button, Drawer, Dropdown, Form, FormItem, Input, message, Modal, Select, Switch } from 'ant-design-vue';
+import { Button, Drawer, Dropdown, Form, FormItem, Input, InputNumber, message, Modal, Select, Switch } from 'ant-design-vue';
 import { Bell, Boxes, KeyRound, MoreHorizontal, Plus, Sparkles } from 'lucide-vue-next';
 
 import { getChatConfigApi, setChatConfigApi } from '#/api/core/chat';
@@ -128,11 +128,12 @@ const notifyConfigs = ref<NotifyApi.NotificationConfig[]>([]);
 const channelMeta = ref<Record<string, NotifyApi.ChannelInfo>>({});
 const notifyLoading = ref(true);
 
-const CHANNEL_ORDER = ['wecom_webhook', 'serverchan', 'pushplus'];
+const CHANNEL_ORDER = ['wecom_webhook', 'serverchan', 'pushplus', 'email'];
 const CHANNEL_LABEL: Record<string, string> = {
   wecom_webhook: '企业微信群机器人',
   serverchan: 'Server酱',
   pushplus: 'PushPlus',
+  email: '邮件',
 };
 
 async function loadNotify() {
@@ -151,6 +152,7 @@ async function loadNotify() {
 function isConfigured(cfg: NotifyApi.NotificationConfig): boolean {
   if (cfg.channel === 'wecom_webhook') return !!cfg.webhook_url;
   if (cfg.channel === 'serverchan') return !!cfg.sendkey;
+  if (cfg.channel === 'email') return !!(cfg.smtp_host && cfg.smtp_user && cfg.smtp_password && cfg.email_to);
   return !!cfg.token;
 }
 
@@ -169,6 +171,12 @@ async function toggleNotifyEnabled(cfg: NotifyApi.NotificationConfig, v: boolean
       token: cfg.token,
       enabled: v,
       mention_all: cfg.mention_all,
+      smtp_host: cfg.smtp_host,
+      smtp_port: cfg.smtp_port,
+      smtp_user: cfg.smtp_user,
+      smtp_password: cfg.smtp_password,
+      smtp_use_ssl: cfg.smtp_use_ssl,
+      email_to: cfg.email_to,
     });
     cfg.enabled = v;
   } catch (e: any) {
@@ -215,14 +223,30 @@ const drawerOpen = ref(false);
 const editingId = ref<number | null>(null);
 const drawerStep = ref(0); // 0=选类型 1=填字段
 const drawerType = ref('wecom_webhook');
-const drawerForm = reactive({ remark: '', webhook_url: '', sendkey: '', token: '', mention_all: false, enabled: true });
+const drawerForm = reactive({
+  remark: '',
+  webhook_url: '',
+  sendkey: '',
+  token: '',
+  mention_all: false,
+  enabled: true,
+  smtp_host: '',
+  smtp_port: 465,
+  smtp_user: '',
+  smtp_password: '',
+  smtp_use_ssl: true,
+  email_to: '',
+});
 const drawerSaving = ref(false);
 
 function openAddDrawer() {
   editingId.value = null;
   drawerStep.value = 0;
   drawerType.value = 'wecom_webhook';
-  Object.assign(drawerForm, { remark: '', webhook_url: '', sendkey: '', token: '', mention_all: false, enabled: true });
+  Object.assign(drawerForm, {
+    remark: '', webhook_url: '', sendkey: '', token: '', mention_all: false, enabled: true,
+    smtp_host: '', smtp_port: 465, smtp_user: '', smtp_password: '', smtp_use_ssl: true, email_to: '',
+  });
   drawerOpen.value = true;
 }
 
@@ -237,6 +261,12 @@ function openEditDrawer(cfg: NotifyApi.NotificationConfig) {
     token: cfg.token || '',
     mention_all: cfg.mention_all,
     enabled: cfg.enabled,
+    smtp_host: cfg.smtp_host || '',
+    smtp_port: cfg.smtp_port || 465,
+    smtp_user: cfg.smtp_user || '',
+    smtp_password: cfg.smtp_password || '',
+    smtp_use_ssl: cfg.smtp_use_ssl,
+    email_to: cfg.email_to || '',
   });
   drawerOpen.value = true;
 }
@@ -252,6 +282,12 @@ async function submitDrawer() {
     token: drawerForm.token.trim(),
     enabled: drawerForm.enabled,
     mention_all: drawerForm.mention_all,
+    smtp_host: drawerForm.smtp_host.trim(),
+    smtp_port: drawerForm.smtp_port,
+    smtp_user: drawerForm.smtp_user.trim(),
+    smtp_password: drawerForm.smtp_password.trim(),
+    smtp_use_ssl: drawerForm.smtp_use_ssl,
+    email_to: drawerForm.email_to.trim(),
   };
   drawerSaving.value = true;
   try {
@@ -502,6 +538,27 @@ onMounted(() => {
             <Input.Password v-model:value="drawerForm.sendkey" placeholder="sctp..." />
           </FormItem>
         </template>
+        <template v-else-if="drawerType === 'email'">
+          <FormItem label="SMTP 服务器">
+            <Input v-model:value="drawerForm.smtp_host" placeholder="smtp.qq.com" />
+          </FormItem>
+          <FormItem label="端口">
+            <InputNumber v-model:value="drawerForm.smtp_port" class="w-full" :min="1" :max="65535" />
+          </FormItem>
+          <FormItem label="发件邮箱">
+            <Input v-model:value="drawerForm.smtp_user" placeholder="your@qq.com" />
+          </FormItem>
+          <FormItem label="密码 / 授权码">
+            <Input.Password v-model:value="drawerForm.smtp_password" placeholder="QQ/163 等邮箱通常要用客户端授权码，不是登录密码" />
+          </FormItem>
+          <FormItem label="使用 SSL（端口 465 常用）">
+            <Switch v-model:checked="drawerForm.smtp_use_ssl" />
+            <span class="ml-2 text-xs text-[hsl(var(--muted-foreground))]">关闭则用 STARTTLS（端口 587 常用）</span>
+          </FormItem>
+          <FormItem label="收件邮箱">
+            <Input v-model:value="drawerForm.email_to" placeholder="a@example.com, b@example.com（逗号分隔支持多个）" />
+          </FormItem>
+        </template>
         <template v-else>
           <FormItem label="PushPlus Token">
             <Input.Password v-model:value="drawerForm.token" placeholder="PushPlus Token" />
@@ -626,6 +683,9 @@ onMounted(() => {
 }
 .ss-icon--pushplus {
   background: #e8590c;
+}
+.ss-icon--email {
+  background: #7048e8;
 }
 /* 文字区：图标右侧 16px 间距 */
 .ss-main {

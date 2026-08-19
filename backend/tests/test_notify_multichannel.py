@@ -61,7 +61,7 @@ class TestChannelsApi:
         assert resp.status_code == 200
         channels = resp.json()["channels"]
         keys = [c["channel"] for c in channels]
-        assert keys == ["wecom_webhook", "serverchan", "pushplus"]
+        assert keys == ["wecom_webhook", "serverchan", "pushplus", "email"]
         for c in channels:
             assert c["configured"] is False
             assert c["enabled"] is False

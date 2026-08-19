@@ -94,8 +94,8 @@ else
     echo "✗ 需要 buildx（Docker Desktop 自带），请确认 docker buildx 可用" >&2
     exit 1
   fi
-  build_and_push "${BACKEND_IMAGE}" "./backend" "linux/amd64,linux/arm64"
-  build_and_push "${FRONTEND_IMAGE}" "./frontend" "linux/amd64,linux/arm64"
+  build_and_push "${BACKEND_IMAGE}" "./backend" "linux/amd64"
+  build_and_push "${FRONTEND_IMAGE}" "./frontend" "linux/amd64"
 fi
 
 # ---------------------------- 结果 ----------------------------

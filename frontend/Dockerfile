@@ -2,6 +2,9 @@
 # 生产环境用 nginx 提供静态文件，并把 /api/ 反代到 backend 容器（见 nginx.conf）。
 FROM node:22-slim AS builder
 
+# buildx 多平台构建时注入；用于缓存按平台隔离，避免 amd64/arm64 并发写同一 pnpm store
+ARG TARGETARCH
+
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 ENV NODE_OPTIONS=--max-old-space-size=8192
@@ -12,7 +15,7 @@ RUN npm i -g corepack
 WORKDIR /app
 COPY . /app
 
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm-${TARGETARCH},target=/pnpm/store pnpm install --frozen-lockfile
 RUN pnpm run build:antd
 
 FROM nginx:stable-alpine AS production

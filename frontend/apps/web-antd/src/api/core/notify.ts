@@ -12,6 +12,12 @@ export namespace NotifyApi {
     token: string;
     enabled: boolean;
     mention_all: boolean;
+    smtp_host: string;
+    smtp_port: number;
+    smtp_user: string;
+    smtp_password: string;
+    smtp_use_ssl: boolean;
+    email_to: string;
     created_at: string;
     updated_at: string;
   }
@@ -24,6 +30,12 @@ export namespace NotifyApi {
     token: string;
     enabled: boolean;
     mention_all: boolean;
+    smtp_host?: string;
+    smtp_port?: number;
+    smtp_user?: string;
+    smtp_password?: string;
+    smtp_use_ssl?: boolean;
+    email_to?: string;
   }
 
   /** 通道配置弹窗的字段定义（数据驱动渲染） */
