@@ -17,7 +17,9 @@ from sqlalchemy.orm import Session
 from app.hotlist.models import HotItem
 
 
-def latest_crawl_time(db: Session, stat_date: str, source_id: str) -> datetime | None:
+def latest_crawl_time(
+    db: Session, stat_date: str, source_id: str
+) -> datetime | None:
     """单个源当天最新一批的时间戳；当天还没抓过时返回 None。"""
     return (
         db.query(func.max(HotItem.last_crawl_time))
@@ -26,9 +28,13 @@ def latest_crawl_time(db: Session, stat_date: str, source_id: str) -> datetime |
     )
 
 
-def _scoped_source_ids(db: Session, stat_date: str, source_ids: list[str] | None) -> list[str]:
+def _scoped_source_ids(
+    db: Session, stat_date: str, source_ids: list[str] | None
+) -> list[str]:
     """展开为当天实际有数据的源 id 列表；source_ids 为空时 = 当天出现过数据的全部源。"""
-    q = db.query(HotItem.source_id.distinct()).filter(HotItem.stat_date == stat_date)
+    q = db.query(HotItem.source_id.distinct()).filter(
+        HotItem.stat_date == stat_date
+    )
     if source_ids:
         q = q.filter(HotItem.source_id.in_(source_ids))
     return [row[0] for row in q.all()]
@@ -63,7 +69,9 @@ def incremental_items(
             )
             .all()
         )
-        result.extend(item for item in rows if item.title not in historical_titles)
+        result.extend(
+            item for item in rows if item.title not in historical_titles
+        )
     return result
 
 

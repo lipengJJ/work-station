@@ -1,3 +1,5 @@
+"""榜位时间线表。"""
+
 from __future__ import annotations
 
 from datetime import datetime

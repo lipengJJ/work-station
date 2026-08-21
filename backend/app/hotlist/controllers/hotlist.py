@@ -16,8 +16,19 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal, get_db
 from app.core.deps import get_current_user
-from app.hotlist.models import HotItem, HotKeywordRule, HotRankHistory, HotRuleHit, HotSource
-from app.hotlist.schemas.item import ItemDetailOut, ItemOut, ItemPage, RankPointOut
+from app.hotlist.models import (
+    HotItem,
+    HotKeywordRule,
+    HotRankHistory,
+    HotRuleHit,
+    HotSource,
+)
+from app.hotlist.schemas.item import (
+    ItemDetailOut,
+    ItemOut,
+    ItemPage,
+    RankPointOut,
+)
 from app.hotlist.services import crawl_service
 
 router = APIRouter(prefix="/api/hotlist", tags=["hotlist"])
@@ -69,13 +80,23 @@ def list_items(
     if source_kind:
         source_ids = [
             row[0]
-            for row in db.query(HotSource.id).filter(HotSource.source_kind == source_kind).all()
+            for row in (
+                db.query(HotSource.id)
+                .filter(HotSource.source_kind == source_kind)
+                .all()
+            )
         ]
         q = q.filter(HotItem.source_id.in_(source_ids))
     if stat_date:
         q = q.filter(HotItem.stat_date == stat_date)
     if hit_only:
-        hit_item_ids = [row[0] for row in db.query(HotRuleHit.item_id.distinct()).all()]
+        # 排除 rule_id=0 的「无规则主题全部命中」行——那不代表关键词命中，不应算进 hit_only
+        hit_item_ids = [
+            row[0]
+            for row in db.query(HotRuleHit.item_id.distinct())
+            .filter(HotRuleHit.rule_id != 0)
+            .all()
+        ]
         q = q.filter(HotItem.id.in_(hit_item_ids))
 
     if sort == "time":

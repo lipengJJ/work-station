@@ -6,8 +6,8 @@
 """
 from __future__ import annotations
 
-import re
 from datetime import datetime, timedelta, timezone
+import re
 
 from loguru import logger
 from lxml import html as lxml_html
@@ -48,7 +48,9 @@ class GitHubAdapter(HotSourceAdapter):
             if not repo_href or "/" not in repo_href:
                 continue
             desc_nodes = article.xpath('.//p[contains(@class, "col-9")]')
-            description = desc_nodes[0].text_content().strip() if desc_nodes else ""
+            description = (
+                desc_nodes[0].text_content().strip() if desc_nodes else ""
+            )
             stars_today = 0
             m = _STARS_TODAY_RE.search(article.text_content())
             if m:
@@ -59,7 +61,8 @@ class GitHubAdapter(HotSourceAdapter):
                     title=repo_href,
                     url=f"https://github.com/{repo_href}",
                     summary=description,
-                    published_at=datetime.now(timezone.utc),  # SSR 页没有发布时间，用抓取时间兜底
+                    # SSR 页没有发布时间，用抓取时间兜底
+                    published_at=datetime.now(timezone.utc),
                     metrics={"stars_today": stars_today},
                 )
             )
@@ -68,9 +71,18 @@ class GitHubAdapter(HotSourceAdapter):
         return entries
 
     def _fetch_search_api(self) -> list[RawEntry]:
-        since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
-        url = f"{SEARCH_API}?q=created:>{since}&sort=stars&order=desc&per_page=30"
-        data = self._get_json(url, timeout=20, headers={"Accept": "application/vnd.github+json"})
+        since = (
+            datetime.now(timezone.utc) - timedelta(days=7)
+        ).strftime("%Y-%m-%d")
+        url = (
+            f"{SEARCH_API}?q=created:>{since}"
+            "&sort=stars&order=desc&per_page=30"
+        )
+        data = self._get_json(
+            url,
+            timeout=20,
+            headers={"Accept": "application/vnd.github+json"},
+        )
         entries: list[RawEntry] = []
         for idx, repo in enumerate(data.get("items") or [], 1):
             full_name = repo.get("full_name") or ""

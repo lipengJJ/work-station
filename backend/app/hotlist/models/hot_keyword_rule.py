@@ -1,3 +1,5 @@
+"""频率词规则表。"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -21,35 +23,45 @@ class HotKeywordRule(Base):
     不是「文件里任意一行 !词 全局排除所有组」那种因为单文件顺序解析产生的副作用——
     数据库按行独立存储后没理由继续保留这个反直觉行为，见 services/keyword_rules.py 头部说明。
 
-    推送配置字段直接照抄 XhsTrackingTask（app/xhs/models/xhs_tracking_task.py），
-    语义完全对得上：同一套「时段 + 频率 + 仅命中时推送 + 暂存汇总」逻辑，push_service.py
-    （Phase 4）可以照搬 xhs/services/tracking.py 的推送编排。
+    废弃列（老库保留不读，见 core/database.py::_ensure_hotlist_topic_rule_schema）：
+    source_ids —— 源范围已由主题的 hot_topic_sources 决定，规则不再存一份（冗余且会不一致）；
+    notify_enabled / notify_channel_ids / notify_time_start / notify_time_end /
+    notify_frequency / notify_only_on_hit / notify_pending_hits /
+    notify_pending_since
+    —— 实时命中推送已整体迁到 hot_topics.hit_notify_*，规则自身不再读写。
     """
 
     __tablename__ = "hot_keyword_rules"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    rule_type: Mapped[str] = mapped_column(String(16), default="group", index=True)
+    rule_type: Mapped[str] = mapped_column(
+        String(16), default="group", index=True
+    )
     """group = 词组规则；global_filter = 全局过滤词（命中即从所有词组匹配结果里剔除）。"""
 
+    topic_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True
+    )
+    """所属主题。NULL 表示全局规则：
+       - rule_type='global_filter' 时恒为 NULL（全局过滤词对所有主题生效）
+       - rule_type='group' 且 topic_id 为 NULL 的是历史遗留数据，迁移脚本会收编（见 §5）
+    """
+
     display_name: Mapped[str] = mapped_column(String(64), default="")
-    normal_words: Mapped[str] = mapped_column(Text, default="[]")  # JSON: 普通词（组内 OR）
-    required_words: Mapped[str] = mapped_column(Text, default="[]")  # JSON: 必须词（AND）
-    exclude_words: Mapped[str] = mapped_column(Text, default="[]")  # JSON: 排除词（NOT，按本规则生效）
-    source_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON: 限定源；[] = 全部源
-    max_count: Mapped[int] = mapped_column(Integer, default=0)  # 每组最多显示条数，0 = 不限
+    # JSON: 普通词（组内 OR）
+    normal_words: Mapped[str] = mapped_column(Text, default="[]")
+    # JSON: 必须词（AND）
+    required_words: Mapped[str] = mapped_column(Text, default="[]")
+    # JSON: 排除词（NOT，按本规则生效）
+    exclude_words: Mapped[str] = mapped_column(Text, default="[]")
+    # 每组最多显示条数，0 = 不限
+    max_count: Mapped[int] = mapped_column(Integer, default=0)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
-    # ---- 推送配置（对齐 XhsTrackingTask，字段名/语义完全一致）----
-    notify_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    notify_channel_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON list[int]
-    notify_time_start: Mapped[str | None] = mapped_column(String(8), nullable=True)  # "HH:mm"
-    notify_time_end: Mapped[str | None] = mapped_column(String(8), nullable=True)
-    notify_frequency: Mapped[str] = mapped_column(String(16), default="realtime")  # realtime/1h/6h/12h/daily
-    notify_only_on_hit: Mapped[bool] = mapped_column(Boolean, default=True)
-    notify_pending_hits: Mapped[int] = mapped_column(Integer, default=0)
-    notify_pending_since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
-    created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )

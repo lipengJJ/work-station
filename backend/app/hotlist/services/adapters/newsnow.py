@@ -36,7 +36,11 @@ class NewsNowAdapter(HotSourceAdapter):
     def _api_url(self) -> str:
         db = SessionLocal()
         try:
-            row = db.query(ApiConfig).filter(ApiConfig.name == API_URL_CONFIG_NAME).first()
+            row = (
+                db.query(ApiConfig)
+                .filter(ApiConfig.name == API_URL_CONFIG_NAME)
+                .first()
+            )
             value = (row.value.strip() if row and row.value else "")
             return value or DEFAULT_API_URL
         finally:
@@ -50,9 +54,14 @@ class NewsNowAdapter(HotSourceAdapter):
             except HotSourceAdapterError as exc:
                 last_error = str(exc)
             if attempt < len(RETRY_BASE_DELAYS):
-                delay = RETRY_BASE_DELAYS[attempt] + random.uniform(0, 2) + attempt * 2
+                delay = (
+                    RETRY_BASE_DELAYS[attempt]
+                    + random.uniform(0, 2)
+                    + attempt * 2
+                )
                 logger.warning(
-                    f"newsnow 第 {attempt + 1} 次请求失败: {last_error}，{delay:.1f}s 后重试"
+                    f"newsnow 第 {attempt + 1} 次请求失败: {last_error}，"
+                    f"{delay:.1f}s 后重试"
                 )
                 time.sleep(delay)
         raise HotSourceAdapterError(f"newsnow 连续请求失败: {last_error}")
@@ -70,7 +79,11 @@ class NewsNowAdapter(HotSourceAdapter):
         for idx, item in enumerate(data.get("items", []), 1):
             title = item.get("title")
             # 跳过无效标题（None / float / 空串）——原实现踩过这个坑，保留
-            if title is None or isinstance(title, float) or not str(title).strip():
+            if (
+                title is None
+                or isinstance(title, float)
+                or not str(title).strip()
+            ):
                 continue
             entries.append(
                 RawEntry(

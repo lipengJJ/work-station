@@ -1,3 +1,5 @@
+"""规则命中记录表。"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -18,5 +20,7 @@ class HotRuleHit(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     rule_id: Mapped[int] = mapped_column(Integer, index=True)
     item_id: Mapped[int] = mapped_column(Integer, index=True)
-    matched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    matched_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     notified: Mapped[bool] = mapped_column(Boolean, default=False)

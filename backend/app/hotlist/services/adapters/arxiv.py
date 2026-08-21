@@ -34,7 +34,8 @@ class ArxivAdapter(HotSourceAdapter):
         entries: list[RawEntry] = []
         for idx, entry in enumerate(feed.entries or [], 1):
             title = " ".join((entry.get("title") or "").split())
-            # entry.id 形如 http://arxiv.org/abs/2401.12345v2（normalize_url 会去掉版本号）
+            # entry.id 形如 http://arxiv.org/abs/2401.12345v2
+            # （normalize_url 会去掉版本号）
             link = (entry.get("id") or entry.get("link") or "").strip()
             if not title or not link:
                 continue

@@ -7,9 +7,16 @@
 from __future__ import annotations
 
 from app.common.utils.text import parse_datetime
-from app.hotlist.services.adapters.base import HotSourceAdapter, RawEntry, register
+from app.hotlist.services.adapters.base import (
+    HotSourceAdapter,
+    RawEntry,
+    register,
+)
 
-MODELS_URL = "https://huggingface.co/api/models?sort=trendingScore&direction=-1&limit=50"
+MODELS_URL = (
+    "https://huggingface.co/api/models?sort=trendingScore"
+    "&direction=-1&limit=50"
+)
 PAPERS_URL = "https://huggingface.co/api/daily_papers"
 
 
@@ -32,7 +39,10 @@ class HuggingFaceAdapter(HotSourceAdapter):
             trending_score = float(model.get("trendingScore") or 0)
             likes = int(model.get("likes") or 0)
             downloads = int(model.get("downloads") or 0)
-            description = (model.get("description") or "").strip() or f"HF 模型 {model_id}"
+            description = (
+                (model.get("description") or "").strip()
+                or f"HF 模型 {model_id}"
+            )
             entries.append(
                 RawEntry(
                     rank=idx,
@@ -55,7 +65,11 @@ class HuggingFaceAdapter(HotSourceAdapter):
         for idx, entry in enumerate(data or [], 1):
             if not isinstance(entry, dict):
                 continue
-            paper = entry.get("paper") if isinstance(entry.get("paper"), dict) else entry
+            paper = (
+                entry.get("paper")
+                if isinstance(entry.get("paper"), dict)
+                else entry
+            )
             paper_id = paper.get("id") or ""
             title = (paper.get("title") or "").strip()
             if not paper_id or not title:

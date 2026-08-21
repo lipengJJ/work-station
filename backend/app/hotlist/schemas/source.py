@@ -1,3 +1,4 @@
+"""源请求/响应模型。"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -19,6 +20,8 @@ class SourceOut(BaseModel):
     cron_expr: str = "*/30 * * * *"
     enabled: bool = True
     sort_order: int = 0
+    group_id: int | None = None
+    """所属分组（hot_source_groups.id）。NULL = 未分组。"""
 
     last_fetched_at: datetime | None = None
     last_status: str = ""
@@ -53,3 +56,21 @@ class SourceCreateIn(BaseModel):
     cron_expr: str = "*/30 * * * *"
     enabled: bool = True
     sort_order: int = 0
+    group_id: int | None = None
+
+
+class SourceBatchIn(BaseModel):
+    """批量操作：移组与启停可同时给（先移组再启停），也可只给其一。
+    group_id 显式传 null = 移出分组（用 exclude_unset 区分「没传」与「传 null」）。"""
+
+    source_ids: list[str] = Field(default_factory=list)
+    group_id: int | None = None
+    enabled: bool | None = None
+
+
+class SourceImportOpmlIn(BaseModel):
+    """OPML 批量导入到分组：content（文本）与 opml_url（远端）二选一，content 优先。"""
+
+    content: str = ""
+    opml_url: str = ""
+    group_id: int | None = None

@@ -5,11 +5,11 @@ rollback）、去重入库、以及移植自 TrendRadar core/data.py 思路的�
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 import json
 import random
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
 
 from loguru import logger
 from sqlalchemy import func
@@ -24,6 +24,8 @@ from app.hotlist.models import (
     HotRankHistory,
     HotRuleHit,
     HotSource,
+    HotTopic,
+    HotTopicSource,
 )
 from app.hotlist.services import keyword_rules, push_service, ranking
 from app.hotlist.services.adapters import get as get_adapter
@@ -45,22 +47,36 @@ class CrawlResult:
     total_items: int = 0
     source_count: int = 0
     failed_count: int = 0
-    per_source: dict[str, str] = field(default_factory=dict)  # source_id -> success/failed
+    # source_id -> success/failed
+    per_source: dict[str, str] = field(default_factory=dict)
 
 
-def run_crawl(db: Session, source_ids: list[str] | None = None, trigger: str = "cron") -> CrawlResult:
-    """跑一批抓取。source_ids 为空跑全部 enabled 源；串行执行，任一源失败不阻塞其他源。"""
+def run_crawl(
+    db: Session,
+    source_ids: list[str] | None = None,
+    trigger: str = "cron",
+) -> CrawlResult:
+    """跑一批抓取。source_ids 为空跑全部待抓源（见 pending_sources：源自身未被熔断
+    且被至少一个启用中的主题启用；无主题时退化为全部 enabled 源）；
+    串行执行，任一源失败不阻塞其他源。"""
     crawl_time = datetime.now(timezone.utc)
     stat_date = crawl_time.strftime("%Y-%m-%d")
 
-    query = db.query(HotSource).filter(HotSource.enabled.is_(True))
     if source_ids:
-        query = query.filter(HotSource.id.in_(source_ids))
-    sources = query.order_by(HotSource.sort_order.asc()).all()
+        sources = (
+            db.query(HotSource)
+            .filter(HotSource.enabled.is_(True), HotSource.id.in_(source_ids))
+            .order_by(HotSource.sort_order.asc())
+            .all()
+        )
+    else:
+        from app.hotlist.services.topic_service import pending_sources
+
+        sources = pending_sources(db)
 
     result = CrawlResult(crawl_time=crawl_time, source_count=len(sources))
     status_rows: list[dict] = []
-    newly_hit_rule_ids: set[int] = set()
+    newly_hit_topic_ids: set[int] = set()
 
     for source in sources:
         try:
@@ -84,15 +100,24 @@ def run_crawl(db: Session, source_ids: list[str] | None = None, trigger: str = "
             write_rank_history(db, touched, crawl_time)
 
             current_urls = {normalize_url(e.url) for e in entries if e.url}
-            detect_off_list(db, source.id, prev_crawl_time, current_urls, crawl_time)
+            detect_off_list(
+                db, source.id, prev_crawl_time, current_urls, crawl_time
+            )
 
             recompute_weights(db, source, touched)
-            newly_hit_rule_ids |= match_rules_and_record_hits(db, source.id, touched)
+            newly_hit_topic_ids |= match_rules_and_record_hits(
+                db, source.id, touched
+            )
             db.commit()
 
             update_source_status(db, source, ok=True, fetched=len(entries))
             status_rows.append(
-                {"source_id": source.id, "status": "success", "item_count": len(entries), "error": ""}
+                {
+                    "source_id": source.id,
+                    "status": "success",
+                    "item_count": len(entries),
+                    "error": "",
+                }
             )
             result.total_items += len(entries)
             result.per_source[source.id] = "success"
@@ -102,9 +127,16 @@ def run_crawl(db: Session, source_ids: list[str] | None = None, trigger: str = "
             # rollback 后原对象已过期，重新拿一次避免脏状态
             fresh_source = db.get(HotSource, source.id)
             if fresh_source is not None:
-                update_source_status(db, fresh_source, ok=False, error=str(exc))
+                update_source_status(
+                    db, fresh_source, ok=False, error=str(exc)
+                )
             status_rows.append(
-                {"source_id": source.id, "status": "failed", "item_count": 0, "error": str(exc)[:500]}
+                {
+                    "source_id": source.id,
+                    "status": "failed",
+                    "item_count": 0,
+                    "error": str(exc)[:500],
+                }
             )
             result.failed_count += 1
             result.per_source[source.id] = "failed"
@@ -112,18 +144,23 @@ def run_crawl(db: Session, source_ids: list[str] | None = None, trigger: str = "
 
     write_crawl_record(db, result, stat_date, trigger, status_rows)
 
-    # 批次内累积后统一评估推送（而不是每个源命中就推一次），避免同一规则在一次批次里
+    # 批次内累积后统一评估推送（而不是每个源命中就推一次），避免同一主题在一次批次里
     # 因为命中分散在多个源而被拆成好几条推送消息
-    for rule_id in newly_hit_rule_ids:
-        push_service.notify_rule_hits(db, rule_id)
+    for topic_id in newly_hit_topic_ids:
+        push_service.notify_topic_hits(db, topic_id)
 
     return result
 
 
 def upsert_items(
-    db: Session, source: HotSource, entries: list[RawEntry], crawl_time: datetime, stat_date: str
+    db: Session,
+    source: HotSource,
+    entries: list[RawEntry],
+    crawl_time: datetime,
+    stat_date: str,
 ) -> list[tuple[HotItem, int]]:
-    """按 (source_id, normalize_url(url)) upsert；url 为空的条目按 (source_id, stat_date, title) 兜底查。
+    """按 (source_id, normalize_url(url)) upsert；url 为空的条目按
+    (source_id, stat_date, title) 兜底查。
     返回本批次触达的 (item, rank)，供榜位历史/权重复用，避免重复查询。"""
     touched: list[tuple[HotItem, int]] = []
     for entry in entries:
@@ -131,7 +168,11 @@ def upsert_items(
         if not title:
             continue
         url = normalize_url(entry.url)[:1024]
-        mobile_url = normalize_url(entry.mobile_url)[:1024] if entry.mobile_url else ""
+        mobile_url = (
+            normalize_url(entry.mobile_url)[:1024]
+            if entry.mobile_url
+            else ""
+        )
 
         if url:
             existing = (
@@ -186,13 +227,42 @@ def upsert_items(
             if entry.metrics:
                 item.metrics = json.dumps(entry.metrics, ensure_ascii=False)
             item.updated_at = crawl_time
+        # RSS feed 自带全文（content:encoded）→ 顺带写全文缓存，L2 放大时不再发请求
+        if entry.full_content:
+            _upsert_full_content(db, item, entry.full_content, crawl_time)
         touched.append((item, entry.rank))
     return touched
 
 
-def write_rank_history(db: Session, touched: list[tuple[HotItem, int]], crawl_time: datetime) -> None:
+def _upsert_full_content(
+    db: Session, item: HotItem, content: str, crawl_time: datetime
+) -> None:
+    """全文缓存 upsert：RSS 自带的正文直接入库（同一 item 只写一次，不覆盖人工抓取结果）。"""
+    from app.hotlist.models import HotItemContent
+
+    cached = db.get(HotItemContent, item.id)
+    if cached is not None and cached.status == "success":
+        return  # 已有成功缓存（可能来自页面抓取），不覆盖
+    db.add(
+        HotItemContent(
+            item_id=item.id,
+            content=content,
+            char_count=len(content),
+            status="success",
+            fetched_at=crawl_time,
+        )
+    )
+
+
+def write_rank_history(
+    db: Session,
+    touched: list[tuple[HotItem, int]],
+    crawl_time: datetime,
+) -> None:
     for item, rank in touched:
-        db.add(HotRankHistory(item_id=item.id, rank=rank, crawl_time=crawl_time))
+        db.add(
+            HotRankHistory(item_id=item.id, rank=rank, crawl_time=crawl_time)
+        )
 
 
 def detect_off_list(
@@ -227,52 +297,132 @@ def detect_off_list(
         item.rank = 0
 
 
-def recompute_weights(db: Session, source: HotSource, touched: list[tuple[HotItem, int]]) -> None:
+def recompute_weights(
+    db: Session,
+    source: HotSource,
+    touched: list[tuple[HotItem, int]],
+) -> None:
     if not touched:
         return
     now = datetime.now(timezone.utc)
     weight_config = ranking.get_weight_config(db)
     for item, _rank in touched:
         ranks = json.loads(item.ranks_json or "[]")
-        decay = ranking.decay_factor(source.decay_half_life_hours, hours_since(item.published_at, now))
-        item.weight = ranking.calculate_weight(ranks, item.crawl_count, weight_config=weight_config, decay=decay)
+        decay = ranking.decay_factor(
+            source.decay_half_life_hours,
+            hours_since(item.published_at, now),
+        )
+        item.weight = ranking.calculate_weight(
+            ranks,
+            item.crawl_count,
+            weight_config=weight_config,
+            decay=decay,
+        )
 
 
-def match_rules_and_record_hits(db: Session, source_id: str, touched: list[tuple[HotItem, int]]) -> set[int]:
-    """用当前源适用的启用规则跑一遍标题匹配，新命中写 HotRuleHit（(rule_id, item_id) 去重，
-    同一条目对同一规则只记一次——重复出现在榜单上不会重复计命中/重复推送）。
-    返回本次新增了命中的规则 id 集合，供调用方决定要不要触发推送评估。"""
+def match_rules_and_record_hits(
+    db: Session,
+    source_id: str,
+    touched: list[tuple[HotItem, int]],
+) -> set[int]:
+    """用「引用了该源且启用」的主题跑一遍规则匹配，新命中写 HotRuleHit（结构不变）。
+
+    返回本批次有新命中的 **topic_id** 集合（函数名保留，返回语义从 rule_id 改为 topic_id），
+    供调用方按主题触发推送评估——一个主题配多条词组规则时只推一条消息。
+
+    规则：
+      1. 只处理「引用了 source_id 且 enabled」的主题（走 hot_topic_sources + 主题 enabled）；
+      2. 主题有 group 规则 → 匹配逻辑照旧，命中写 HotRuleHit(rule_id=命中规则id, ...)；
+      3. 主题无 group 规则 → 视为全部命中（rule_id=0 表示"无规则命中"），但**仅当该主题
+         hit_notify_enabled=True 时写**，否则不写（防命中表膨胀 + 防 hit_only 误显示）；
+      4. (rule_id, item_id) 去重保留：同一条目对同一规则只记一次命中。
+    """
     if not touched:
         return set()
-    word_groups, _filter_words, global_filters = keyword_rules.load_rules(db, source_id=source_id)
-    if not word_groups and not global_filters:
+
+    topic_ids = [
+        row[0]
+        for row in db.query(HotTopicSource.topic_id)
+        .join(HotTopic, HotTopic.id == HotTopicSource.topic_id)
+        .filter(
+            HotTopicSource.source_id == source_id,
+            HotTopicSource.enabled.is_(True),
+            HotTopic.enabled.is_(True),
+        )
+        .all()
+    ]
+    if not topic_ids:
         return set()
 
     item_ids = [item.id for item, _rank in touched]
     existing = {
         (rule_id, item_id)
-        for rule_id, item_id in db.query(HotRuleHit.rule_id, HotRuleHit.item_id)
+        for rule_id, item_id in db.query(
+            HotRuleHit.rule_id, HotRuleHit.item_id
+        )
         .filter(HotRuleHit.item_id.in_(item_ids))
         .all()
     }
 
     now = datetime.now(timezone.utc)
-    newly_hit_rule_ids: set[int] = set()
-    for item, _rank in touched:
-        # 标题 + 摘要一起匹配：GitHub/HN/RSS 这类源，真正的信号常在摘要里
-        # （比如仓库名 "nautilus_trader" 不含「trading」，但 description 写着 "trading engine"）
-        match_text = f"{item.title} {item.summary}"
-        for rule_id in keyword_rules.match_groups(match_text, word_groups, global_filters):
-            key = (rule_id, item.id)
-            if key in existing:
-                continue
-            db.add(HotRuleHit(rule_id=rule_id, item_id=item.id, matched_at=now, notified=False))
-            existing.add(key)
-            newly_hit_rule_ids.add(rule_id)
-    return newly_hit_rule_ids
+    newly_hit_topic_ids: set[int] = set()
+
+    for topic_id in topic_ids:
+        topic = db.get(HotTopic, topic_id)
+        if topic is None:
+            continue
+        word_groups, _filter_words, global_filters = keyword_rules.load_rules(
+            db, topic_id=topic_id
+        )
+
+        for item, _rank in touched:
+            # 标题 + 摘要一起匹配：GitHub/HN/RSS 这类源，真正的信号常在摘要里
+            # （比如仓库名 "nautilus_trader" 不含「trading」，
+            # 但 description 写着 "trading engine"）
+            match_text = f"{item.title} {item.summary}"
+            if word_groups:
+                for rule_id in keyword_rules.match_groups(
+                    match_text, word_groups, global_filters
+                ):
+                    key = (rule_id, item.id)
+                    if key in existing:
+                        continue
+                    db.add(
+                        HotRuleHit(
+                            rule_id=rule_id,
+                            item_id=item.id,
+                            matched_at=now,
+                            notified=False,
+                        )
+                    )
+                    existing.add(key)
+                    newly_hit_topic_ids.add(topic_id)
+            else:
+                # 主题没有 group 规则 → 全部命中；仅当开了实时命中推送才落 rule_id=0 行
+                if topic.hit_notify_enabled:
+                    key = (0, item.id)
+                    if key in existing:
+                        continue
+                    db.add(
+                        HotRuleHit(
+                            rule_id=0,
+                            item_id=item.id,
+                            matched_at=now,
+                            notified=False,
+                        )
+                    )
+                    existing.add(key)
+                    newly_hit_topic_ids.add(topic_id)
+    return newly_hit_topic_ids
 
 
-def update_source_status(db: Session, source: HotSource, ok: bool, error: str = "", fetched: int = 0) -> None:
+def update_source_status(
+    db: Session,
+    source: HotSource,
+    ok: bool,
+    error: str = "",
+    fetched: int = 0,
+) -> None:
     now = datetime.now(timezone.utc)
     source.last_fetched_at = now
     if ok:
@@ -292,7 +442,11 @@ def update_source_status(db: Session, source: HotSource, ok: bool, error: str = 
 
 
 def write_crawl_record(
-    db: Session, result: CrawlResult, stat_date: str, trigger: str, status_rows: list[dict]
+    db: Session,
+    result: CrawlResult,
+    stat_date: str,
+    trigger: str,
+    status_rows: list[dict],
 ) -> None:
     record = HotCrawlRecord(
         crawl_time=result.crawl_time,
@@ -311,28 +465,41 @@ def write_crawl_record(
 
 
 def _delete_in_batches(db: Session, model, column, ids: list) -> int:
-    """按 SQLITE_BATCH_SIZE 分批 DELETE ... WHERE column IN (...)，避开 SQLite 999 参数上限。"""
+    """按 SQLITE_BATCH_SIZE 分批 DELETE ... WHERE column IN (...)，避开
+    SQLite 999 参数上限。"""
     deleted = 0
     for i in range(0, len(ids), SQLITE_BATCH_SIZE):
         chunk = ids[i : i + SQLITE_BATCH_SIZE]
         deleted += (
-            db.query(model).filter(column.in_(chunk)).delete(synchronize_session=False)
+            db.query(model)
+            .filter(column.in_(chunk))
+            .delete(synchronize_session=False)
         )
     return deleted
 
 
 def cleanup_old_items(db: Session) -> int:
     """保留策略：先删超过 RETENTION_DAYS 天（按 stat_date）的条目，再删至最多 MAX_ITEMS 条
-    （按 last_crawl_time 保留最新）。语义沿用旧 ai_trending/services/collector.py::cleanup_old_items，
+    （按 last_crawl_time 保留最新）。
+    语义沿用旧 ai_trending/services/collector.py::cleanup_old_items，
     删除前先显式清关联的 HotRankHistory / HotRuleHit（SQLite 外键默认不强制，不能依赖 DB 级
     CASCADE），避免清理后榜位曲线/命中记录悬空。同时按同样的 RETENTION_DAYS 清理过期的
     HotCrawlRecord + HotCrawlSourceStatus（批次记录本身不大，但也不该无限增长）。
 
-    main.py lifespan 里 scheduler_jobs.register_all_enabled_jobs() 会把它挂成每日 03:30 job。
+    main.py lifespan 里 scheduler_jobs.register_all_enabled_jobs()
+    会把它挂成每日 03:30 job。
     """
-    cutoff_date = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d")
+    cutoff_date = (
+        datetime.now(timezone.utc)
+        - timedelta(days=RETENTION_DAYS)
+    ).strftime("%Y-%m-%d")
 
-    expired_ids = [row[0] for row in db.query(HotItem.id).filter(HotItem.stat_date < cutoff_date).all()]
+    expired_ids = [
+        row[0]
+        for row in db.query(HotItem.id)
+        .filter(HotItem.stat_date < cutoff_date)
+        .all()
+    ]
     total = db.query(HotItem).count()
     if total > MAX_ITEMS:
         excess = total - MAX_ITEMS
@@ -347,17 +514,29 @@ def cleanup_old_items(db: Session) -> int:
 
     deleted_items = 0
     if expired_ids:
-        _delete_in_batches(db, HotRankHistory, HotRankHistory.item_id, expired_ids)
+        _delete_in_batches(
+            db, HotRankHistory, HotRankHistory.item_id, expired_ids
+        )
         _delete_in_batches(db, HotRuleHit, HotRuleHit.item_id, expired_ids)
-        deleted_items = _delete_in_batches(db, HotItem, HotItem.id, expired_ids)
+        deleted_items = _delete_in_batches(
+            db, HotItem, HotItem.id, expired_ids
+        )
         db.commit()
 
     expired_record_ids = [
-        row[0] for row in db.query(HotCrawlRecord.id).filter(HotCrawlRecord.stat_date < cutoff_date).all()
+        row[0]
+        for row in db.query(HotCrawlRecord.id)
+        .filter(HotCrawlRecord.stat_date < cutoff_date)
+        .all()
     ]
     if expired_record_ids:
-        _delete_in_batches(db, HotCrawlSourceStatus, HotCrawlSourceStatus.crawl_record_id, expired_record_ids)
-        _delete_in_batches(db, HotCrawlRecord, HotCrawlRecord.id, expired_record_ids)
+        _delete_in_batches(
+            db, HotCrawlSourceStatus, HotCrawlSourceStatus.crawl_record_id,
+            expired_record_ids,
+        )
+        _delete_in_batches(
+            db, HotCrawlRecord, HotCrawlRecord.id, expired_record_ids
+        )
         db.commit()
 
     return deleted_items

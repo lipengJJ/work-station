@@ -1,3 +1,5 @@
+"""热点源字典与健康状态表。"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -27,7 +29,9 @@ class HotSource(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(64), default="")
-    source_kind: Mapped[str] = mapped_column(String(16), default="hotlist", index=True)
+    source_kind: Mapped[str] = mapped_column(
+        String(16), default="hotlist", index=True
+    )
     """hotlist = 中文热榜；tech = 技术源。仅用于前端分组与筛选，不影响抓取逻辑。"""
 
     adapter: Mapped[str] = mapped_column(String(32), default="")
@@ -47,14 +51,30 @@ class HotSource(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
+    group_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True
+    )
+    """所属分组（hot_source_groups.id）。NULL = 未分组，前端归入「未分组」区。
+    分组是纯粹的组织方式（1:N），与主题（N:N，走 hot_topic_sources）正交，
+    不参与抓取调度与匹配逻辑。"""
+
     # ------------------------------------------------------------ 健康状态 ----
-    last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    last_status: Mapped[str] = mapped_column(String(16), default="")  # success / failed / ""
+    last_fetched_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    # success / failed / ""
+    last_status: Mapped[str] = mapped_column(String(16), default="")
     last_error: Mapped[str] = mapped_column(Text, default="")
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
     fail_count: Mapped[int] = mapped_column(Integer, default=0)
-    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     total_fetched: Mapped[int] = mapped_column(Integer, default=0)
 
-    created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )

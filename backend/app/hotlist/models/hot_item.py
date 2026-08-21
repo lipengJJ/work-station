@@ -1,3 +1,5 @@
+"""热点条目表。"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -58,11 +60,17 @@ class HotItem(Base):
     """历史榜位缓存（最近 N 次，JSON 数组）。权重公式要全部榜位，
     每次去 hot_rank_history 聚合太贵，写入时顺带更新这一列。"""
 
-    first_crawl_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    last_crawl_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    first_crawl_time: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    last_crawl_time: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True
+    )
     crawl_count: Mapped[int] = mapped_column(Integer, default=1)
 
-    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     """源给了才有（RSS / arXiv），热榜类基本为 None。参与时间衰减计算。"""
 
     metrics: Mapped[str] = mapped_column(Text, default="{}")
@@ -73,5 +81,9 @@ class HotItem(Base):
     weight: Mapped[float] = mapped_column(Float, default=0.0, index=True)
     """写入时算好，列表页直接 ORDER BY weight DESC，不在查询时现算。"""
 
-    created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )

@@ -704,3 +704,22 @@ RAG
    换成 `last_crawl_time >= :today_start` / `first_crawl_time >= :today_start`；
 4. 清理任务按 `last_crawl_time` 判断过期（多久没再上榜），而不是按 `stat_date`——
    否则一个持续在榜三周的项目会被当成「三周前的旧数据」删掉。
+
+---
+
+## 附录 C · Phase 5~8 在哪
+
+主题订阅、OPML 导入、AI 日报/周报、对象存储发布与通知，
+独立成文在 [TOPIC_DIGEST_DESIGN.md](./TOPIC_DIGEST_DESIGN.md)（v2 最终版），
+含完整数据模型、三级漏斗分析流水线、效果度量方法与 Phase 5~8 实施清单，可直接按章节执行。
+
+执行顺序：本文档 Phase 0~4（热点聚合底座）→ TOPIC_DIGEST_DESIGN Phase 5~8（主题与报告）。
+
+两处会**回改本文档已完成部分**，实现 Phase 5 时注意：
+
+1. `crawl_service` 取待抓源的 SQL 要改成走 `hot_topic_sources` 关联表
+   （源被调度的条件从「源自身 enabled」变为「被至少一个启用中的主题启用」），
+   `HotSource.enabled` 退化为全局熔断开关。
+2. Phase 3 的 `HotKeywordRule` 上那组 `notify_*` 字段要迁到 `HotTopic` 上——
+   规则只负责「命中不命中」，「发给谁、多久发一次」属于主题。
+   若 Phase 3、5 连着做，建议 Phase 3 直接不加这组字段，省一次迁移。

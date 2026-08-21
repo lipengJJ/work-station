@@ -37,11 +37,29 @@ class RssAdapter(HotSourceAdapter):
             if not title or not link:
                 continue
             summary = strip_html(entry.get("description") or "")
+            # 全文优先 content:encoded（多数技术博客直接输出全文），没有再看 content 列表
+            full_content = ""
+            raw_full = entry.get("content:encoded")
+            if not raw_full and entry.get("content"):
+                try:
+                    raw_full = " ".join(
+                        c.get("value", "") for c in entry["content"]
+                    )
+                except (TypeError, KeyError):
+                    raw_full = ""
+            if raw_full:
+                full_content = strip_html(str(raw_full))
+                # feed 把全文塞进 description 时，summary 就是全文的截断，不必重复存
+                if not summary:
+                    summary = full_content[:512]
             published_at = parse_struct_time(
                 entry.get("published_parsed") or entry.get("updated_parsed")
             )
             entries.append(
-                RawEntry(rank=idx, title=title, url=link, summary=summary, published_at=published_at)
+                RawEntry(
+                    rank=idx, title=title, url=link, summary=summary,
+                    published_at=published_at, full_content=full_content,
+                )
             )
         return entries
 

@@ -23,6 +23,7 @@
 | [Skill 平台技术设计](SKILL_PLATFORM_TECHNICAL_DESIGN.md) | Skill 管理中心、运行服务与 AI 组合请求的技术设计（Draft v1.1） |
 | [热点聚合模块 · 融合技术设计](HOTLIST_INTEGRATION_DESIGN.md) | TrendRadar 核心逻辑融合方案（app/hotlist 统一承载，ai_trending 下线） |
 | [热点聚合模块 · 实施交接文档](HOTLIST_IMPLEMENTATION_HANDOFF.md) | 分阶段实施细则、当前进度与待办 |
+| [主题订阅与 AI 日报/周报设计 · v2](TOPIC_DIGEST_DESIGN.md) | RSS 主题化管理、三级漏斗分析、对象存储发布与通知（Phase 5~8） |
 
 ## 相关目录
 

@@ -24,16 +24,22 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '摘要' },
       },
       {
-        name: 'HotlistRules',
-        path: 'rules',
-        component: () => import('#/views/hotlist/rules/index.vue'),
-        meta: { title: '规则' },
-      },
-      {
         name: 'HotlistSources',
         path: 'sources',
         component: () => import('#/views/hotlist/sources/index.vue'),
         meta: { title: '源管理' },
+      },
+      {
+        name: 'HotlistTopics',
+        path: 'topics',
+        component: () => import('#/views/hotlist/topics/index.vue'),
+        meta: { title: '主题订阅' },
+      },
+      {
+        name: 'HotlistTopicReport',
+        path: 'topics/:id/reports/:reportId',
+        component: () => import('#/views/hotlist/topics/report.vue'),
+        meta: { title: '报告', activePath: '/hotlist/topics' },
       },
     ],
   },

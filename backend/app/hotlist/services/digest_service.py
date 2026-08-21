@@ -4,7 +4,8 @@
 （400 行、17 个参数，是 CLI 里为避免全局状态一路传参的产物）：
 
     select_scope(db, mode, stat_date, source_ids) -> list[HotItem]
-    match_groups(items, word_groups, global_filters)  -> dict[rule_id, list[HotItem]]
+    match_groups(items, word_groups, global_filters)
+    -> dict[rule_id, list[HotItem]]
     rank_within_group(items, max_count)           -> list[HotItem]
     build_digest(db, mode, stat_date, source_ids) -> dict
 """
@@ -38,12 +39,16 @@ def match_groups(
     grouped: dict[int, list[HotItem]] = {}
     for item in items:
         match_text = f"{item.title} {item.summary}"
-        for rule_id in keyword_rules.match_groups(match_text, word_groups, global_filters):
+        for rule_id in keyword_rules.match_groups(
+            match_text, word_groups, global_filters
+        ):
             grouped.setdefault(rule_id, []).append(item)
     return grouped
 
 
-def rank_within_group(items: list[HotItem], max_count: int = 0) -> list[HotItem]:
+def rank_within_group(
+    items: list[HotItem], max_count: int = 0
+) -> list[HotItem]:
     """组内排序（按 weight 降序）+ max_count 限量（0 = 不限）。"""
     ordered = sorted(items, key=lambda it: (it.weight, it.id), reverse=True)
     return ordered[:max_count] if max_count > 0 else ordered
@@ -59,8 +64,17 @@ def build_digest(
 
     if not word_groups:
         ranked = rank_within_group(items)
-        groups_out = [{"rule_id": None, "display_name": "全部条目", "items": ranked}] if ranked else []
-        return {"mode": mode, "stat_date": stat_date, "total_items": len(items), "groups": groups_out}
+        groups_out = (
+            [{"rule_id": None, "display_name": "全部条目", "items": ranked}]
+            if ranked
+            else []
+        )
+        return {
+            "mode": mode,
+            "stat_date": stat_date,
+            "total_items": len(items),
+            "groups": groups_out,
+        }
 
     grouped = match_groups(items, word_groups, global_filters)
     meta_by_rule_id = {g["rule_id"]: g for g in word_groups}
@@ -78,4 +92,9 @@ def build_digest(
         )
     groups_out.sort(key=lambda g: -len(g["items"]))
 
-    return {"mode": mode, "stat_date": stat_date, "total_items": len(items), "groups": groups_out}
+    return {
+        "mode": mode,
+        "stat_date": stat_date,
+        "total_items": len(items),
+        "groups": groups_out,
+    }

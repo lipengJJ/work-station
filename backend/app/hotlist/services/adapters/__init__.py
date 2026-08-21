@@ -5,7 +5,8 @@ HotSource.adapter 字段按 adapter_key 查表即可接入，controller / crawl_
 """
 from __future__ import annotations
 
-from app.hotlist.services.adapters import arxiv  # noqa: F401  import 触发 register()
+# import 触发 register()
+from app.hotlist.services.adapters import arxiv  # noqa: F401
 from app.hotlist.services.adapters import github  # noqa: F401
 from app.hotlist.services.adapters import hackernews  # noqa: F401
 from app.hotlist.services.adapters import huggingface  # noqa: F401

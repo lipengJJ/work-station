@@ -1,6 +1,7 @@
 """热点摘要：/api/hotlist/digest（需要登录）。
 
-GET /api/hotlist/digest?mode=daily|incremental|current&stat_date=YYYY-MM-DD&source_ids=a,b
+GET /api/hotlist/digest?mode=daily|incremental|current
+&stat_date=YYYY-MM-DD&source_ids=a,b
 三种模式条数关系：incremental <= current <= daily（同一天里，新增是当前榜单的子集，
 当前榜单又是当天全部条目的子集）。
 """
@@ -32,6 +33,10 @@ def get_digest(
     if mode not in VALID_MODES:
         raise HTTPException(400, f"未知模式: {mode}（可选：daily/incremental/current）")
     date_str = stat_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    ids = [s.strip() for s in source_ids.split(",") if s.strip()] if source_ids else []
+    ids = (
+        [s.strip() for s in source_ids.split(",") if s.strip()]
+        if source_ids
+        else []
+    )
     result = digest_service.build_digest(db, mode, date_str, ids or None)
     return DigestOut.model_validate(result)

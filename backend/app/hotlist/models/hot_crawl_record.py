@@ -1,3 +1,5 @@
+"""抓取批次及批次内源状态明细表。"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -15,13 +17,18 @@ class HotCrawlRecord(Base):
     __tablename__ = "hot_crawl_records"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    crawl_time: Mapped[datetime] = mapped_column(DateTime, unique=True, index=True)
+    crawl_time: Mapped[datetime] = mapped_column(
+        DateTime, unique=True, index=True
+    )
     stat_date: Mapped[str] = mapped_column(String(10), index=True)
     total_items: Mapped[int] = mapped_column(Integer, default=0)
     source_count: Mapped[int] = mapped_column(Integer, default=0)
     failed_count: Mapped[int] = mapped_column(Integer, default=0)
-    trigger: Mapped[str] = mapped_column(String(16), default="cron")  # cron / manual
-    created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # cron / manual
+    trigger: Mapped[str] = mapped_column(String(16), default="cron")
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
 
 
 class HotCrawlSourceStatus(Base):
@@ -33,6 +40,7 @@ class HotCrawlSourceStatus(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     crawl_record_id: Mapped[int] = mapped_column(Integer, index=True)
     source_id: Mapped[str] = mapped_column(String(64))
-    status: Mapped[str] = mapped_column(String(16), default="success")  # success / failed
+    # success / failed
+    status: Mapped[str] = mapped_column(String(16), default="success")
     item_count: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(Text, default="")

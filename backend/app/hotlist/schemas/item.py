@@ -1,7 +1,8 @@
+"""热点条目请求/响应模型。"""
 from __future__ import annotations
 
-import json
 from datetime import datetime
+import json
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 

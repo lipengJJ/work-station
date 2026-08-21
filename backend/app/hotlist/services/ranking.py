@@ -1,6 +1,7 @@
 """统一权重公式：把「榜位」这一个信号转成可跨源比较的分数。
 
-移植自 TrendRadar (https://github.com/sansan0/TrendRadar) core/analyzer.py::calculate_news_weight。
+移植自 TrendRadar core/analyzer.py::calculate_news_weight
+(https://github.com/sansan0/TrendRadar)。
 中文热榜（decay_half_life_hours=0）恒为纯榜位权重，即 TrendRadar 原本的行为；
 arXiv / RSS 等有发布时间的源接入衰减乘数后，一个公式覆盖两类源。
 """

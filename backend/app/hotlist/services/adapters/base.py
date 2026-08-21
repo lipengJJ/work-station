@@ -9,11 +9,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-import requests
 from pydantic import BaseModel, Field
+import requests
 
 DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; WorkBench-Hotlist/1.0; +https://github.com)",
+    "User-Agent": (
+        "Mozilla/5.0 (compatible; WorkBench-Hotlist/1.0; "
+        "+https://github.com)"
+    ),
 }
 
 
@@ -27,6 +30,9 @@ class RawEntry(BaseModel):
     summary: str = ""
     published_at: datetime | None = None
     metrics: dict = Field(default_factory=dict)  # points / stars_today… 仅展示
+    full_content: str = ""
+    """feed 自带的正文纯文本（如 RSS content:encoded）。非空时 crawl_service 会顺带
+    写入 hot_item_contents 缓存——L2 全文放大阶段「先看 RSS 里有没有」就不用再发请求。"""
 
 
 class HotSourceAdapterError(Exception):
@@ -48,21 +54,31 @@ class HotSourceAdapter(ABC):
     def fetch(self, params: dict) -> list[RawEntry]:
         """返回有序列表（rank 已填）。失败抛 HotSourceAdapterError。"""
 
-    def _request(self, url: str, timeout: int = 20, headers: dict | None = None) -> requests.Response:
+    def _request(
+        self, url: str, timeout: int = 20, headers: dict | None = None
+    ) -> requests.Response:
         """统一 GET：超时 + 异常语义收敛为 HotSourceAdapterError。"""
         try:
-            resp = requests.get(url, timeout=timeout, headers=headers or DEFAULT_HEADERS)
+            resp = requests.get(
+                url, timeout=timeout, headers=headers or DEFAULT_HEADERS
+            )
             resp.raise_for_status()
             return resp
         except requests.RequestException as exc:
-            raise HotSourceAdapterError(f"{self.adapter_key} 请求失败: {exc}") from exc
+            raise HotSourceAdapterError(
+                f"{self.adapter_key} 请求失败: {exc}"
+            ) from exc
 
-    def _get_json(self, url: str, timeout: int = 20, headers: dict | None = None):
+    def _get_json(
+        self, url: str, timeout: int = 20, headers: dict | None = None
+    ):
         resp = self._request(url, timeout=timeout, headers=headers)
         try:
             return resp.json()
         except ValueError as exc:
-            raise HotSourceAdapterError(f"{self.adapter_key} 响应不是合法 JSON") from exc
+            raise HotSourceAdapterError(
+                f"{self.adapter_key} 响应不是合法 JSON"
+            ) from exc
 
 
 registry: dict[str, HotSourceAdapter] = {}

@@ -1,13 +1,13 @@
+"""词组规则与全局过滤词请求/响应模型。"""
 from __future__ import annotations
 
-import json
 from datetime import datetime
+import json
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MAX_WORDS_PER_LIST = 30
 MAX_WORD_LENGTH = 100
-ALLOWED_NOTIFY_FREQUENCIES = ("realtime", "1h", "6h", "12h", "daily")
 
 
 class WordIn(BaseModel):
@@ -29,28 +29,15 @@ class RuleIn(BaseModel):
     normal_words: list[WordIn] = Field(default_factory=list)
     required_words: list[WordIn] = Field(default_factory=list)
     exclude_words: list[WordIn] = Field(default_factory=list)
-    source_ids: list[str] = Field(default_factory=list)
     max_count: int = Field(0, ge=0)
     enabled: bool = True
     sort_order: int = 0
-
-    notify_enabled: bool = False
-    notify_channel_ids: list[int] = Field(default_factory=list)
-    notify_time_start: str | None = None
-    notify_time_end: str | None = None
-    notify_frequency: str = "realtime"
-    notify_only_on_hit: bool = True
+    topic_id: int | None = None
+    """所属主题。创建时由路由 path 的 topic_id 决定；更新时不允许改归属（controller 校验）。"""
 
     _check_normal = field_validator("normal_words")(_check_word_count)
     _check_required = field_validator("required_words")(_check_word_count)
     _check_exclude = field_validator("exclude_words")(_check_word_count)
-
-    @field_validator("notify_frequency")
-    @classmethod
-    def _check_frequency(cls, value: str) -> str:
-        if value not in ALLOWED_NOTIFY_FREQUENCIES:
-            raise ValueError(f"notify_frequency 需为 {list(ALLOWED_NOTIFY_FREQUENCIES)} 之一")
-        return value
 
 
 class GlobalFilterIn(BaseModel):
@@ -75,30 +62,27 @@ class RuleOut(BaseModel):
 
     id: int
     rule_type: str
+    topic_id: int | None = None
     display_name: str = ""
     normal_words: list[dict] = Field(default_factory=list)
     required_words: list[dict] = Field(default_factory=list)
     exclude_words: list[dict] = Field(default_factory=list)
-    source_ids: list[str] = Field(default_factory=list)
     max_count: int = 0
     enabled: bool = True
     sort_order: int = 0
 
-    notify_enabled: bool = False
-    notify_channel_ids: list[int] = Field(default_factory=list)
-    notify_time_start: str | None = None
-    notify_time_end: str | None = None
-    notify_frequency: str = "realtime"
-    notify_only_on_hit: bool = True
-
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
-    _parse_normal = field_validator("normal_words", mode="before")(_parse_json_list)
-    _parse_required = field_validator("required_words", mode="before")(_parse_json_list)
-    _parse_exclude = field_validator("exclude_words", mode="before")(_parse_json_list)
-    _parse_sources = field_validator("source_ids", mode="before")(_parse_json_list)
-    _parse_channels = field_validator("notify_channel_ids", mode="before")(_parse_json_list)
+    _parse_normal = field_validator("normal_words", mode="before")(
+        _parse_json_list
+    )
+    _parse_required = field_validator("required_words", mode="before")(
+        _parse_json_list
+    )
+    _parse_exclude = field_validator("exclude_words", mode="before")(
+        _parse_json_list
+    )
 
 
 class RuleImportIn(BaseModel):
@@ -112,12 +96,11 @@ class RuleImportOut(BaseModel):
 
 class RulePreviewIn(BaseModel):
     """试跑：不落库，拿当天已抓数据跑一遍匹配。直接传待测词，不依赖已保存的规则 id
-    （这样「编辑中还没保存」也能预览）。"""
+    （这样「编辑中还没保存」也能预览）。源范围由路由 path 的主题决定。"""
 
     normal_words: list[WordIn] = Field(default_factory=list)
     required_words: list[WordIn] = Field(default_factory=list)
     exclude_words: list[WordIn] = Field(default_factory=list)
-    source_ids: list[str] = Field(default_factory=list)
     sample_limit: int = Field(20, ge=1, le=100)
 
 

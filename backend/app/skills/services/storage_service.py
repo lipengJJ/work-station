@@ -12,8 +12,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # backend/app/skills/services/storage_service.py -> parents[4] 是 workbench/backend 的
-# 上一级，即 workbench/；skills/ 和 backend/ 是同级目录，内置 Skill 都放在 workbench/skills/ 下。
-BUILTIN_ROOT: Path = Path(__file__).resolve().parents[4] / "skills"
+# 上一级，即 workbench/；仓库自带的「内置 Skill」放这里（随代码走，如 gemini-travel-planner）。
+REPO_SKILLS_ROOT: Path = Path(__file__).resolve().parents[4] / "skills"
+
+# 用户自行导入/安装的 Skill 放仓库之外的独立目录，避免把上传内容写进 Git 工作区。
+# 位置可用环境变量 WORKBENCH_SKILLS_DIR 覆盖，默认 ~/.workbench/skills。
+EXTERNAL_SKILLS_ROOT: Path = Path(
+    os.environ.get("WORKBENCH_SKILLS_DIR", "") or (Path.home() / ".workbench" / "skills")
+).expanduser()
+
+# 兼容旧代码里引用 BUILTIN_ROOT 的地方（仅仓库根）。
+BUILTIN_ROOT: Path = REPO_SKILLS_ROOT
 
 MAX_FILE_BYTES = 512 * 1024  # 单个文件预览上限 512KB，超过的截断读取而不是拒绝整个请求
 MAX_HASH_FILE_BYTES = 4 * 1024 * 1024  # 参与内容哈希计算的单文件上限，超大文件跳过内容只算路径
@@ -27,6 +36,14 @@ class SkillPathError(ValueError):
     """请求的相对路径试图逃逸 Skill 根目录，或指向不允许访问的内容。"""
 
 
+def _all_skill_roots() -> list[Path]:
+    """扫描顺序：先仓库根、后外部根。同名 Skill 仓库根优先。"""
+    roots = [REPO_SKILLS_ROOT]
+    if EXTERNAL_SKILLS_ROOT != REPO_SKILLS_ROOT:
+        roots.append(EXTERNAL_SKILLS_ROOT)
+    return roots
+
+
 def resolve_skill_root(source_type: str, storage_path: str) -> Path:
     """
     根据 SkillVersion.source_type + storage_path 算出该版本内容在磁盘上的根目录。
@@ -36,7 +53,17 @@ def resolve_skill_root(source_type: str, storage_path: str) -> Path:
     if source_type != "builtin":
         # 第一阶段只登记内置 Skill，upload/local/github 来源留给后续阶段接入
         raise SkillPathError(f"暂不支持的 Skill 来源类型：{source_type}")
-    return _safe_join(BUILTIN_ROOT, storage_path)
+    # 先做路径合法性校验（禁止绝对路径 / .. 逃逸），再在仓库根与外部根里定位
+    if not storage_path or storage_path in {".", "/"}:
+        return REPO_SKILLS_ROOT
+    if os.path.isabs(storage_path) or ".." in Path(storage_path).parts:
+        raise SkillPathError(f"非法路径：{storage_path}")
+    for root in _all_skill_roots():
+        candidate = root / storage_path
+        if candidate.is_dir():
+            return candidate.resolve()
+    # 未命中任何根：回退到仓库根的安全拼接（保持旧行为，让后续 is_file 检查报“不存在”）
+    return _safe_join(REPO_SKILLS_ROOT, storage_path)
 
 
 def _safe_join(root: Path, relative: str) -> Path:
@@ -55,14 +82,20 @@ def _safe_join(root: Path, relative: str) -> Path:
 
 
 def list_builtin_skill_dirs() -> list[Path]:
-    """内置 Skill 的判定标准很简单：workbench/skills/ 下、直接子目录里有 SKILL.md 的都算。"""
-    if not BUILTIN_ROOT.is_dir():
-        return []
-    result = []
-    for entry in sorted(BUILTIN_ROOT.iterdir()):
-        if entry.is_dir() and not entry.is_symlink() and (entry / "SKILL.md").is_file():
-            result.append(entry)
-    return result
+    """内置 Skill 的判定标准：仓库根（workbench/skills/）或外部根（~/.workbench/skills/）
+    下、直接子目录里有 SKILL.md 的都算；同名时仓库根优先，外部根去重。"""
+    result: list[Path] = []
+    seen: set[str] = set()
+    for root in _all_skill_roots():
+        if not root.is_dir():
+            continue
+        for entry in sorted(root.iterdir()):
+            if entry.is_dir() and not entry.is_symlink() and (entry / "SKILL.md").is_file():
+                if entry.name in seen:
+                    continue
+                seen.add(entry.name)
+                result.append(entry)
+    return sorted(result, key=lambda p: p.name)
 
 
 @dataclass

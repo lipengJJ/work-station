@@ -26,3 +26,4 @@ playwright
 
 # ai_trending 热点聚合：RSS 2.0 / Atom 统一解析（InfoQ / 36氪 / arXiv）
 feedparser>=6.0
+boto3>=1.34

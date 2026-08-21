@@ -83,11 +83,17 @@ def _group_matches(title_lower: str, group: dict[str, Any]) -> bool:
     normal_words = group["normal"]
     exclude_words = group.get("exclude") or []
 
-    if required_words and not all(_word_matches(req, title_lower) for req in required_words):
+    if required_words and not all(
+        _word_matches(req, title_lower) for req in required_words
+    ):
         return False
-    if normal_words and not any(_word_matches(normal, title_lower) for normal in normal_words):
+    if normal_words and not any(
+        _word_matches(normal, title_lower) for normal in normal_words
+    ):
         return False
-    if exclude_words and any(_word_matches(exc, title_lower) for exc in exclude_words):
+    if exclude_words and any(
+        _word_matches(exc, title_lower) for exc in exclude_words
+    ):
         return False
     return bool(required_words or normal_words)
 
@@ -107,7 +113,9 @@ def matches_word_groups(
 
     title_lower = title.lower()
 
-    if global_filters and any(g.lower() in title_lower for g in global_filters):
+    if global_filters and any(
+        g.lower() in title_lower for g in global_filters
+    ):
         return False
 
     if not word_groups:
@@ -121,7 +129,9 @@ def matches_word_groups(
 
 
 def match_groups(
-    title: str, word_groups: list[dict[str, Any]], global_filters: list[str] | None = None
+    title: str,
+    word_groups: list[dict[str, Any]],
+    global_filters: list[str] | None = None,
 ) -> list[int]:
     """返回命中的规则 id 列表（可能同时命中多个词组）。与 matches_word_groups
     （只关心「是否至少命中一个」）不同，crawl_service 记录 HotRuleHit 需要精确知道
@@ -131,12 +141,15 @@ def match_groups(
     if not title.strip():
         return []
     title_lower = title.lower()
-    if global_filters and any(g.lower() in title_lower for g in global_filters):
+    if global_filters and any(
+        g.lower() in title_lower for g in global_filters
+    ):
         return []
     return [
         group["rule_id"]
         for group in word_groups
-        if group.get("rule_id") is not None and _group_matches(title_lower, group)
+        if group.get("rule_id") is not None
+        and _group_matches(title_lower, group)
     ]
 
 
@@ -188,7 +201,14 @@ def _load_word_list(json_text: str) -> list[dict[str, Any]]:
     words: list[dict[str, Any]] = []
     for item in raw:
         if isinstance(item, str):
-            words.append({"word": item, "is_regex": False, "pattern": None, "display_name": None})
+            words.append(
+                {
+                    "word": item,
+                    "is_regex": False,
+                    "pattern": None,
+                    "display_name": None,
+                }
+            )
             continue
         if not isinstance(item, dict) or not item.get("word"):
             continue
@@ -208,12 +228,16 @@ def _load_word_list(json_text: str) -> list[dict[str, Any]]:
 
 
 # --------------------------------------------------------------- 加载入口 ----
-def load_rules(db: Session, source_id: str | None = None) -> tuple[list[dict[str, Any]], list[Any], list[str]]:
-    """从 hot_keyword_rules 表加载启用中的规则。返回 (word_groups, filter_words, global_filters)，
+def load_rules(
+    db: Session, topic_id: int | None = None
+) -> tuple[list[dict[str, Any]], list[Any], list[str]]:
+    """从 hot_keyword_rules 表加载启用中的规则。返回
+    (word_groups, filter_words, global_filters)，
     与 TrendRadar load_frequency_words() 同签名，matches_word_groups() 可以直接复用。
 
-    source_id 非空时只加载 source_ids 为空（不限源）或包含该 source_id 的词组规则
-    （global_filter 类型规则不区分源，始终生效）。
+    topic_id 给定 → 只加载该主题的 group 规则 + 全部 global_filter（源范围已由主题的
+    hot_topic_sources 决定，规则不再有 source_ids 过滤逻辑）。
+    topic_id 为 None → 加载全部启用的 group 规则（榜单摘要等全局场景）。
     """
     rows = (
         db.query(HotKeywordRule)
@@ -231,13 +255,8 @@ def load_rules(db: Session, source_id: str | None = None) -> tuple[list[dict[str
                 global_filters.append(w["word"])
             continue
 
-        if source_id:
-            try:
-                allowed = json.loads(row.source_ids or "[]")
-            except (ValueError, TypeError):
-                allowed = []
-            if allowed and source_id not in allowed:
-                continue
+        if topic_id is not None and row.topic_id != topic_id:
+            continue
 
         normal = _load_word_list(row.normal_words)
         required = _load_word_list(row.required_words)
@@ -268,7 +287,8 @@ def parse_frequency_text(text: str) -> tuple[list[dict[str, Any]], list[str]]:
     支持：空行分组、[组别名] 作为词组首行、[GLOBAL_FILTER] 区段、
     普通词（OR）、+必须词（AND）、!排除词（NOT，按本组生效）、@N 限量、
     /正则/、"词 => 别名"。返回 (groups, global_filters)：
-    groups 是「待创建规则」的字典列表（display_name / normal / required / exclude / max_count），
+    groups 是「待创建规则」的字典列表
+    （display_name / normal / required / exclude / max_count），
     交给 controller 逐条转成 HotKeywordRule 插入；global_filters 是纯文本列表，
     每条转成一行 rule_type="global_filter" 规则。
     """
@@ -279,7 +299,11 @@ def parse_frequency_text(text: str) -> tuple[list[dict[str, Any]], list[str]]:
     current_section = "WORD_GROUPS"
 
     for block in blocks:
-        lines = [ln.strip() for ln in block.split("\n") if ln.strip() and not ln.strip().startswith("#")]
+        lines = [
+            ln.strip()
+            for ln in block.split("\n")
+            if ln.strip() and not ln.strip().startswith("#")
+        ]
         if not lines:
             continue
 
@@ -329,7 +353,10 @@ def parse_frequency_text(text: str) -> tuple[list[dict[str, Any]], list[str]]:
         if group_alias:
             display_name = group_alias
         else:
-            parts = [w.get("display_name") or w["word"] for w in (normal_words + required_words)]
+            parts = [
+                w.get("display_name") or w["word"]
+                for w in (normal_words + required_words)
+            ]
             display_name = " / ".join(parts) if parts else ""
 
         groups.append(
