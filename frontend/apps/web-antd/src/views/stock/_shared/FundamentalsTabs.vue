@@ -82,11 +82,11 @@ watch(
     </div>
 
     <!-- 加载失败 -->
-    <div v-else-if="errorMsg" class="flex flex-1 flex-col items-center justify-center rounded-2xl border border-rose-500/30 bg-rose-500/5 p-12 text-center">
-      <ShieldAlert class="mb-4 h-12 w-12 text-rose-500" />
+    <div v-else-if="errorMsg" class="flex flex-1 flex-col items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/5 p-12 text-center">
+      <ShieldAlert class="mb-4 h-12 w-12 text-destructive" />
       <h3 class="mb-2 text-base font-bold text-[hsl(var(--foreground))]">加载 {{ symbol }} 失败</h3>
-      <p class="mb-4 max-w-md text-xs text-rose-300">{{ errorMsg }}</p>
-      <button class="rounded-lg bg-rose-500/20 px-4 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/30" @click="loadOverview()">
+      <p class="mb-4 max-w-md text-xs text-destructive">{{ errorMsg }}</p>
+      <button class="rounded-lg bg-destructive/20 px-4 py-1.5 text-xs font-bold text-destructive hover:bg-destructive/30" @click="loadOverview()">
         重试
       </button>
     </div>
@@ -95,7 +95,7 @@ watch(
     <template v-else-if="overview">
       <div
         v-if="overviewPartialFailures.length > 0"
-        class="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-300"
+        class="mb-4 rounded-xl border border-warning/30 bg-warning/10 px-4 py-2 text-xs text-warning"
       >
         部分数据源本次获取失败，以下内容可能不完整：{{ overviewPartialFailures.join('；') }}
       </div>
@@ -113,7 +113,7 @@ watch(
                 <span class="text-sm text-[hsl(var(--muted-foreground))]">{{ overview.name }}</span>
               </div>
               <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[hsl(var(--muted-foreground))]">
-                <span v-if="overview.sector" class="rounded border border-indigo-500/20 bg-indigo-500/10 px-2 py-0.5 text-indigo-300">
+                <span v-if="overview.sector" class="rounded border border-primary/20 bg-primary/10 px-2 py-0.5 text-primary">
                   {{ overview.sector }}<template v-if="overview.industry"> / {{ overview.industry }}</template>
                 </span>
                 <span>数据更新: {{ overviewFetchedAt.slice(0, 19).replace('T', ' ') }}</span>
@@ -127,7 +127,7 @@ watch(
           <div>
             <div class="text-[10px] text-[hsl(var(--muted-foreground))]">当前价格</div>
             <div class="text-lg font-black text-[hsl(var(--foreground))]">${{ overview.price?.toFixed(2) ?? '--' }}</div>
-            <div class="text-[11px] font-bold" :class="(overview.change ?? 0) >= 0 ? 'text-rose-500' : 'text-emerald-400'">
+            <div class="text-[11px] font-bold" :class="(overview.change ?? 0) >= 0 ? 'text-destructive' : 'text-success'">
               {{ overview.change >= 0 ? '+' : '' }}{{ overview.change?.toFixed(2) }} ({{ formatPercent(overview.change_percent) }})
             </div>
           </div>

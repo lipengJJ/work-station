@@ -203,7 +203,7 @@ const rightSlots = computed(() => {
     // 顶栏只保留"偏好设置"入口，其余按钮（主题/时区/全屏/刷新/通知/锁屏/退出）一律
     // 不渲染——即使浏览器 localStorage 持久化了旧偏好也不会显示，保持顶栏干净；
     // 需要调按钮位置/开关时统一在偏好设置抽屉里改。
-    if (check?.visible && key === 'preferences') {
+    if (check?.visible && key === 'themeToggle') {
       list.push({ index: REFERENCE_VALUE + list.length, name: check.slotName });
     }
   }

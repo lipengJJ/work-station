@@ -446,7 +446,7 @@ onBeforeUnmount(() => {
         <button
           v-if="report"
           :disabled="exportingPdf"
-          class="flex items-center gap-1.5 rounded-lg border border-indigo-500/40 bg-indigo-600/10 px-3 py-1.5 text-xs font-semibold text-indigo-300 transition-colors hover:bg-indigo-600/20 disabled:cursor-not-allowed disabled:opacity-50"
+          class="flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
           @click="downloadPdf"
         >
           <Download class="h-3.5 w-3.5" />
@@ -454,7 +454,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <div v-if="loadError" class="mx-auto w-full max-w-[960px] rounded-xl border border-rose-500/30 bg-rose-500/10 p-6 text-sm text-rose-300">
+      <div v-if="loadError" class="mx-auto w-full max-w-[960px] rounded-xl border border-destructive/30 bg-destructive/10 p-6 text-sm text-destructive">
         {{ loadError }}
       </div>
       <div v-else-if="loading" class="mx-auto w-full max-w-[960px] text-center text-sm text-[hsl(var(--muted-foreground))]">加载中…</div>
@@ -462,7 +462,7 @@ onBeforeUnmount(() => {
       <div v-else-if="report" class="mx-auto flex w-full max-w-[1160px] items-start gap-8">
         <!-- 正文：博客式阅读栏 -->
         <article class="min-w-0 flex-1 max-w-[800px]">
-          <div class="mb-3 flex items-center gap-1.5 text-xs font-semibold text-indigo-400">
+          <div class="mb-3 flex items-center gap-1.5 text-xs font-semibold text-primary">
             <Sparkles class="h-3.5 w-3.5" />
             <span>AI 分析报告</span>
           </div>
@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
             </span>
           </div>
 
-          <div class="mt-6 rounded-xl border-l-2 border-indigo-500/50 bg-[hsl(var(--background-deep))] px-4 py-3 text-xs text-[hsl(var(--muted-foreground))] italic">
+          <div class="mt-6 rounded-xl border-l-2 border-primary/50 bg-[hsl(var(--background-deep))] px-4 py-3 text-xs text-[hsl(var(--muted-foreground))] italic">
             {{ report.question }}
           </div>
 
@@ -513,7 +513,7 @@ onBeforeUnmount(() => {
               class="truncate transition-colors"
               :class="[
                 item.level === 3 ? 'pl-3' : item.level === 4 ? 'pl-6' : '',
-                activeHeadingId === item.id ? 'font-semibold text-indigo-400' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--muted-foreground))]',
+                activeHeadingId === item.id ? 'font-semibold text-primary' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--muted-foreground))]',
               ]"
               @click="scrollToHeading(item.id)"
             >
@@ -545,7 +545,7 @@ onBeforeUnmount(() => {
         </div>
         <button
           v-if="evidenceNote.note_url"
-          class="mt-4 rounded-lg border border-indigo-500/40 bg-indigo-600/10 px-3 py-1.5 text-xs font-bold text-indigo-300 hover:bg-indigo-600/20"
+          class="mt-4 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20"
           @click="openInXhs(evidenceNote.note_url)"
         >
           在小红书查看原文

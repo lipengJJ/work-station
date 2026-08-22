@@ -156,7 +156,7 @@ class RequestClient {
       });
       return response as T;
     } catch (error: any) {
-      throw error.response ? error.response.data : error;
+      throw error;
     }
   }
 }

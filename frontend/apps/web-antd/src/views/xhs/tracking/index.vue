@@ -90,9 +90,9 @@ function frequencyLabel(minutes: number) {
 // 状态点：已暂停(enabled=false) / 扫描中(running) / 失败(failed) / 运行中(idle 且 enabled)
 function statusInfo(task: XhsApi.TrackingTask) {
   if (!task.enabled) return { label: '已暂停', dot: 'bg-slate-500', text: 'text-[hsl(var(--muted-foreground))]' };
-  if (task.status === 'running') return { label: '扫描中', dot: 'bg-amber-400 animate-pulse', text: 'text-amber-300' };
-  if (task.status === 'failed') return { label: '失败', dot: 'bg-rose-500', text: 'text-rose-400' };
-  return { label: '运行中', dot: 'bg-emerald-400', text: 'text-emerald-400' };
+  if (task.status === 'running') return { label: '扫描中', dot: 'bg-warning animate-pulse', text: 'text-warning' };
+  if (task.status === 'failed') return { label: '失败', dot: 'bg-destructive', text: 'text-destructive' };
+  return { label: '运行中', dot: 'bg-success', text: 'text-success' };
 }
 
 // ------------------------------------------------------------- 任务列表 ----
@@ -595,7 +595,7 @@ fetchTasks();
             <h1 class="text-xl font-extrabold text-[hsl(var(--foreground))]">追踪任务</h1>
             <p class="mt-1 text-xs text-[hsl(var(--muted-foreground))]">按关键词周期性搜索，命中符合条件的新笔记会自动记录下来</p>
           </div>
-          <button class="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500" @click="openCreateModal">
+          <button class="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary" @click="openCreateModal">
             <Plus class="h-3.5 w-3.5" />
             新建追踪任务
           </button>
@@ -645,7 +645,7 @@ fetchTasks();
                     <div class="mt-1 flex items-center gap-1.5">
                       <span class="h-1.5 w-1.5 rounded-full" :class="statusInfo(task).dot"></span>
                       <span class="font-semibold" :class="statusInfo(task).text">{{ statusInfo(task).label }}</span>
-                      <span v-if="task.status === 'failed' && task.last_run_message" class="truncate text-[11px] text-rose-400/80">
+                      <span v-if="task.status === 'failed' && task.last_run_message" class="truncate text-[11px] text-destructive/80">
                         · {{ task.last_run_message }}
                       </span>
                     </div>
@@ -675,7 +675,7 @@ fetchTasks();
                   <td class="px-4 py-3 text-right">
                     <div class="flex items-center justify-end gap-2">
                       <button
-                        class="rounded-lg border border-indigo-500/30 bg-indigo-600/10 px-2 py-1 text-[11px] font-semibold text-indigo-300 hover:bg-indigo-600/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        class="rounded-lg border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
                         :disabled="task.status === 'running'"
                         @click="runNow(task)"
                       >
@@ -780,7 +780,7 @@ fetchTasks();
                     <td class="px-4 py-3 font-mono text-[hsl(var(--muted-foreground))]">{{ note.liked_count }}</td>
                     <td class="px-4 py-3 font-mono text-[hsl(var(--muted-foreground))]">{{ note.comment_count }}</td>
                     <td class="px-4 py-3 text-right" @click.stop>
-                      <button class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-rose-400" @click="ignoreHit(note)">忽略</button>
+                      <button class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-destructive" @click="ignoreHit(note)">忽略</button>
                     </td>
                   </tr>
                 </tbody>

@@ -86,7 +86,7 @@ watch(
     <div>
       <h3 class="mb-2 text-xs font-bold text-[hsl(var(--muted-foreground))]">结构化风险扫描</h3>
       <div v-if="loading" class="py-8 text-center text-xs text-[hsl(var(--muted-foreground))]">正在加载风险数据…</div>
-      <div v-else-if="errorMsg" class="py-8 text-center text-xs text-rose-400">{{ errorMsg }}</div>
+      <div v-else-if="errorMsg" class="py-8 text-center text-xs text-destructive">{{ errorMsg }}</div>
       <div v-else-if="!risks" class="py-8 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
       <div v-else class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         <div v-for="item in risks.items" :key="item.key" class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-3">
@@ -100,7 +100,7 @@ watch(
             <div v-if="item.source">来源: {{ item.source }}</div>
             <div v-if="item.invalidation">失效条件: {{ item.invalidation }}</div>
           </div>
-          <div v-else-if="item.needs_data_source" class="mt-1.5 text-[10px] text-amber-400">需要: {{ item.needs_data_source }}</div>
+          <div v-else-if="item.needs_data_source" class="mt-1.5 text-[10px] text-warning">需要: {{ item.needs_data_source }}</div>
         </div>
       </div>
     </div>
@@ -110,7 +110,7 @@ watch(
       <div class="mb-3 flex items-center justify-between">
         <h3 class="text-xs font-bold text-[hsl(var(--muted-foreground))]">AI 综合研判</h3>
         <button
-          class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+          class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50"
           :disabled="aiLoading"
           @click="generateAi"
         >
@@ -118,7 +118,7 @@ watch(
         </button>
       </div>
 
-      <div v-if="aiError" class="mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+      <div v-if="aiError" class="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
         {{ aiError }}
       </div>
 

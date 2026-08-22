@@ -84,7 +84,7 @@ function goToApiConfig() {
 
 <template>
   <div v-if="loading" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">正在加载机构与内部人数据…</div>
-  <div v-else-if="errorMsg" class="py-12 text-center text-xs text-rose-400">{{ errorMsg }}</div>
+  <div v-else-if="errorMsg" class="py-12 text-center text-xs text-destructive">{{ errorMsg }}</div>
   <div v-else class="space-y-4">
     <!-- 13F 机构持仓 -->
     <div class="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-4">
@@ -99,7 +99,7 @@ function goToApiConfig() {
 
       <div v-if="!institutions?.configured" class="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[hsl(var(--border))] py-8 text-center">
         <p class="text-xs text-[hsl(var(--muted-foreground))]">{{ institutions?.message }}</p>
-        <button class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500" @click="goToApiConfig">
+        <button class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary" @click="goToApiConfig">
           去系统设置配置数据源
         </button>
       </div>
@@ -140,7 +140,7 @@ function goToApiConfig() {
           <template v-else-if="column.key === 'amount'">{{ record.shares && record.price_per_share ? formatCompactUsd(record.shares * record.price_per_share) : NO_DATA_TEXT }}</template>
           <template v-else-if="column.key === 'shares_owned_after'">{{ record.shares_owned_after?.toLocaleString() ?? NO_DATA_TEXT }}</template>
           <template v-else-if="column.key === 'index_url'">
-            <a :href="record.index_url" target="_blank" rel="noopener noreferrer" class="text-indigo-400 underline">原文</a>
+            <a :href="record.index_url" target="_blank" rel="noopener noreferrer" class="text-primary underline">原文</a>
           </template>
         </template>
       </Table>

@@ -170,9 +170,9 @@ onMounted(async () => {
           <!-- 账号信息 -->
           <div
             v-if="account"
-            class="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4"
+            class="rounded-lg border border-success/30 bg-success/5 p-4"
           >
-            <div class="mb-2 flex items-center gap-2 text-sm font-medium text-emerald-300">
+            <div class="mb-2 flex items-center gap-2 text-sm font-medium text-success">
               <ShieldCheck class="size-4" />
               验证通过：{{ account.nickname }}
               <Tag v-if="account.vip_member" color="gold">夸克会员</Tag>

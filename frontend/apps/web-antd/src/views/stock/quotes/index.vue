@@ -391,7 +391,7 @@ watch(
       <div v-if="klineLoading" class="shrink-0 border-b border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] px-6 py-1.5 text-xs text-[hsl(var(--muted-foreground))]">
         正在从 Yahoo Finance 获取 {{ stock?.symbol || '--' }} {{ timeframeShortLabel }}K线…
       </div>
-      <div v-else-if="klineError" class="shrink-0 border-b border-rose-500/30 bg-rose-500/10 px-6 py-1.5 text-xs text-rose-300">
+      <div v-else-if="klineError" class="shrink-0 border-b border-destructive/30 bg-destructive/10 px-6 py-1.5 text-xs text-destructive">
         获取真实{{ timeframeShortLabel }}K线失败：{{ klineError }}
       </div>
       <!-- Stock Summary Header -->
@@ -402,7 +402,7 @@ watch(
             <div class="flex items-center gap-2">
               <h1 class="shrink-0 text-2xl font-extrabold tracking-tight text-[hsl(var(--foreground))]">{{ stock.symbol }}</h1>
               <span class="max-w-[220px] truncate text-sm font-medium text-[hsl(var(--muted-foreground))]" :title="stock.name">{{ stock.name }}</span>
-              <span class="shrink-0 rounded border border-indigo-500/30 bg-indigo-500/15 px-2.5 py-0.5 text-xs font-bold text-indigo-300">
+              <span class="shrink-0 rounded border border-primary/30 bg-primary/15 px-2.5 py-0.5 text-xs font-bold text-primary">
                 {{ stock.sector }} | {{ timeframeFullLabel }}
               </span>
             </div>
@@ -410,7 +410,7 @@ watch(
 
           <div class="flex items-baseline gap-2 font-mono">
             <span class="text-2xl font-black text-[hsl(var(--foreground))]">${{ stock.price.toFixed(2) }}</span>
-            <span class="flex items-center gap-0.5 text-sm font-bold" :class="stock.change >= 0 ? (colorMode === 'cn' ? 'text-rose-500' : 'text-emerald-400') : colorMode === 'cn' ? 'text-emerald-400' : 'text-rose-500'">
+            <span class="flex items-center gap-0.5 text-sm font-bold" :class="stock.change >= 0 ? (colorMode === 'cn' ? 'text-destructive' : 'text-success') : colorMode === 'cn' ? 'text-success' : 'text-destructive'">
               <component :is="stock.change >= 0 ? TrendingUp : TrendingDown" class="h-4 w-4" />
               <span>{{ stock.change >= 0 ? '+' : '' }}{{ stock.change.toFixed(2) }} ({{ stock.changePercent >= 0 ? '+' : '' }}{{ stock.changePercent }}%)</span>
             </span>
@@ -419,8 +419,8 @@ watch(
           <div class="hidden items-center gap-4 font-mono text-xs text-[hsl(var(--muted-foreground))] xl:flex">
             <div>今开: <span class="text-[hsl(var(--foreground))]">${{ openPrice.toFixed(2) }}</span></div>
             <div>前收: <span class="text-[hsl(var(--foreground))]">${{ prevClose.toFixed(2) }}</span></div>
-            <div>最高: <span class="text-rose-400">${{ highPrice.toFixed(2) }}</span></div>
-            <div>最低: <span class="text-emerald-400">${{ lowPrice.toFixed(2) }}</span></div>
+            <div>最高: <span class="text-destructive">${{ highPrice.toFixed(2) }}</span></div>
+            <div>最低: <span class="text-success">${{ lowPrice.toFixed(2) }}</span></div>
             <div>成交量: <span class="text-[hsl(var(--foreground))]">{{ stock.volume }}</span></div>
           </div>
         </div>
@@ -430,22 +430,22 @@ watch(
           <div class="flex items-center rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--accent))] p-1 text-xs font-semibold">
             <button
               class="rounded-lg px-3 py-1 transition-all"
-              :class="timeframe === '1D' ? 'bg-indigo-600 font-extrabold text-white shadow' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
+              :class="timeframe === '1D' ? 'bg-primary font-extrabold text-white shadow' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
               @click="timeframe = '1D'"
             >
               日K (1D)
             </button>
             <button
               class="flex items-center gap-1 rounded-lg px-3 py-1 transition-all"
-              :class="timeframe === '1W' ? 'bg-indigo-600 font-extrabold text-white shadow' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
+              :class="timeframe === '1W' ? 'bg-primary font-extrabold text-white shadow' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
               @click="timeframe = '1W'"
             >
-              <Layers class="h-3 w-3 text-indigo-200" />
+              <Layers class="h-3 w-3 text-primary" />
               <span>周K (1W)</span>
             </button>
             <button
               class="rounded-lg px-3 py-1 transition-all"
-              :class="timeframe === '1M' ? 'bg-indigo-600 font-extrabold text-white shadow' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
+              :class="timeframe === '1M' ? 'bg-primary font-extrabold text-white shadow' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
               @click="timeframe = '1M'"
             >
               月K (1M)
@@ -454,7 +454,7 @@ watch(
 
           <button
             class="rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all"
-            :class="showMA ? 'border-indigo-500/40 bg-indigo-500/20 text-indigo-300' : 'border-[hsl(var(--border))] bg-[hsl(var(--accent))] text-[hsl(var(--muted-foreground))]'"
+            :class="showMA ? 'border-primary/40 bg-primary/20 text-primary' : 'border-[hsl(var(--border))] bg-[hsl(var(--accent))] text-[hsl(var(--muted-foreground))]'"
             @click="showMA = !showMA"
           >
             均线 (MA5/20)
@@ -477,7 +477,7 @@ watch(
           <div class="relative flex flex-1 flex-col overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-4 shadow-inner">
             <div class="mb-2 flex items-center justify-between font-mono text-xs text-[hsl(var(--muted-foreground))]">
               <div class="flex items-center gap-4">
-                <span class="rounded border border-indigo-500/20 bg-indigo-500/10 px-2 py-0.5 font-bold text-indigo-400">
+                <span class="rounded border border-primary/20 bg-primary/10 px-2 py-0.5 font-bold text-primary">
                   {{ candleModeLabel }}
                 </span>
                 <span v-if="showMA" class="font-semibold text-[#38bdf8]">MA5: ${{ lastCandle.ma5 || '---' }}</span>
@@ -486,10 +486,10 @@ watch(
               <div class="flex items-center gap-2 text-[11px] text-[hsl(var(--muted-foreground))]">
                 <span>滚轮缩放 / 拖动滑块 / 双击复位</span>
                 <div class="flex gap-1">
-                  <button class="rounded border px-2 py-0.5 font-semibold" :class="indicator === 'macd' ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-[hsl(var(--border))] bg-[hsl(var(--accent))] text-[hsl(var(--muted-foreground))]'" @click="indicator = 'macd'">
+                  <button class="rounded border px-2 py-0.5 font-semibold" :class="indicator === 'macd' ? 'bg-primary border-primary text-white' : 'border-[hsl(var(--border))] bg-[hsl(var(--accent))] text-[hsl(var(--muted-foreground))]'" @click="indicator = 'macd'">
                     MACD
                   </button>
-                  <button class="rounded border px-2 py-0.5 font-semibold" :class="indicator === 'rsi' ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-[hsl(var(--border))] bg-[hsl(var(--accent))] text-[hsl(var(--muted-foreground))]'" @click="indicator = 'rsi'">
+                  <button class="rounded border px-2 py-0.5 font-semibold" :class="indicator === 'rsi' ? 'bg-primary border-primary text-white' : 'border-[hsl(var(--border))] bg-[hsl(var(--accent))] text-[hsl(var(--muted-foreground))]'" @click="indicator = 'rsi'">
                     RSI
                   </button>
                 </div>
@@ -532,7 +532,7 @@ watch(
         <div v-if="stock" class="custom-scrollbar w-full space-y-4 overflow-y-auto border-l border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-4 select-none lg:w-80">
           <div class="space-y-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
             <div class="flex items-center gap-2 border-b border-[hsl(var(--border))] pb-2 text-xs font-bold text-[hsl(var(--foreground))]">
-              <Calendar class="h-4 w-4 text-indigo-400" />
+              <Calendar class="h-4 w-4 text-primary" />
               <span>{{ timeframeShortLabel }}线行情概览（近{{ defaultWindowCandles.length }}根）</span>
             </div>
 
@@ -547,15 +547,15 @@ watch(
               </div>
               <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2">
                 <div class="text-[10px] text-[hsl(var(--muted-foreground))]">周期最高</div>
-                <div class="font-bold text-rose-400">${{ highPrice.toFixed(2) }}</div>
+                <div class="font-bold text-destructive">${{ highPrice.toFixed(2) }}</div>
               </div>
               <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2">
                 <div class="text-[10px] text-[hsl(var(--muted-foreground))]">周期最低</div>
-                <div class="font-bold text-emerald-400">${{ lowPrice.toFixed(2) }}</div>
+                <div class="font-bold text-success">${{ lowPrice.toFixed(2) }}</div>
               </div>
               <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2">
                 <div class="text-[10px] text-[hsl(var(--muted-foreground))]">周期震幅</div>
-                <div class="font-bold text-amber-400">{{ amplitude }}%</div>
+                <div class="font-bold text-warning">{{ amplitude }}%</div>
               </div>
               <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2">
                 <div class="text-[10px] text-[hsl(var(--muted-foreground))]">市盈率 PE</div>
@@ -567,22 +567,22 @@ watch(
           <!-- Key Pivot Technical Levels -->
           <div class="space-y-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
             <div class="flex items-center gap-2 border-b border-[hsl(var(--border))] pb-2 text-xs font-bold text-[hsl(var(--foreground))]">
-              <Activity class="h-4 w-4 text-emerald-400" />
+              <Activity class="h-4 w-4 text-success" />
               <span>{{ timeframeShortLabel }}线关键支撑阻力位</span>
             </div>
 
             <div class="space-y-2 font-mono text-xs">
               <div class="flex items-center justify-between rounded-lg bg-[hsl(var(--background-deep))] p-2">
                 <span class="text-[11px] text-[hsl(var(--muted-foreground))]">压力位 R1:</span>
-                <span class="font-bold text-rose-400">${{ (stock.price * 1.05).toFixed(2) }}</span>
+                <span class="font-bold text-destructive">${{ (stock.price * 1.05).toFixed(2) }}</span>
               </div>
               <div class="flex items-center justify-between rounded-lg bg-[hsl(var(--background-deep))] p-2">
                 <span class="text-[11px] text-[hsl(var(--muted-foreground))]">关键MA20:</span>
-                <span class="font-bold text-indigo-400">${{ (stock.price * 0.98).toFixed(2) }}</span>
+                <span class="font-bold text-primary">${{ (stock.price * 0.98).toFixed(2) }}</span>
               </div>
               <div class="flex items-center justify-between rounded-lg bg-[hsl(var(--background-deep))] p-2">
                 <span class="text-[11px] text-[hsl(var(--muted-foreground))]">支撑位 S1:</span>
-                <span class="font-bold text-emerald-400">${{ (stock.price * 0.95).toFixed(2) }}</span>
+                <span class="font-bold text-success">${{ (stock.price * 0.95).toFixed(2) }}</span>
               </div>
             </div>
           </div>
@@ -591,7 +591,7 @@ watch(
           <div class="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
             <div class="flex items-center justify-between text-xs font-bold">
               <span class="text-[hsl(var(--muted-foreground))]">{{ timeframeShortLabel }}线多空评级</span>
-              <span class="rounded border border-emerald-500/30 bg-emerald-500/20 px-2 py-0.5 font-mono text-[10px] text-emerald-400">
+              <span class="rounded border border-success/30 bg-success/20 px-2 py-0.5 font-mono text-[10px] text-success">
                 {{ stock.macdSignal }}
               </span>
             </div>

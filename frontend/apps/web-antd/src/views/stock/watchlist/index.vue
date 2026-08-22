@@ -54,7 +54,7 @@ function goToKline(st: StockItem) {
 // 用中性灰色，不当成 0 处理
 function changeClass(v: null | number | undefined) {
   if (v === null || v === undefined) return 'text-[hsl(var(--muted-foreground))]';
-  return v >= 0 ? (colorMode === 'cn' ? 'text-rose-500' : 'text-emerald-400') : colorMode === 'cn' ? 'text-emerald-400' : 'text-rose-500';
+  return v >= 0 ? (colorMode === 'cn' ? 'text-destructive' : 'text-success') : colorMode === 'cn' ? 'text-success' : 'text-destructive';
 }
 function formatPercent(v: null | number | undefined) {
   if (v === null || v === undefined) return '--';
@@ -62,13 +62,13 @@ function formatPercent(v: null | number | undefined) {
 }
 function rsiClass(v: null | number | undefined) {
   if (v === null || v === undefined) return 'border-slate-700 bg-slate-800 text-[hsl(var(--muted-foreground))]';
-  if (v > 65) return 'border-rose-500/20 bg-rose-500/10 text-rose-400';
-  if (v < 40) return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400';
+  if (v > 65) return 'border-destructive/20 bg-destructive/10 text-destructive';
+  if (v < 40) return 'border-success/20 bg-success/10 text-success';
   return 'border-slate-700 bg-slate-800 text-[hsl(var(--muted-foreground))]';
 }
 function macdClass(sig: StockItem['macdSignal']) {
-  if (sig === 'Bullish Cross') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400';
-  if (sig === 'Bearish Cross') return 'border-rose-500/30 bg-rose-500/10 text-rose-400';
+  if (sig === 'Bullish Cross') return 'border-success/30 bg-success/10 text-success';
+  if (sig === 'Bearish Cross') return 'border-destructive/30 bg-destructive/10 text-destructive';
   return 'border-slate-700 bg-slate-800 text-[hsl(var(--muted-foreground))]';
 }
 function macdText(sig: StockItem['macdSignal']) {
@@ -139,10 +139,10 @@ onMounted(() => {
       <!-- yfinance 真实数据配置状态提示 -->
       <div
         v-if="loadError"
-        class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-300"
+        class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive"
       >
         <span>获取自选股数据失败：{{ loadError }}</span>
-        <button class="rounded-lg bg-rose-500/20 px-3 py-1 font-bold hover:bg-rose-500/30" @click="loadRealWatchlist">
+        <button class="rounded-lg bg-destructive/20 px-3 py-1 font-bold hover:bg-destructive/30" @click="loadRealWatchlist">
           重试
         </button>
       </div>
@@ -153,11 +153,11 @@ onMounted(() => {
         <input
           v-model="newSymbol"
           placeholder="输入股票代码，例如 NVDA"
-          class="w-48 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+          class="w-48 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
           @keyup.enter="addStock"
         />
         <button
-          class="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+          class="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50"
           :disabled="addingSymbol"
           @click="addStock"
         >
@@ -170,9 +170,9 @@ onMounted(() => {
       <div class="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 class="flex items-center gap-2 text-xl font-extrabold text-[hsl(var(--foreground))]">
-            <Star class="h-5 w-5 fill-amber-400 text-amber-400" />
+            <Star class="h-5 w-5 fill-warning text-warning" />
             <span>自选股 · 关注的股票</span>
-            <span class="rounded-full border border-amber-500/30 bg-amber-500/20 px-2 py-0.5 font-mono text-xs text-amber-300">
+            <span class="rounded-full border border-warning/30 bg-warning/20 px-2 py-0.5 font-mono text-xs text-warning">
               共 {{ watchlistCount }} 支
             </span>
           </h1>
@@ -184,7 +184,7 @@ onMounted(() => {
           <div class="flex items-center rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-xs font-semibold">
             <button
               class="rounded-lg px-3 py-1.5 transition-all" :class="[
-                activeTab === 'all' ? 'bg-indigo-600 font-bold text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
+                activeTab === 'all' ? 'bg-primary font-bold text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
               ]"
               @click="activeTab = 'all'"
             >
@@ -192,7 +192,7 @@ onMounted(() => {
             </button>
             <button
               class="rounded-lg px-3 py-1.5 transition-all" :class="[
-                activeTab === 'ai' ? 'bg-indigo-600 font-bold text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
+                activeTab === 'ai' ? 'bg-primary font-bold text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
               ]"
               @click="activeTab = 'ai'"
             >
@@ -200,7 +200,7 @@ onMounted(() => {
             </button>
             <button
               class="rounded-lg px-3 py-1.5 transition-all" :class="[
-                activeTab === 'china' ? 'bg-indigo-600 font-bold text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
+                activeTab === 'china' ? 'bg-primary font-bold text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
               ]"
               @click="activeTab = 'china'"
             >
@@ -212,7 +212,7 @@ onMounted(() => {
           <div class="flex items-center rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-xs font-semibold">
             <button
               class="rounded-lg px-3 py-1.5 transition-all" :class="[
-                displayLayout === 'list' ? 'bg-indigo-600 font-bold text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
+                displayLayout === 'list' ? 'bg-primary font-bold text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
               ]"
               @click="displayLayout = 'list'"
             >
@@ -220,7 +220,7 @@ onMounted(() => {
             </button>
             <button
               class="rounded-lg px-3 py-1.5 transition-all" :class="[
-                displayLayout === 'heatmap' ? 'bg-indigo-600 font-bold text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
+                displayLayout === 'heatmap' ? 'bg-primary font-bold text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
               ]"
               @click="displayLayout = 'heatmap'"
             >
@@ -235,8 +235,8 @@ onMounted(() => {
         v-if="filteredStocks.length === 0"
         class="my-auto flex flex-1 flex-col items-center justify-center rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-12 text-center"
       >
-        <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-amber-500/20 bg-amber-500/10">
-          <Star class="h-8 w-8 text-amber-400" />
+        <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-warning/20 bg-warning/10">
+          <Star class="h-8 w-8 text-warning" />
         </div>
         <h3 class="mb-2 text-base font-bold text-[hsl(var(--foreground))]">暂无自选股</h3>
         <p class="mb-4 max-w-sm text-xs text-[hsl(var(--muted-foreground))]">在上方输入股票代码（如 NVDA）添加自选，添加后即可查看真实行情并跳转 K 线分析。</p>
@@ -272,7 +272,7 @@ onMounted(() => {
                 <!-- Remove from Watchlist -->
                 <td class="px-3 py-4 text-center" @click.stop="removeStock(st)">
                   <button
-                    class="rounded-lg p-1 text-[hsl(var(--muted-foreground))] transition-all hover:bg-rose-500/20 hover:text-rose-400"
+                    class="rounded-lg p-1 text-[hsl(var(--muted-foreground))] transition-all hover:bg-destructive/20 hover:text-destructive"
                     title="点击移除自选"
                   >
                     <X class="h-4 w-4 transition-all" />
@@ -282,13 +282,13 @@ onMounted(() => {
                 <!-- Symbol & Name -->
                 <td class="px-4 py-4 font-sans">
                   <div class="flex items-center gap-2.5">
-                    <div class="flex h-8 w-8 items-center justify-center rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))] font-mono text-xs font-bold text-[hsl(var(--foreground))] transition-colors group-hover:border-indigo-500/50">
+                    <div class="flex h-8 w-8 items-center justify-center rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))] font-mono text-xs font-bold text-[hsl(var(--foreground))] transition-colors group-hover:border-primary/50">
                       {{ st.symbol.slice(0, 2) }}
                     </div>
                     <div>
                       <div class="flex items-center gap-1.5 font-mono text-sm font-extrabold text-[hsl(var(--foreground))]">
                         <span>{{ st.symbol }}</span>
-                        <span class="wl-sector-tag rounded border border-indigo-500/20 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-normal text-indigo-400">
+                        <span class="wl-sector-tag rounded border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[10px] font-normal text-primary">
                           {{ (st.sector || '--').split('/')[0] }}
                         </span>
                       </div>
@@ -301,7 +301,7 @@ onMounted(() => {
                 <td class="px-4 py-4 text-sm font-bold text-slate-100">${{ st.price.toFixed(2) }}</td>
 
                 <!-- 24h Change -->
-                <td class="px-4 py-4 font-bold" :class="[st.change >= 0 ? (colorMode === 'cn' ? 'text-rose-500' : 'text-emerald-400') : colorMode === 'cn' ? 'text-emerald-400' : 'text-rose-500']">
+                <td class="px-4 py-4 font-bold" :class="[st.change >= 0 ? (colorMode === 'cn' ? 'text-destructive' : 'text-success') : colorMode === 'cn' ? 'text-success' : 'text-destructive']">
                   <div class="wl-chg-value">{{ st.change >= 0 ? '+' : '' }}{{ st.change.toFixed(2) }}</div>
                   <div class="text-[10px] opacity-80">{{ st.changePercent >= 0 ? '+' : '' }}{{ st.changePercent }}%</div>
                 </td>
@@ -342,7 +342,7 @@ onMounted(() => {
                 <td class="px-4 py-4 text-right" @click.stop>
                   <div class="flex items-center justify-end gap-2">
                     <button
-                      class="wl-action-btn flex items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-600/20 p-1.5 text-xs font-semibold text-indigo-400 transition-all hover:bg-indigo-600 hover:text-white"
+                      class="wl-action-btn flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/20 p-1.5 text-xs font-semibold text-primary transition-all hover:bg-primary hover:text-white"
                       title="查看K线与结构"
                       @click="goToKline(st)"
                     >
@@ -365,17 +365,17 @@ onMounted(() => {
           class="group relative flex h-52 cursor-pointer flex-col justify-between rounded-2xl border p-5 transition-all hover:scale-[1.02]" :class="[
             st.change >= 0
               ? colorMode === 'cn'
-                ? 'bg-gradient-to-br from-[#1c1216] to-[hsl(var(--card))] border-rose-500/30 hover:border-rose-500'
-                : 'bg-gradient-to-br from-[#102019] to-[hsl(var(--card))] border-emerald-500/30 hover:border-emerald-500'
+                ? 'bg-gradient-to-br from-[#1c1216] to-[hsl(var(--card))] border-destructive/30 hover:border-destructive'
+                : 'bg-gradient-to-br from-[#102019] to-[hsl(var(--card))] border-success/30 hover:border-success'
               : colorMode === 'cn'
-                ? 'bg-gradient-to-br from-[#102019] to-[hsl(var(--card))] border-emerald-500/30 hover:border-emerald-500'
-                : 'bg-gradient-to-br from-[#1c1216] to-[hsl(var(--card))] border-rose-500/30 hover:border-rose-500',
+                ? 'bg-gradient-to-br from-[#102019] to-[hsl(var(--card))] border-success/30 hover:border-success'
+                : 'bg-gradient-to-br from-[#1c1216] to-[hsl(var(--card))] border-destructive/30 hover:border-destructive',
           ]"
           @click="goToKline(st)"
         >
           <div class="flex items-start justify-between">
             <div class="flex items-center gap-2">
-              <button class="rounded-lg p-1 text-[hsl(var(--muted-foreground))] transition-all hover:bg-rose-500/20 hover:text-rose-400" title="点击移除自选" @click.stop="removeStock(st)">
+              <button class="rounded-lg p-1 text-[hsl(var(--muted-foreground))] transition-all hover:bg-destructive/20 hover:text-destructive" title="点击移除自选" @click.stop="removeStock(st)">
                 <X class="h-4 w-4" />
               </button>
               <div>
@@ -385,7 +385,7 @@ onMounted(() => {
             </div>
             <span
               class="rounded px-2 py-1 font-mono text-xs font-bold" :class="[
-                st.change >= 0 ? (colorMode === 'cn' ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400') : colorMode === 'cn' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400',
+                st.change >= 0 ? (colorMode === 'cn' ? 'bg-destructive/20 text-destructive' : 'bg-success/20 text-success') : colorMode === 'cn' ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive',
               ]"
             >
               {{ st.changePercent >= 0 ? '+' : '' }}{{ st.changePercent }}%
@@ -409,7 +409,7 @@ onMounted(() => {
 
           <div class="flex items-center justify-between font-mono text-xs">
             <span class="text-[hsl(var(--muted-foreground))]">市值: {{ st.marketCap }}</span>
-            <span class="font-semibold text-indigo-400 transition-transform group-hover:translate-x-1">看K线 →</span>
+            <span class="font-semibold text-primary transition-transform group-hover:translate-x-1">看K线 →</span>
           </div>
         </div>
       </div>

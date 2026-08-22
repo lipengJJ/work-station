@@ -10,11 +10,11 @@
   --background: 0 0% 100%;
 
   /* 主体区域背景色 */
-  --background-deep: 216 20.11% 95.47%;
+  --background-deep: 50 8% 89%;
   --foreground: 210 6% 21%;
 
   /* Background color for <Card /> */
-  --card: 0 0% 100%;
+  --card: 50 14% 92%;
   --card-foreground: 222.2 84% 4.9%;
 
   /* Background color for popovers such as <DropdownMenu />, <HoverCard />, <Popover /> */
@@ -98,12 +98,12 @@
   /* =============component & UI============= */
 
   /* menu */
-  --sidebar: 0 0% 100%;
-  --sidebar-deep: 0 0% 100%;
+  --sidebar: 50 14% 92%;
+  --sidebar-deep: 50 8% 89%;
   --menu: var(--sidebar);
 
   /* header */
-  --header: 0 0% 100%;
+  --header: 50 14% 92%;
 
   accent-color: var(--primary);
   color-scheme: light;
@@ -116,11 +116,11 @@
   --background: 0 0% 100%;
 
   /* 主体区域背景色 */
-  --background-deep: 216 20.11% 95.47%;
+  --background-deep: 50 8% 89%;
   --foreground: 210 6% 21%;
 
   /* Background color for <Card /> */
-  --card: 0 0% 100%;
+  --card: 50 14% 92%;
   --card-foreground: 222.2 84% 4.9%;
 
   /* Background color for popovers such as <DropdownMenu />, <HoverCard />, <Popover /> */
@@ -180,12 +180,12 @@
   /* =============component & UI============= */
 
   /* menu */
-  --sidebar: 0 0% 100%;
-  --sidebar-deep: 0 0% 100%;
+  --sidebar: 50 14% 92%;
+  --sidebar-deep: 50 8% 89%;
   --menu: var(--sidebar);
 
   /* header */
-  --header: 0 0% 100%;
+  --header: 50 14% 92%;
 
   accent-color: var(--primary);
   color-scheme: light;

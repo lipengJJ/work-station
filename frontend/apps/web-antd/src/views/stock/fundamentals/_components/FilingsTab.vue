@@ -54,13 +54,13 @@ const columns = [
 
 <template>
   <div v-if="loading" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">正在加载 SEC 披露文件…</div>
-  <div v-else-if="errorMsg" class="py-12 text-center text-xs text-rose-400">{{ errorMsg }}</div>
+  <div v-else-if="errorMsg" class="py-12 text-center text-xs text-destructive">{{ errorMsg }}</div>
   <div v-else-if="!data" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
   <div v-else class="space-y-3">
     <div class="flex flex-wrap gap-1.5">
       <button
         v-for="c in categories" :key="c"
-        class="rounded-lg border px-2.5 py-1 text-[11px] font-semibold" :class="activeCategory === c ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
+        class="rounded-lg border px-2.5 py-1 text-[11px] font-semibold" :class="activeCategory === c ? 'border-primary bg-primary text-white' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
         @click="activeCategory = c"
       >
         {{ c }} <span v-if="c !== '全部'" class="opacity-70">({{ data.grouped[c] }})</span>
@@ -82,8 +82,8 @@ const columns = [
             <Tag v-if="record.is_amendment" color="warning">修订</Tag>
           </template>
           <template v-else-if="column.key === 'url'">
-            <a v-if="record.url" :href="record.url" target="_blank" rel="noopener noreferrer" class="text-indigo-400 underline">查看原文</a>
-            <a v-else :href="record.index_url" target="_blank" rel="noopener noreferrer" class="text-indigo-400 underline">查看目录</a>
+            <a v-if="record.url" :href="record.url" target="_blank" rel="noopener noreferrer" class="text-primary underline">查看原文</a>
+            <a v-else :href="record.index_url" target="_blank" rel="noopener noreferrer" class="text-primary underline">查看目录</a>
           </template>
         </template>
       </Table>

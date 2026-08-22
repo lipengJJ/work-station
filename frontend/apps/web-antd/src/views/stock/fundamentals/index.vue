@@ -115,7 +115,7 @@ onMounted(() => {
           <input
             v-model="searchQuery"
             placeholder="输入代码或公司名，例如 AAPL / Apple"
-            class="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+            class="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-sm text-[hsl(var(--foreground))] outline-none focus:border-primary"
             @input="onSearchInput"
             @focus="searchOpen = true"
             @keyup.enter="searchResults[0] && pickResult(searchResults[0])"
@@ -143,7 +143,7 @@ onMounted(() => {
             v-for="s in watchlistStocks"
             :key="s.symbol"
             class="rounded-lg border px-2 py-1 font-mono text-xs font-bold transition-all"
-            :class="symbol === s.symbol ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:border-indigo-500/50'"
+            :class="symbol === s.symbol ? 'border-primary bg-primary text-white' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:border-primary/50'"
             @click="symbol = s.symbol"
           >
             {{ s.symbol }}
@@ -163,11 +163,11 @@ onMounted(() => {
         <button
           v-if="symbol"
           class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all"
-          :class="isInWatchlist ? 'border-amber-500/40 bg-amber-500/15 text-amber-300' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
+          :class="isInWatchlist ? 'border-warning/40 bg-warning/15 text-warning' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
           :disabled="watchlistBusy"
           @click="toggleWatchlist"
         >
-          <Star class="h-3.5 w-3.5" :class="isInWatchlist ? 'fill-amber-400 text-amber-400' : ''" />
+          <Star class="h-3.5 w-3.5" :class="isInWatchlist ? 'fill-warning text-warning' : ''" />
           {{ isInWatchlist ? '已加自选' : '加入自选' }}
         </button>
       </div>

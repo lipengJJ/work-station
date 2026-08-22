@@ -73,9 +73,9 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const STATUS_DOT: Record<string, string> = {
   pending: 'bg-slate-500',
-  running: 'bg-amber-400',
-  success: 'bg-emerald-400',
-  failed: 'bg-rose-500',
+  running: 'bg-warning',
+  success: 'bg-success',
+  failed: 'bg-destructive',
 };
 
 // ------------------------------------------------------------- 一级：任务列表 ----
@@ -600,14 +600,14 @@ onBeforeUnmount(() => {
             <template v-if="!tokenReady" #title>
               <div class="flex flex-col gap-1">
                 <span>需先在系统设置中配置小红书 token</span>
-                <button class="text-left text-indigo-300 underline underline-offset-2" @click="router.push('/system/settings')">
+                <button class="text-left text-primary underline underline-offset-2" @click="router.push('/system/settings')">
                   前往配置 →
                 </button>
               </div>
             </template>
             <button
               :disabled="!tokenReady"
-              class="flex shrink-0 items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-indigo-600"
+              class="flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-primary"
               @click="newTaskModalOpen = true"
             >
               <Plus class="h-3.5 w-3.5" />
@@ -633,7 +633,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="h-1.5 w-full overflow-hidden rounded-full bg-[hsl(var(--muted))]">
               <div
-                class="h-full rounded-full bg-indigo-500 transition-all"
+                class="h-full rounded-full bg-primary transition-all"
                 :style="{ width: `${progressPercent(task)}%` }"
               ></div>
             </div>
@@ -646,12 +646,12 @@ onBeforeUnmount(() => {
             <input
               v-model="searchQuery"
               placeholder="搜索主题或关键词"
-              class="w-64 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-1.5 pr-3 pl-8 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+              class="w-64 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-1.5 pr-3 pl-8 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
             />
           </div>
           <select
             v-model="statusFilter"
-            class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+            class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
           >
             <option value="">全部状态</option>
             <option value="running">运行中</option>
@@ -691,7 +691,7 @@ onBeforeUnmount(() => {
                   v-for="task in tasks"
                   :key="task.id"
                   tabindex="0"
-                  class="group cursor-pointer transition-colors hover:bg-[hsl(var(--accent))] focus:bg-[hsl(var(--accent))] focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500"
+                  class="group cursor-pointer transition-colors hover:bg-[hsl(var(--accent))] focus:bg-[hsl(var(--accent))] focus:outline-none focus-visible:ring-1 focus-visible:ring-primary"
                   @click="openTask(task)"
                   @keyup.enter="openTask(task)"
                 >
@@ -702,23 +702,23 @@ onBeforeUnmount(() => {
                   <td class="px-4 py-4">
                     <span
                       v-if="task.phase === 'fetching_missing_comments'"
-                      class="inline-flex items-center gap-1.5 font-semibold text-amber-300"
+                      class="inline-flex items-center gap-1.5 font-semibold text-warning"
                     >
-                      <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400"></span>
+                      <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-warning"></span>
                       补抓评论中 {{ task.progress_current }}/{{ task.progress_total }}
                     </span>
                     <span
                       v-else-if="task.phase === 'comments_backfill_done'"
-                      class="inline-flex items-center gap-1.5 font-semibold text-emerald-400/80"
+                      class="inline-flex items-center gap-1.5 font-semibold text-success/80"
                     >
-                      <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                      <span class="h-1.5 w-1.5 rounded-full bg-success"></span>
                       评论已补抓
                     </span>
                     <span
                       v-else
                       class="inline-flex items-center gap-1.5 font-semibold"
                       :class="[
-                        task.status === 'success' ? 'text-emerald-400' : task.status === 'failed' ? 'text-rose-400' : task.status === 'running' ? 'text-amber-300' : 'text-[hsl(var(--muted-foreground))]',
+                        task.status === 'success' ? 'text-success' : task.status === 'failed' ? 'text-destructive' : task.status === 'running' ? 'text-warning' : 'text-[hsl(var(--muted-foreground))]',
                       ]"
                     >
                       <span class="h-1.5 w-1.5 rounded-full" :class="STATUS_DOT[task.status]"></span>
@@ -732,7 +732,7 @@ onBeforeUnmount(() => {
                   <td class="px-4 py-4 text-right">
                     <div class="flex items-center justify-end gap-3">
                       <button
-                        class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-indigo-400 disabled:opacity-40"
+                        class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-primary disabled:opacity-40"
                         :disabled="task.status === 'running' || task.status === 'pending'"
                         @click.stop="openIncrementalModal(task)"
                       >
@@ -740,7 +740,7 @@ onBeforeUnmount(() => {
                       </button>
                       <Tooltip title="使用智谱补齐缺失、失败或正文已变化的 AI 结构化数据；已成功且内容未变化的笔记会自动跳过">
                         <button
-                          class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-40"
+                          class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                           :disabled="task.status === 'running' || task.status === 'pending' || aiProcessingIds.has(task.id)"
                           @click.stop="processAiData(task)"
                         >
@@ -752,7 +752,7 @@ onBeforeUnmount(() => {
                       </Tooltip>
                       <Tooltip title="对还没有评论的笔记补抓评论（后台执行，边爬边入库）">
                         <button
-                          class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                          class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-success disabled:cursor-not-allowed disabled:opacity-40"
                           :disabled="task.status === 'running' || task.status === 'pending' || commentBackfillIds.has(task.id)"
                           @click.stop="updateComments(task)"
                         >
@@ -760,8 +760,8 @@ onBeforeUnmount(() => {
                           <template v-else>更新评论</template>
                         </button>
                       </Tooltip>
-                      <button class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-rose-400" @click.stop="deleteTask(task)">删除</button>
-                      <span class="inline-flex items-center gap-1 font-semibold text-indigo-400 group-hover:text-indigo-300">
+                      <button class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-destructive" @click.stop="deleteTask(task)">删除</button>
+                      <span class="inline-flex items-center gap-1 font-semibold text-primary group-hover:text-primary">
                         查看笔记
                         <ChevronRight class="h-3.5 w-3.5" />
                       </span>
@@ -785,7 +785,7 @@ onBeforeUnmount(() => {
               <Tooltip :title="tokenReady ? '' : '需先在系统设置中配置小红书 token，再创建采集任务'">
                 <button
                   :disabled="!tokenReady"
-                  class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
                   @click="newTaskModalOpen = true"
                 >
                   新建采集任务
@@ -824,15 +824,15 @@ onBeforeUnmount(() => {
             <input
               v-model="noteSearchQuery"
               placeholder="搜索标题、内容或作者"
-              class="w-56 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-1.5 pr-3 pl-8 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+              class="w-56 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-1.5 pr-3 pl-8 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
             />
           </div>
-          <select v-model="noteTypeFilter" class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500">
+          <select v-model="noteTypeFilter" class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary">
             <option value="">全部类型</option>
             <option value="图集">图集</option>
             <option value="视频">视频</option>
           </select>
-          <select v-model="dateRangeFilter" class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500">
+          <select v-model="dateRangeFilter" class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary">
             <option value="">全部时间</option>
             <option value="7d">最近一周</option>
             <option value="30d">最近一个月</option>
@@ -849,7 +849,7 @@ onBeforeUnmount(() => {
 
           <span v-if="selectedNoteIds.size > 0" class="text-xs text-[hsl(var(--muted-foreground))]">已选择 {{ selectedNoteIds.size }} 项</span>
           <button
-            class="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+            class="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:cursor-not-allowed disabled:opacity-40"
             :disabled="selectedNoteIds.size === 0"
             @click="openAddToAnalysis"
           >
@@ -944,13 +944,13 @@ onBeforeUnmount(() => {
                     <td class="px-4 py-3 text-right">
                       <div class="flex items-center justify-end gap-3">
                         <button
-                          class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-emerald-400"
+                          class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-success"
                           @click.stop="openComments(note)"
                         >
                           评论{{ Number(note.comment_count || 0) > 0 ? ` (${note.comment_count})` : '' }}
                         </button>
                         <button
-                          class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-blue-400"
+                          class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-primary"
                           @click.stop="openAiData(note)"
                         >
                           AI 数据
@@ -1003,7 +1003,7 @@ onBeforeUnmount(() => {
         <div style="display: flex; gap: 8px">
           <button
             v-if="detailNote.note_url"
-            class="rounded-lg border border-indigo-500/40 bg-indigo-600/10 px-3 py-1.5 text-xs font-bold text-indigo-300 hover:bg-indigo-600/20"
+            class="rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20"
             @click="openInXhs(detailNote.note_url)"
           >
             在小红书查看原文
@@ -1056,7 +1056,7 @@ onBeforeUnmount(() => {
             v-for="c in commentsData"
             :key="c.comment_id"
             class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] px-3 py-2.5"
-            :class="c.parent_comment_id ? 'ml-8 border-l-2 border-l-indigo-500/50' : ''"
+            :class="c.parent_comment_id ? 'ml-8 border-l-2 border-l-primary/50' : ''"
           >
             <div class="flex items-center gap-2 text-[11px]">
               <span class="font-bold text-[hsl(var(--foreground))]">{{ c.nickname || '匿名' }}</span>
@@ -1105,7 +1105,7 @@ onBeforeUnmount(() => {
       <div v-if="pickMode === 'existing'">
         <select
           v-model="pickProjectId"
-          class="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+          class="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
         >
           <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}（{{ p.note_count }} 篇）</option>
         </select>
@@ -1114,10 +1114,10 @@ onBeforeUnmount(() => {
         <input
           v-model="newProjectName"
           placeholder="新分析项目名称"
-          class="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+          class="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
         />
       </div>
-      <button class="mt-3 text-xs text-indigo-400 hover:text-indigo-300" @click="goAiAnalysis">前往 AI 分析页面 →</button>
+      <button class="mt-3 text-xs text-primary hover:text-primary" @click="goAiAnalysis">前往 AI 分析页面 →</button>
     </Modal>
 
     <!-- 新建采集任务：表单本身在共享组件里，和「采集任务」页用同一个 -->
@@ -1146,7 +1146,7 @@ onBeforeUnmount(() => {
         type="number"
         min="1"
         max="500"
-        class="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+        class="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
       />
 
       <div class="mt-4 mb-1 text-xs font-bold text-[hsl(var(--muted-foreground))]">采集选项</div>

@@ -129,10 +129,10 @@ const indicators = computed(() => [
 <template>
   <div>
     <div v-if="loading" class="flex flex-col items-center justify-center gap-2 py-14 text-xs text-[hsl(var(--muted-foreground))]">
-      <Loader2 class="h-5 w-5 animate-spin text-indigo-400" />
+      <Loader2 class="h-5 w-5 animate-spin text-primary" />
       正在拉取 {{ symbol }} 日K数据并计算指标…
     </div>
-    <div v-else-if="error" class="rounded-xl border border-rose-500/30 bg-rose-500/10 p-8 text-center text-xs text-rose-300">
+    <div v-else-if="error" class="rounded-xl border border-destructive/30 bg-destructive/10 p-8 text-center text-xs text-destructive">
       {{ error }}
     </div>
     <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -143,10 +143,10 @@ const indicators = computed(() => [
             class="rounded border px-2 py-0.5 font-mono text-xs font-bold"
             :class="
               ind.status.includes('超买') || ind.status.includes('空头') || ind.status.includes('跌破')
-                ? 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+                ? 'border-destructive/30 bg-destructive/10 text-destructive'
                 : ind.status.includes('超卖') || ind.status.includes('多头') || ind.status.includes('支撑')
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                  : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                  ? 'border-success/30 bg-success/10 text-success'
+                  : 'border-warning/30 bg-warning/10 text-warning'
             "
           >
             {{ ind.status }}

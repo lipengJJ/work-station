@@ -89,8 +89,10 @@ function updateMainColorVariables(preference: Preferences) {
   if (!preference.theme) {
     return;
   }
-  const { colorDestructive, colorPrimary, colorSuccess, colorWarning } =
-    preference.theme;
+  // 主题色固定为一套墨绿，忽略偏好里的 colorPrimary，
+  // 避免 localStorage 持久化的旧主色覆盖，保证全局统一。
+  const colorPrimary = 'hsl(145 45% 45%)';
+  const { colorDestructive, colorSuccess, colorWarning } = preference.theme;
 
   const colorVariables = generatorColorVariables([
     { color: colorPrimary, name: 'primary' },

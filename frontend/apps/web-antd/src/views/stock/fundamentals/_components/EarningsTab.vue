@@ -77,7 +77,7 @@ const PERIOD_LABEL: Record<string, string> = { '0q': '本季度', '+1q': '下季
 
 <template>
   <div v-if="loading" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">正在加载财报与预期数据…</div>
-  <div v-else-if="errorMsg" class="py-12 text-center text-xs text-rose-400">{{ errorMsg }}</div>
+  <div v-else-if="errorMsg" class="py-12 text-center text-xs text-destructive">{{ errorMsg }}</div>
   <div v-else-if="!data" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
   <div v-else class="space-y-4">
     <!-- 概览 -->

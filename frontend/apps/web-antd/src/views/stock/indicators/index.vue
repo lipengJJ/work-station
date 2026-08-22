@@ -17,7 +17,7 @@ const stock = computed(() => selectedStock.value);
       <div class="flex items-center justify-between">
         <div>
           <h1 class="flex items-center gap-2 text-xl font-extrabold text-[hsl(var(--foreground))]">
-            <Activity class="h-5 w-5 text-indigo-400" />
+            <Activity class="h-5 w-5 text-primary" />
             <span>{{ stock?.symbol || '--' }} - 量化技术指标图谱</span>
           </h1>
           <p class="mt-1 text-xs text-[hsl(var(--muted-foreground))]">基于真实日K数据实时计算：动能、均线系统与波动率诊断</p>

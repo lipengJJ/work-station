@@ -35,7 +35,7 @@ import {
 // 固定红涨绿跌，和自选股/K线页面同一套配色，保证整个"股票分析"模块视觉统一
 function changeColorClass(v: null | number | undefined) {
   if (v === null || v === undefined) return 'text-[hsl(var(--muted-foreground))]';
-  return v >= 0 ? 'text-rose-500' : 'text-emerald-400';
+  return v >= 0 ? 'text-destructive' : 'text-success';
 }
 function formatSigned(v: null | number | undefined, digits = 2) {
   if (v === null || v === undefined) return '--';
@@ -68,9 +68,9 @@ const broadIndices = computed(() => indices.value.filter((i) => i.symbol !== '^V
 
 function vixSentiment(price: null | number | undefined) {
   if (price === null || price === undefined) return { label: '暂无数据', color: 'text-[hsl(var(--muted-foreground))]' };
-  if (price < 15) return { label: '低波动 · 市场情绪平稳', color: 'text-emerald-400' };
-  if (price < 25) return { label: '中等波动 · 正常区间', color: 'text-amber-400' };
-  return { label: '高波动 · 避险情绪升温', color: 'text-rose-400' };
+  if (price < 15) return { label: '低波动 · 市场情绪平稳', color: 'text-success' };
+  if (price < 25) return { label: '中等波动 · 正常区间', color: 'text-warning' };
+  return { label: '高波动 · 避险情绪升温', color: 'text-destructive' };
 }
 
 // --------------------------------------------------------- 相对表现走势图 ----
@@ -195,16 +195,16 @@ async function loadEvents() {
 }
 
 const EVENT_TYPE_META: Record<string, { bg: string; dot: string; label: string; text: string; }> = {
-  fomc: { label: 'FOMC', dot: 'bg-indigo-400', text: 'text-indigo-300', bg: 'bg-indigo-500/15 border-indigo-500/30' },
-  cpi: { label: 'CPI', dot: 'bg-amber-400', text: 'text-amber-300', bg: 'bg-amber-500/15 border-amber-500/30' },
-  earnings: { label: '财报', dot: 'bg-emerald-400', text: 'text-emerald-300', bg: 'bg-emerald-500/15 border-emerald-500/30' },
-  watchlist: { label: '关注股财报', dot: 'bg-sky-400', text: 'text-sky-300', bg: 'bg-sky-500/15 border-sky-500/30' },
+  fomc: { label: 'FOMC', dot: 'bg-primary', text: 'text-primary', bg: 'bg-primary/15 border-primary/30' },
+  cpi: { label: 'CPI', dot: 'bg-warning', text: 'text-warning', bg: 'bg-warning/15 border-warning/30' },
+  earnings: { label: '财报', dot: 'bg-success', text: 'text-success', bg: 'bg-success/15 border-success/30' },
+  watchlist: { label: '关注股财报', dot: 'bg-primary', text: 'text-primary', bg: 'bg-primary/15 border-primary/30' },
 };
 
 // 事件在日历上用什么圆点颜色 / 在列表里用什么主色：关注股（自选股）优先
 function eventDotClass(e: MarketOverviewApi.MarketEvent | undefined) {
   if (!e) return 'bg-slate-500';
-  return e.group === 'watchlist' ? 'bg-sky-400' : EVENT_TYPE_META[e.type]?.dot || 'bg-slate-500';
+  return e.group === 'watchlist' ? 'bg-primary' : EVENT_TYPE_META[e.type]?.dot || 'bg-slate-500';
 }
 function eventGroupMeta(e: MarketOverviewApi.MarketEvent) {
   if (e.group === 'watchlist') return EVENT_TYPE_META.watchlist!;
@@ -324,7 +324,7 @@ onMounted(() => {
       <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 class="flex items-center gap-2 text-lg font-extrabold text-[hsl(var(--foreground))]">
-            <Gauge class="h-5 w-5 text-indigo-400" />
+            <Gauge class="h-5 w-5 text-primary" />
             <span>大盘行情</span>
           </h1>
           <p class="mt-0.5 text-[11px] text-[hsl(var(--muted-foreground))]">美股指数、相对表现走势、自选股财报与宏观事件日历</p>
@@ -342,7 +342,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <div v-if="indicesError" class="mb-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs text-rose-300">
+      <div v-if="indicesError" class="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-2 text-xs text-destructive">
         指数行情获取失败：{{ indicesError }}
       </div>
 
@@ -363,10 +363,10 @@ onMounted(() => {
         </div>
 
         <!-- VIX 单独一张卡片，不同的语义/配色（不是"涨跌"而是"情绪"） -->
-        <div class="rounded-xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-[hsl(var(--card))] px-3 py-2.5">
+        <div class="rounded-xl border border-warning/20 bg-gradient-to-br from-warning/5 to-[hsl(var(--card))] px-3 py-2.5">
           <div class="mb-0.5 flex items-center justify-between">
             <span class="text-[10px] font-semibold text-[hsl(var(--muted-foreground))]">{{ vixIndex?.name_cn || 'VIX' }}</span>
-            <AlertTriangle class="h-3 w-3 text-amber-400" />
+            <AlertTriangle class="h-3 w-3 text-warning" />
           </div>
           <template v-if="vixIndex?.available">
             <div class="font-mono text-base font-black text-[hsl(var(--foreground))]">{{ formatPrice(vixIndex.price) }}</div>
@@ -389,14 +389,14 @@ onMounted(() => {
             <div class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-[11px] font-semibold">
               <button
                 v-for="p in PERIODS" :key="p"
-                class="rounded px-2.5 py-1" :class="selectedPeriod === p ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
+                class="rounded px-2.5 py-1" :class="selectedPeriod === p ? 'bg-primary text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
                 @click="selectedPeriod = p"
               >
                 {{ p }}
               </button>
             </div>
           </div>
-          <div v-if="chartError" class="flex h-[240px] items-center justify-center text-xs text-rose-400">{{ chartError }}</div>
+          <div v-if="chartError" class="flex h-[240px] items-center justify-center text-xs text-destructive">{{ chartError }}</div>
           <div v-else class="h-[240px]">
             <EchartsUI ref="chartRef" height="100%" width="100%" />
           </div>
@@ -405,7 +405,7 @@ onMounted(() => {
         <!-- 七姐妹财报速览 -->
         <div class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-3">
           <div class="mb-2 flex items-center gap-2 text-xs font-bold text-[hsl(var(--muted-foreground))]">
-            <Users class="h-3.5 w-3.5 text-indigo-400" />
+            <Users class="h-3.5 w-3.5 text-primary" />
             <span>"七姐妹"财报速览</span>
           </div>
           <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
@@ -413,7 +413,7 @@ onMounted(() => {
               <div class="font-mono text-[11px] font-extrabold text-[hsl(var(--foreground))]">{{ c.symbol }}</div>
               <div class="mb-0.5 text-[9px] text-[hsl(var(--muted-foreground))]">{{ c.name_cn }}</div>
               <template v-if="c.next_earnings_date">
-                <div class="text-[10px] font-semibold text-indigo-300">{{ c.next_earnings_date }}</div>
+                <div class="text-[10px] font-semibold text-primary">{{ c.next_earnings_date }}</div>
                 <div class="text-[9px] text-[hsl(var(--muted-foreground))]">
                   {{ daysUntil(c.next_earnings_date)! >= 0 ? `${daysUntil(c.next_earnings_date)}天后` : '已发布' }}
                 </div>
@@ -428,7 +428,7 @@ onMounted(() => {
         <div class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
           <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2 text-xs font-bold text-[hsl(var(--foreground))]">
-              <Calendar class="h-3.5 w-3.5 text-indigo-400" />
+              <Calendar class="h-3.5 w-3.5 text-primary" />
               <span>事件日历</span>
               <span v-if="eventsNote" class="text-[10px] font-normal text-[hsl(var(--muted-foreground))]">· 已合并 {{ watchlistCount }} 只自选股财报</span>
             </div>
@@ -473,7 +473,7 @@ onMounted(() => {
                   class="relative flex aspect-square flex-col items-center justify-center rounded-lg text-xs transition-all"
                   :class="[
                     !cell.isCurrentMonth ? 'text-slate-700' : cell.isWeekend ? 'text-[hsl(var(--muted-foreground))]' : 'text-[hsl(var(--muted-foreground))]',
-                    selectedDate === cell.date ? 'bg-indigo-600 font-extrabold text-white' : cell.isToday ? 'border border-indigo-500/60 font-bold' : 'hover:bg-[hsl(var(--muted))]',
+                    selectedDate === cell.date ? 'bg-primary font-extrabold text-white' : cell.isToday ? 'border border-primary/60 font-bold' : 'hover:bg-[hsl(var(--muted))]',
                   ]"
                   @click="selectDay(cell)"
                 >
@@ -506,25 +506,25 @@ onMounted(() => {
                 <div
                   v-for="(e, i) in selectedDayEvents" :key="`${e.type}-${e.symbol || ''}-${i}`"
                   class="rounded-xl border p-3"
-                  :class="e.group === 'watchlist' ? 'border-sky-500/40 bg-sky-500/5' : 'border-[hsl(var(--border))] bg-[hsl(var(--background-deep))]'"
+                  :class="e.group === 'watchlist' ? 'border-primary/40 bg-primary/5' : 'border-[hsl(var(--border))] bg-[hsl(var(--background-deep))]'"
                 >
                   <div class="flex items-center justify-between gap-2">
                     <span class="rounded border px-1.5 py-0.5 text-[10px] font-bold" :class="[eventGroupMeta(e).bg, eventGroupMeta(e).text]">
                       {{ eventGroupMeta(e).label }}
                     </span>
                     <div class="flex items-center gap-2">
-                      <span v-if="e.group === 'watchlist'" class="flex items-center gap-0.5 text-[10px] font-bold text-sky-300">
-                        <Star class="h-3 w-3 fill-sky-400 text-sky-400" />
+                      <span v-if="e.group === 'watchlist'" class="flex items-center gap-0.5 text-[10px] font-bold text-primary">
+                        <Star class="h-3 w-3 fill-primary text-primary" />
                         持仓关注
                       </span>
-                      <span v-if="!e.confirmed" class="text-[10px] text-amber-400">日期待官方确认</span>
+                      <span v-if="!e.confirmed" class="text-[10px] text-warning">日期待官方确认</span>
                     </div>
                   </div>
                   <div class="mt-1.5 text-xs font-bold text-[hsl(var(--foreground))]">{{ e.title }}</div>
                   <div class="mt-0.5 text-[11px] text-[hsl(var(--muted-foreground))]">{{ e.detail }}</div>
                   <div class="mt-1.5 flex items-center justify-between text-[10px] text-[hsl(var(--muted-foreground))]">
                     <span>{{ e.date_range }}</span>
-                    <a v-if="e.source_url" :href="e.source_url" target="_blank" rel="noopener noreferrer" class="flex items-center gap-0.5 text-indigo-400 underline">
+                    <a v-if="e.source_url" :href="e.source_url" target="_blank" rel="noopener noreferrer" class="flex items-center gap-0.5 text-primary underline">
                       官方日程 <ExternalLink class="h-2.5 w-2.5" />
                     </a>
                   </div>

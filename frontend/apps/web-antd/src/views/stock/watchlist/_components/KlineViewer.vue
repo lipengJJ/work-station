@@ -252,7 +252,7 @@ function showRecent(count: number) {
       <div class="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] px-4">
         <div class="flex min-w-0 items-center gap-3">
           <button
-            class="flex items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs font-bold text-[hsl(var(--muted-foreground))] hover:border-indigo-500/50 hover:text-[hsl(var(--foreground))]"
+            class="flex items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs font-bold text-[hsl(var(--muted-foreground))] hover:border-primary/50 hover:text-[hsl(var(--foreground))]"
             @click="emit('update:open', false)"
           >
             <ArrowLeft class="h-3.5 w-3.5" />
@@ -263,7 +263,7 @@ function showRecent(count: number) {
             <span class="max-w-[200px] truncate text-xs text-[hsl(var(--muted-foreground))]">{{ stock.name }}</span>
             <span
               class="flex items-center gap-1 text-xs font-bold"
-              :class="(stock.change ?? 0) >= 0 ? 'text-rose-500' : 'text-emerald-400'"
+              :class="(stock.change ?? 0) >= 0 ? 'text-destructive' : 'text-success'"
             >
               <component :is="(stock.change ?? 0) >= 0 ? TrendingUp : TrendingDown" class="h-3.5 w-3.5" />
               {{ (stock.change ?? 0) >= 0 ? '+' : '' }}{{ stock.change?.toFixed(2) ?? '--' }}
@@ -279,7 +279,7 @@ function showRecent(count: number) {
               v-for="t in VIEW_TABS"
               :key="t.key"
               class="rounded-md px-2.5 py-1"
-              :class="view === t.key ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
+              :class="view === t.key ? 'bg-primary text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
               @click="view = t.key"
             >
               {{ t.label }}
@@ -292,7 +292,7 @@ function showRecent(count: number) {
               v-for="tf in (['1D', '1W', '1M'] as const)"
               :key="tf"
               class="rounded-md px-3 py-1"
-              :class="timeframe === tf ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
+              :class="timeframe === tf ? 'bg-primary text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
               @click="timeframe = tf"
             >
               {{ TIMEFRAME_LABEL[tf] }}
@@ -302,7 +302,7 @@ function showRecent(count: number) {
           <button
             v-if="view === 'kline'"
             class="rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-all"
-            :class="showMA ? 'border-indigo-500/40 bg-indigo-500/20 text-indigo-300' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))]'"
+            :class="showMA ? 'border-primary/40 bg-primary/20 text-primary' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))]'"
             @click="showMA = !showMA"
           >
             均线
@@ -327,8 +327,8 @@ function showRecent(count: number) {
 
       <!-- K线视图：图例 -->
       <div v-if="view === 'kline'" class="flex shrink-0 items-center gap-4 px-4 py-1.5 font-mono text-[10px] text-[hsl(var(--muted-foreground))]">
-        <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-sm bg-rose-500"></i> 上涨</span>
-        <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-sm bg-emerald-400"></i> 下跌</span>
+        <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-sm bg-destructive"></i> 上涨</span>
+        <span class="flex items-center gap-1"><i class="h-2 w-2 rounded-sm bg-success"></i> 下跌</span>
         <span v-if="showMA" class="text-[#38bdf8]">MA5</span>
         <span v-if="showMA" class="text-[#a855f7]">MA20</span>
         <span class="ml-auto">滚轮缩放 / 拖动滑块 / 双击复位 / ESC 关闭</span>
@@ -339,10 +339,10 @@ function showRecent(count: number) {
         <!-- K线图表 -->
         <div v-if="view === 'kline'" class="h-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-3">
           <div v-if="loading" class="flex h-full flex-col items-center justify-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
-            <Loader2 class="h-5 w-5 animate-spin text-indigo-400" />
+            <Loader2 class="h-5 w-5 animate-spin text-primary" />
             正在获取 {{ stock.symbol }} {{ TIMEFRAME_LABEL[timeframe] }}…
           </div>
-          <div v-else-if="error" class="flex h-full items-center justify-center px-6 text-center text-xs text-rose-300">
+          <div v-else-if="error" class="flex h-full items-center justify-center px-6 text-center text-xs text-destructive">
             {{ error }}
           </div>
           <div v-else-if="candles.length === 0" class="flex h-full items-center justify-center text-xs text-[hsl(var(--muted-foreground))]">

@@ -16,7 +16,7 @@ const stock = computed(() => selectedStock.value);
       <div class="flex items-center justify-between">
         <div>
           <h1 class="flex items-center gap-2 text-xl font-extrabold text-[hsl(var(--foreground))]">
-            <Layers class="h-5 w-5 text-indigo-400" />
+            <Layers class="h-5 w-5 text-primary" />
             <span>{{ stock?.symbol || '--' }} - 期权链与隐含波动率 (Options Chain)</span>
           </h1>
           <p class="mt-1 text-xs text-[hsl(var(--muted-foreground))]">认购(Call)与认沽(Put)行权价、IV、Delta分布</p>
@@ -24,8 +24,8 @@ const stock = computed(() => selectedStock.value);
       </div>
 
       <div class="flex flex-col items-center justify-center rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-16 text-center">
-        <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-indigo-500/20 bg-indigo-500/10">
-          <Layers class="h-7 w-7 text-indigo-400" />
+        <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10">
+          <Layers class="h-7 w-7 text-primary" />
         </div>
         <h3 class="mb-2 text-sm font-bold text-[hsl(var(--foreground))]">期权数据暂未接入</h3>
         <p class="max-w-md text-xs leading-relaxed text-[hsl(var(--muted-foreground))]">

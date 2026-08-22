@@ -6,24 +6,26 @@ import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Empty, Progress, Tag, Tooltip } from 'ant-design-vue';
+import { Empty } from 'ant-design-vue';
 import {
   Activity,
+  ArrowRight,
   CheckCircle2,
   Database,
-  HardDrive,
+  MessageSquare,
   PlusCircle,
-  TrendingUp,
+  Radar,
+  Search,
 } from 'lucide-vue-next';
 
 import { getHomeApi, getHomeStorageApi } from '#/api/core/workbench';
 
 // ---------------------------------------------------------------- 常量 ----
 
-const KIND_META: Record<string, { label: string; color: string; route: string }> = {
-  collect: { label: '采集任务', color: 'blue', route: '/xhs/notes' },
-  backfill: { label: '补抓评论', color: 'cyan', route: '/xhs/notes' },
-  tracking: { label: '追踪扫描', color: 'purple', route: '/xhs/tracking' },
+const KIND_META: Record<string, { label: string; route: string; icon: unknown }> = {
+  collect: { label: '采集任务', route: '/xhs/notes', icon: Search },
+  backfill: { label: '补抓评论', route: '/xhs/notes', icon: MessageSquare },
+  tracking: { label: '追踪扫描', route: '/xhs/tracking', icon: Radar },
 };
 
 const PHASE_TEXT: Record<string, string> = {
@@ -38,13 +40,6 @@ const PHASE_TEXT: Record<string, string> = {
   scanning: '扫描中',
   done: '已完成',
   failed: '失败',
-};
-
-const STATUS_DOT_COLOR: Record<string, string> = {
-  success: '#22c55e',
-  running: '#eab308',
-  pending: '#94a3b8',
-  failed: '#f43f5e',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -72,6 +67,13 @@ function formatBytes(n: number): string {
   return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+function formatAxis(n: number): string {
+  if (n >= 1024 * 1024 * 1024) return `${(n / 1024 / 1024 / 1024).toFixed(1)}GB`;
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(0)}MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(0)}KB`;
+  return `${Math.round(n)}B`;
+}
+
 async function loadStorage() {
   try {
     storage.value = await getHomeStorageApi();
@@ -79,52 +81,6 @@ async function loadStorage() {
     // 静默
   }
 }
-
-// ------------------------------------------- 存储趋势折线图（SVG）----
-const ST_W = 560;
-const ST_H = 110;
-const ST_PAD = { top: 8, right: 10, bottom: 18, left: 48 };
-
-const storageChart = computed(() => {
-  const points = storage.value?.trend ?? [];
-  const innerW = ST_W - ST_PAD.left - ST_PAD.right;
-  const innerH = ST_H - ST_PAD.top - ST_PAD.bottom;
-  const max = Math.max(1, ...points.flatMap((p) => [p.db, p.storage]));
-  const step = points.length > 1 ? innerW / (points.length - 1) : innerW;
-
-  const toXY = (v: number, i: number) => ({
-    x: ST_PAD.left + step * i,
-    y: ST_PAD.top + innerH - (v / max) * innerH,
-  });
-  const linePath = (key: 'db' | 'storage') =>
-    points
-      .map((p, i) => {
-        const { x, y } = toXY(p[key], i);
-        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(' ');
-  // 刻度：0 / 1/3 / 2/3 / max
-  const ticks = [0, 0.33, 0.66, 1].map((r) => ({
-    y: ST_PAD.top + innerH - r * innerH,
-    label: formatAxis(max * r),
-  }));
-  const labels: { x: number; t: string }[] = [];
-  if (points.length) {
-    const idxs = [0, Math.floor((points.length - 1) / 2), points.length - 1];
-    [...new Set(idxs)].forEach((i) => {
-      const pt = points[i]!;
-      labels.push({ x: toXY(pt.db, i).x, t: pt.t });
-    });
-  }
-  return { lineDb: linePath('db'), lineStorage: linePath('storage'), ticks, labels, count: points.length };
-});
-
-function formatAxis(n: number): string {
-  if (n >= 1024 * 1024 * 1024) return `${(n / 1024 / 1024 / 1024).toFixed(1)}GB`;
-  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(0)}MB`;
-  return `${(n / 1024).toFixed(0)}KB`;
-}
-
 
 async function loadHome() {
   try {
@@ -136,6 +92,7 @@ async function loadHome() {
   }
 }
 
+const summary = computed(() => data.value?.summary);
 const runningTasks = computed(() => data.value?.running_tasks ?? []);
 const hasRunning = computed(() => runningTasks.value.length > 0);
 const trend = computed(() => data.value?.trend ?? []);
@@ -150,11 +107,11 @@ function phaseText(t: WorkbenchApi.RunningTask): string {
   return PHASE_TEXT[t.phase ?? ''] ?? t.phase ?? '';
 }
 
-// ---------------------------------------------------------- SVG 趋势图 ----
+// ---------------------------------------------------------- 任务趋势柱状图（放大填满）----
 
 const TREND_W = 560;
-const TREND_H = 160;
-const TREND_PAD = { top: 14, right: 10, bottom: 22, left: 28 };
+const TREND_H = 220;
+const TREND_PAD = { top: 16, right: 12, bottom: 26, left: 34 };
 
 const trendChart = computed(() => {
   const points = trend.value;
@@ -162,52 +119,95 @@ const trendChart = computed(() => {
   const innerH = TREND_H - TREND_PAD.top - TREND_PAD.bottom;
   const max = Math.max(1, ...points.flatMap((p) => [p.created, p.finished]));
   const step = points.length > 1 ? innerW / points.length : innerW;
-  const barW = Math.min(26, step * 0.32);
+  const barW = Math.min(34, step * 0.34);
+  const gap = 4;
   const bars = points.map((p, i) => {
     const cx = TREND_PAD.left + step * i + step / 2;
     const hCreated = (p.created / max) * innerH;
     const hFinished = (p.finished / max) * innerH;
     return {
-      x1: cx - barW - 2,
+      x1: cx - barW - gap / 2,
       y1: TREND_PAD.top + innerH - hCreated,
       h1: hCreated,
-      x2: cx + 2,
+      x2: cx + gap / 2,
       y2: TREND_PAD.top + innerH - hFinished,
       h2: hFinished,
+      w: barW,
     };
   });
   const labels = points.map((p) => {
     const d = new Date(`${p.date}T00:00:00`);
     return `${d.getMonth() + 1}/${d.getDate()}`;
   });
-  return { bars, labels, max };
-});
-
-// ---------------------------------------------------------- SVG 环形图 ----
-
-const RING_R = 52;
-const RING_C = 2 * Math.PI * RING_R;
-const RING_COLORS: [string, string][] = [
-  ['success', '#22c55e'],
-  ['running', '#eab308'],
-  ['pending', '#94a3b8'],
-  ['failed', '#f43f5e'],
-];
-
-const ringSeg = computed(() => {
-  const d = dist.value;
-  const total = Math.max(1, Object.values(d).reduce((a, b) => a + b, 0));
-  return RING_COLORS.map(([key, color]) => ({
-    color,
-    len: ((d[key] ?? 0) / total) * RING_C,
-    label: STATUS_LABEL[key] ?? key,
-    count: d[key] ?? 0,
+  const ticks = [0, 0.5, 1].map((r) => ({
+    y: TREND_PAD.top + innerH - r * innerH,
+    label: Math.round(max * r),
   }));
+  return { bars, labels, ticks, max };
 });
 
-function ringOffset(i: number): number {
-  return i === 0 ? 0 : -ringSeg.value.slice(0, i).reduce((a, s) => a + s.len, 0);
-}
+// ---------------------------------------------------------- 存储面积折线图（Prometheus 风格）----
+
+const ST_W = 560;
+const ST_H = 210;
+const ST_PAD = { top: 14, right: 12, bottom: 24, left: 46 };
+
+const storageChart = computed(() => {
+  const points = storage.value?.trend ?? [];
+  const innerW = ST_W - ST_PAD.left - ST_PAD.right;
+  const innerH = ST_H - ST_PAD.top - ST_PAD.bottom;
+  const max = Math.max(1, ...points.flatMap((p) => [p.db, p.storage]));
+  const step = points.length > 1 ? innerW / (points.length - 1) : innerW;
+  const toXY = (v: number, i: number) => ({
+    x: ST_PAD.left + step * i,
+    y: ST_PAD.top + innerH - (v / max) * innerH,
+  });
+  const line = (key: 'db' | 'storage') =>
+    points
+      .map((p, i) => {
+        const { x, y } = toXY(p[key], i);
+        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+  const area = (key: 'db' | 'storage') => {
+    if (points.length < 2) return '';
+    const first = toXY(points[0]![key], 0);
+    const last = toXY(points[points.length - 1]![key], points.length - 1);
+    const baseY = ST_PAD.top + innerH;
+    return `${line(key)} L${last.x.toFixed(1)},${baseY} L${first.x.toFixed(1)},${baseY} Z`;
+  };
+  const ticks = [0, 0.5, 1].map((r) => ({
+    y: ST_PAD.top + innerH - r * innerH,
+    label: formatAxis(max * r),
+  }));
+  const labels: { x: number; t: string }[] = [];
+  if (points.length) {
+    const idxs = [0, Math.floor((points.length - 1) / 2), points.length - 1];
+    [...new Set(idxs)].forEach((i) => {
+      const pt = points[i]!;
+      labels.push({ x: toXY(pt.db, i).x, t: pt.t });
+    });
+  }
+  return {
+    lineDb: line('db'),
+    areaDb: area('db'),
+    lineStorage: line('storage'),
+    areaStorage: area('storage'),
+    ticks,
+    labels,
+    count: points.length,
+  };
+});
+
+// ---------------------------------------------------------- 成功率环形 ----
+
+const RING_R = 50;
+const RING_C = 2 * Math.PI * RING_R;
+const successRate = computed(() => {
+  const r = summary.value?.success_rate ?? 0;
+  return Math.max(0, Math.min(100, r));
+});
+const successDone = computed(() => (summary.value?.success_count ?? 0) + (summary.value?.failed_count ?? 0));
 
 // ---------------------------------------------------------------- 时钟 ----
 
@@ -218,7 +218,6 @@ onMounted(() => {
   loadHome();
   timer = setInterval(loadHome, 5000);
   loadStorage();
-  // 存储统计独立低频轮询（du 扫描有成本）
   storageTimer = setInterval(loadStorage, 30000);
 });
 
@@ -229,297 +228,221 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Page :auto-content-height="true">
-    <!-- KPI 卡片 -->
-    <div class="kpi-grid">
-      <div v-for="kpi in [
-        { label: '任务总数', value: data?.summary.total_tasks ?? 0, icon: Database, color: '#3b82f6', sub: '全部模块累计' },
-        { label: '运行中', value: data?.summary.running_count ?? 0, icon: Activity, color: '#eab308', sub: '采集 / 补抓 / 追踪' },
-        { label: '今日新增', value: data?.summary.today_new ?? 0, icon: PlusCircle, color: '#22c55e', sub: '今天创建的任务' },
-        { label: '今日完成', value: data?.summary.today_done ?? 0, icon: CheckCircle2, color: '#06b6d4', sub: '今天跑完的任务' },
-        { label: '成功率', value: `${data?.summary.success_rate ?? 0}%`, icon: TrendingUp, color: '#8b5cf6', sub: `${data?.summary.success_count ?? 0} 成功 / ${(data?.summary.success_count ?? 0) + (data?.summary.failed_count ?? 0)} 完成` },
-      ] as const"
-        :key="kpi.label"
-        style="
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 12px 14px;
-          border-radius: 12px;
-          border: 1px solid hsl(var(--border));
-          background: hsl(var(--card));
-          position: relative;
-          overflow: hidden;
-        "
-      >
-        <div
-          class="kpi-icon"
-          :style="{
-            background: `color-mix(in srgb, ${kpi.color} 16%, transparent)`,
-            color: kpi.color,
-          }"
-        >
-          <component :is="kpi.icon" :style="{ width: 22, height: 22 }" />
-        </div>
-        <div style="min-width: 0">
-          <div style="font-size: 12px; color: hsl(var(--muted-foreground))">{{ kpi.label }}</div>
-          <div style="font-size: 22px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; color: hsl(var(--foreground))">
-            {{ kpi.value }}
-          </div>
-          <div style="font-size: 11px; color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">
-            {{ kpi.sub }}
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 存储面板：左=当前数值明细，右=趋势折线 -->
-    <div
-      class="storage-panel"
-    >
-      <!-- 左：当前存储明细 -->
-      <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0">
-        <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: hsl(var(--foreground))">
-          <HardDrive style="width: 14px; height: 14px" />
-          存储使用
-          <span style="margin-left: auto; font-size: 11px; font-weight: 400; color: hsl(var(--muted-foreground))">每 30 秒刷新</span>
-        </div>
-        <div
-          v-for="item in [
-            { label: '数据库', value: formatBytes(storage?.db_size ?? 0), color: '#3b82f6', note: 'SQLite 持久化' },
-            { label: '笔记素材', value: formatBytes(storage?.storage_size ?? 0), color: '#22c55e', note: 'Excel/图文素材' },
-            { label: '合计占用', value: formatBytes((storage?.db_size ?? 0) + (storage?.storage_size ?? 0)), color: '#f59e0b', note: '持久化总量' },
-          ] as const"
-          :key="item.label"
-          style="display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; background: hsl(var(--background-deep))"
-        >
-          <i :style="{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0 }"></i>
-          <span style="font-size: 12px; color: hsl(var(--muted-foreground))">{{ item.label }}</span>
-          <span style="margin-left: auto; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; color: hsl(var(--foreground))">{{ item.value }}</span>
-          <span style="font-size: 10px; color: hsl(var(--muted-foreground))">{{ item.note }}</span>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 2px">
-          <div v-for="c in [
-            { label: '笔记', v: storage?.note_count ?? 0, u: '篇' },
-            { label: '评论', v: storage?.comment_count ?? 0, u: '条' },
-            { label: '任务', v: storage?.task_count ?? 0, u: '个' },
-          ] as const" :key="c.label" style="text-align: center; padding: 6px 4px; border-radius: 8px; background: hsl(var(--background-deep))">
-            <div style="font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; color: hsl(var(--foreground))">
-              {{ c.v }}<span style="font-size: 10px; font-weight: 400; color: hsl(var(--muted-foreground))"> {{ c.u }}</span>
-            </div>
-            <div style="font-size: 10px; color: hsl(var(--muted-foreground))">{{ c.label }}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 右：趋势折线 -->
-      <div style="min-width: 0">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px">
-          <span style="display: flex; align-items: center; gap: 12px; font-size: 11px; color: hsl(var(--muted-foreground))">
-            <span style="display: flex; align-items: center; gap: 5px"><i style="width: 9px; height: 3px; border-radius: 2px; background: #3b82f6"></i>数据库</span>
-            <span style="display: flex; align-items: center; gap: 5px"><i style="width: 9px; height: 3px; border-radius: 2px; background: #22c55e"></i>素材</span>
-            <span>近 24h · 每 5 分钟采样</span>
-          </span>
-        </div>
-        <svg :viewBox="`0 0 ${ST_W} ${ST_H}`" style="width: 100%; height: auto">
-          <template v-for="tick in storageChart.ticks" :key="tick.y">
-            <line
-              :x1="ST_PAD.left"
-              :x2="ST_W - ST_PAD.right"
-              :y1="tick.y"
-              :y2="tick.y"
-              stroke="hsl(var(--border))"
-              stroke-width="0.6"
-              stroke-dasharray="3 4"
-            />
-            <text :x="ST_PAD.left - 6" :y="tick.y + 3" text-anchor="end" fill="hsl(var(--muted-foreground))" style="font-size: 10px">
-              {{ tick.label }}
-            </text>
-          </template>
-          <template v-if="storageChart.count > 1">
-            <path :d="storageChart.lineStorage" fill="none" stroke="#22c55e" stroke-width="1.8" opacity="0.9" />
-            <path :d="storageChart.lineDb" fill="none" stroke="#3b82f6" stroke-width="1.8" opacity="0.9" />
-          </template>
-          <text
-            v-if="!storageChart.count"
-            :x="ST_W / 2"
-            :y="ST_H / 2"
-            text-anchor="middle"
-            fill="hsl(var(--muted-foreground))"
-            style="font-size: 12px"
-          >
-            正在采样中，每 5 分钟记录一个点
-          </text>
-          <g v-for="l in storageChart.labels" :key="l.x">
-            <text :x="l.x" :y="ST_H - 6" text-anchor="middle" fill="hsl(var(--muted-foreground))" style="font-size: 10px">
-              {{ l.t }}
-            </text>
-          </g>
-        </svg>
-      </div>
-    </div>
-
-    <!-- 图表行：趋势 + 状态分布 -->
-    <div class="chart-row" style="margin-bottom: 10px">
-      <div
-        style="
-          padding: 14px 16px;
-          border-radius: 12px;
-          border: 1px solid hsl(var(--border));
-          background: hsl(var(--card));
-        "
-      >
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px">
-          <span style="font-size: 13px; font-weight: 700; color: hsl(var(--foreground))">近 7 天任务趋势</span>
-          <span style="display: flex; gap: 14px; font-size: 11px; color: hsl(var(--muted-foreground))">
-            <span style="display: flex; align-items: center; gap: 5px"><i style="width: 9px; height: 9px; border-radius: 2px; background: hsl(var(--primary))"></i>创建</span>
-            <span style="display: flex; align-items: center; gap: 5px"><i style="width: 9px; height: 9px; border-radius: 2px; background: #22c55e"></i>完成</span>
-          </span>
-        </div>
-        <svg :viewBox="`0 0 ${TREND_W} ${TREND_H}`" style="width: 100%; height: auto">
-          <template v-for="n in 4" :key="n">
-            <line
-              :x1="TREND_PAD.left"
-              :x2="TREND_W - TREND_PAD.right"
-              :y1="TREND_PAD.top + ((TREND_H - TREND_PAD.top - TREND_PAD.bottom) / 4) * (n - 1)"
-              :y2="TREND_PAD.top + ((TREND_H - TREND_PAD.top - TREND_PAD.bottom) / 4) * (n - 1)"
-              stroke="hsl(var(--border))"
-              stroke-width="0.6"
-              stroke-dasharray="3 4"
-            />
-          </template>
-          <template v-if="trend.length">
-            <g v-for="b in trendChart.bars" :key="b.x1">
-              <rect :x="b.x1" :y="b.y1" :width="10" :height="b.h1" rx="2" fill="hsl(var(--primary))" opacity="0.85" />
-              <rect :x="b.x2" :y="b.y2" :width="10" :height="b.h2" rx="2" fill="#22c55e" opacity="0.85" />
-            </g>
-            <g v-for="(label, i) in trendChart.labels" :key="label">
-              <text
-                :x="TREND_PAD.left + (trend.length > 1 ? ((TREND_W - TREND_PAD.left - TREND_PAD.right) / trend.length) * i + (TREND_W - TREND_PAD.left - TREND_PAD.right) / trend.length / 2 : TREND_W / 2)"
-                :y="TREND_H - 6"
-                text-anchor="middle"
-                fill="hsl(var(--muted-foreground))"
-                style="font-size: 10px"
+  <Page :auto-content-height="true" content-class="!p-0">
+    <div class="home-eclipse custom-scrollbar flex h-full flex-col gap-5 overflow-y-auto p-6 lg:p-8 select-none">
+      <!-- 双列布局 -->
+      <div class="grid min-h-0 grid-cols-1 gap-5 xl:grid-cols-[1.9fr_1fr]">
+        <!-- ==================== 左列 ==================== -->
+        <div class="flex min-w-0 flex-col gap-5">
+          <!-- ① 概览 -->
+          <div class="rounded-[22px] p-6" style="background: var(--hm-card)">
+            <div class="mb-5 text-lg font-bold" style="color: var(--hm-ink)">概览</div>
+            <div class="grid grid-cols-2 gap-6 md:grid-cols-4">
+              <div
+                v-for="kpi in [
+                  { label: '任务总数', value: summary?.total_tasks ?? 0, icon: Database, sub: '全部模块累计' },
+                  { label: '运行中', value: summary?.running_count ?? 0, icon: Activity, sub: '采集 / 补抓 / 追踪' },
+                  { label: '今日新增', value: summary?.today_new ?? 0, icon: PlusCircle, sub: '今天创建的任务' },
+                  { label: '今日完成', value: summary?.today_done ?? 0, icon: CheckCircle2, sub: '今天跑完的任务' },
+                ] as const"
+                :key="kpi.label"
+                class="flex items-center gap-3.5"
               >
-                {{ label }}
-              </text>
-            </g>
-          </template>
-        </svg>
-      </div>
-
-      <!-- 状态分布环形 -->
-      <div
-        style="
-          display: flex;
-          align-items: center;
-          gap: 18px;
-          padding: 14px 16px;
-          border-radius: 12px;
-          border: 1px solid hsl(var(--border));
-          background: hsl(var(--card));
-        "
-      >
-        <svg viewBox="0 0 140 140" style="width: 132px; height: 132px; flex-shrink: 0">
-          <circle cx="70" cy="70" :r="RING_R" fill="none" stroke="hsl(var(--muted))" stroke-width="14" />
-          <circle
-            v-for="(seg, i) in ringSeg"
-            :key="seg.label"
-            cx="70"
-            cy="70"
-            :r="RING_R"
-            fill="none"
-            :stroke="seg.color"
-            stroke-width="14"
-            :stroke-dasharray="`${seg.len} ${RING_C - seg.len}`"
-            :stroke-dashoffset="i === 0 ? 0 : -ringOffset(i)"
-            stroke-linecap="butt"
-            transform="rotate(-90 70 70)"
-            opacity="0.9"
-          />
-          <text x="70" y="66" text-anchor="middle" fill="hsl(var(--foreground))" style="font-size: 22px; font-weight: 800">
-            {{ Object.values(dist).reduce((a, b) => a + b, 0) }}
-          </text>
-          <text x="70" y="84" text-anchor="middle" fill="hsl(var(--muted-foreground))" style="font-size: 10px">任务总数</text>
-        </svg>
-        <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0">
-          <div v-for="seg in ringSeg" :key="seg.label" style="display: flex; align-items: center; gap: 8px">
-            <i :style="{ width: 10, height: 10, borderRadius: 3, background: seg.color, flexShrink: 0 }"></i>
-            <span style="font-size: 12px; color: hsl(var(--muted-foreground)); width: 44px">{{ seg.label }}</span>
-            <span style="font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: hsl(var(--foreground))">{{ seg.count }}</span>
+                <div class="flex size-12 shrink-0 items-center justify-center rounded-2xl" style="background: var(--hm-accent-soft); color: var(--hm-accent)">
+                  <component :is="kpi.icon" class="size-6" />
+                </div>
+                <div class="min-w-0">
+                  <div class="text-xs" style="color: var(--hm-muted)">{{ kpi.label }}</div>
+                  <div class="text-3xl font-black tabular-nums" style="color: var(--hm-accent)">{{ kpi.value }}</div>
+                  <div class="truncate text-[11px]" style="color: var(--hm-muted)">{{ kpi.sub }}</div>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    </div>
 
-    <!-- 运行中任务：flex-1 占满剩余高度，首屏可见 -->
-    <div
-      class="home-tasks"
-      style="
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        min-height: 0;
-        padding: 14px 16px;
-        border-radius: 12px;
-        border: 1px solid hsl(var(--border));
-        background: hsl(var(--card));
-        overflow-y: auto;
-      "
-    >
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px">
-        <span style="font-size: 13px; font-weight: 700; color: hsl(var(--foreground))">运行中任务</span>
-        <span style="font-size: 11px; color: hsl(var(--muted-foreground))">点击卡片跳转详情</span>
-      </div>
-      <Empty v-if="!loading && !hasRunning" description="暂无运行中的任务" />
-      <div v-else style="display: flex; flex-wrap: wrap; gap: 12px">
-        <div
-          v-for="t in runningTasks"
-          :key="`${t.kind}-${t.id}`"
-          style="
-            width: 300px;
-            padding: 12px 14px;
-            border-radius: 10px;
-            border: 1px solid hsl(var(--border));
-            background: hsl(var(--background-deep));
-            cursor: pointer;
-            transition: transform 0.15s, box-shadow 0.15s;
-          "
-          @click="router.push(KIND_META[t.kind]?.route ?? '/')"
-          @mouseover="($event.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'"
-          @mouseout="($event.currentTarget as HTMLElement).style.transform = 'translateY(0)'"
-        >
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
-            <div style="display: flex; align-items: center; gap: 8px; min-width: 0">
-              <Tag :color="KIND_META[t.kind]?.color" style="margin-inline-end: 0">{{ KIND_META[t.kind]?.label }}</Tag>
-              <span style="font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: hsl(var(--foreground))">
-                {{ t.title }}
+          <!-- ② 任务趋势（独占左列宽度，柱状图放大填满） -->
+          <div class="rounded-[22px] p-6" style="background: var(--hm-card)">
+            <div class="mb-4 flex items-center justify-between">
+              <span class="text-lg font-bold" style="color: var(--hm-ink)">任务趋势</span>
+              <span class="flex gap-3 text-[11px]" style="color: var(--hm-muted)">
+                <span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full" style="background: var(--hm-accent)"></i>创建</span>
+                <span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full" style="background: var(--hm-chart-2)"></i>完成</span>
               </span>
             </div>
-            <span style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: hsl(var(--muted-foreground))">
-              <i
-                :style="{
-                  width: 7,
-                  height: 7,
-                  borderRadius: '50%',
-                  background: STATUS_DOT_COLOR[t.status] ?? 'hsl(var(--muted-foreground))',
-                  animation: t.status === 'running' ? 'pulse-dot 1.8s infinite' : 'none',
-                }"
-              ></i>
-              {{ t.status === 'pending' ? '排队中' : '进行中' }}
-            </span>
+            <svg :viewBox="`0 0 ${TREND_W} ${TREND_H}`" class="h-auto w-full">
+              <template v-for="tick in trendChart.ticks" :key="tick.y">
+                <line :x1="TREND_PAD.left" :x2="TREND_W - TREND_PAD.right" :y1="tick.y" :y2="tick.y" stroke="var(--hm-inner)" stroke-width="0.7" stroke-dasharray="3 4" />
+                <text :x="TREND_PAD.left - 6" :y="tick.y + 3" text-anchor="end" fill="var(--hm-muted)" style="font-size: 10px">{{ tick.label }}</text>
+              </template>
+              <template v-if="trend.length">
+                <g v-for="(b, i) in trendChart.bars" :key="i">
+                  <rect :x="b.x1" :y="b.y1" :width="b.w" :height="Math.max(b.h1, 2)" rx="4" fill="var(--hm-accent)" opacity="0.92" />
+                  <rect :x="b.x2" :y="b.y2" :width="b.w" :height="Math.max(b.h2, 2)" rx="4" fill="var(--hm-chart-2)" opacity="0.9" />
+                </g>
+                <g v-for="(label, i) in trendChart.labels" :key="label">
+                  <text
+                    :x="TREND_PAD.left + (trend.length > 1 ? ((TREND_W - TREND_PAD.left - TREND_PAD.right) / trend.length) * i + (TREND_W - TREND_PAD.left - TREND_PAD.right) / trend.length / 2 : TREND_W / 2)"
+                    :y="TREND_H - 6"
+                    text-anchor="middle"
+                    fill="var(--hm-muted)"
+                    style="font-size: 10px"
+                  >
+                    {{ label }}
+                  </text>
+                </g>
+              </template>
+            </svg>
           </div>
-          <div style="display: flex; align-items: center; gap: 8px; margin-top: 10px">
-            <Progress :percent="taskProgress(t)" :show-info="false" size="small" status="active" style="flex: 1; margin: 0" />
-            <Tooltip :title="`${t.progress_current ?? 0} / ${t.progress_total ?? 0}`">
-              <span style="font-size: 11px; color: hsl(var(--muted-foreground))">
-                {{ t.progress_current ?? 0 }}/{{ t.progress_total ?? 0 }}
+
+          <!-- ⑤ 系统信息（深色 CTA 卡片） -->
+          <div class="rounded-[22px] p-7" style="background: var(--hm-dark-card); color: var(--hm-dark-text)">
+            <div class="flex flex-wrap items-center justify-between gap-6">
+              <div>
+                <div class="text-sm opacity-70">当前数据</div>
+                <div class="text-4xl font-black tabular-nums">
+                  {{ formatBytes((storage?.db_size ?? 0) + (storage?.storage_size ?? 0)) }}
+                </div>
+                <div class="mt-1 text-xs opacity-60">数据库 + 素材合计</div>
+                <ul class="mt-4 space-y-1.5 text-sm">
+                  <li>· 结构化笔记 {{ storage?.structured_count ?? 0 }} 篇</li>
+                  <li>· 分析报告 {{ storage?.report_count ?? 0 }} 份</li>
+                </ul>
+              </div>
+              <button
+                class="flex items-center gap-2 rounded-full px-6 py-3 text-sm font-bold transition-opacity hover:opacity-90"
+                style="background: var(--hm-accent-soft); color: var(--hm-accent)"
+                @click="router.push('/system/task-center')"
+              >
+                进入任务中心
+                <ArrowRight class="size-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== 右列 ==================== -->
+        <div class="flex min-w-0 flex-col gap-5">
+          <!-- ② 成功率环形 -->
+          <div class="rounded-[22px] p-6" style="background: var(--hm-card)">
+            <div class="mb-3 text-lg font-bold" style="color: var(--hm-ink)">成功率</div>
+            <div class="flex items-center gap-5">
+              <svg viewBox="0 0 140 140" class="h-[130px] w-[130px] shrink-0">
+                <circle cx="70" cy="70" r="60" fill="none" stroke="var(--hm-inner)" stroke-width="4" />
+                <circle
+                  cx="70"
+                  cy="70"
+                  :r="RING_R"
+                  fill="none"
+                  stroke="var(--hm-accent)"
+                  stroke-width="13"
+                  :stroke-dasharray="`${(successRate / 100) * RING_C} ${RING_C}`"
+                  stroke-linecap="round"
+                  transform="rotate(-90 70 70)"
+                />
+                <text x="70" y="74" text-anchor="middle" fill="var(--hm-accent)" style="font-size: 24px; font-weight: 900">
+                  {{ successRate }}%
+                </text>
+                <text x="70" y="92" text-anchor="middle" fill="var(--hm-muted)" style="font-size: 10px">成功率</text>
+              </svg>
+              <div class="min-w-0 flex-1">
+                <div class="mb-2 flex items-center justify-between text-[11px]" style="color: var(--hm-muted)">
+                  <span>成功 {{ summary?.success_count ?? 0 }}</span>
+                  <span>完成 {{ successDone }}</span>
+                </div>
+                <div class="h-1.5 w-full overflow-hidden rounded-full" style="background: var(--hm-inner)">
+                  <div class="h-full rounded-full" style="background: var(--hm-accent)" :style="{ width: `${successRate}%` }"></div>
+                </div>
+                <div class="mt-3 text-[11px] leading-relaxed" style="color: var(--hm-muted)">
+                  {{ Object.entries(dist).map(([k, v]) => `${STATUS_LABEL[k] ?? k} ${v}`).join(' · ') || '暂无统计' }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ③ 存储使用（Prometheus 风格面积折线图） -->
+          <div class="rounded-[22px] p-6" style="background: var(--hm-card)">
+            <div class="mb-4 flex items-center justify-between">
+              <span class="text-lg font-bold" style="color: var(--hm-ink)">存储使用</span>
+              <span class="flex gap-3 text-[11px]" style="color: var(--hm-muted)">
+                <span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full" style="background: var(--hm-accent)"></i>数据库</span>
+                <span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full" style="background: var(--hm-chart-2)"></i>素材</span>
               </span>
-            </Tooltip>
+            </div>
+            <svg :viewBox="`0 0 ${ST_W} ${ST_H}`" class="h-auto w-full">
+              <defs>
+                <linearGradient id="home-grad-db" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="var(--hm-accent)" stop-opacity="0.25" />
+                  <stop offset="100%" stop-color="var(--hm-accent)" stop-opacity="0" />
+                </linearGradient>
+                <linearGradient id="home-grad-st" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="var(--hm-chart-2)" stop-opacity="0.25" />
+                  <stop offset="100%" stop-color="var(--hm-chart-2)" stop-opacity="0" />
+                </linearGradient>
+              </defs>
+              <template v-for="tick in storageChart.ticks" :key="tick.y">
+                <line :x1="ST_PAD.left" :x2="ST_W - ST_PAD.right" :y1="tick.y" :y2="tick.y" stroke="var(--hm-inner)" stroke-width="0.7" stroke-dasharray="3 4" />
+                <text :x="ST_PAD.left - 6" :y="tick.y + 3" text-anchor="end" fill="var(--hm-muted)" style="font-size: 10px">{{ tick.label }}</text>
+              </template>
+              <template v-if="storageChart.count > 1">
+                <path :d="storageChart.areaStorage" fill="url(#home-grad-st)" />
+                <path :d="storageChart.areaDb" fill="url(#home-grad-db)" />
+                <path :d="storageChart.lineStorage" fill="none" stroke="var(--hm-chart-2)" stroke-width="1.8" opacity="0.9" />
+                <path :d="storageChart.lineDb" fill="none" stroke="var(--hm-accent)" stroke-width="1.8" opacity="0.95" />
+              </template>
+              <text v-if="!storageChart.count" :x="ST_W / 2" :y="ST_H / 2" text-anchor="middle" fill="var(--hm-muted)" style="font-size: 12px">
+                正在采样中，每 5 分钟记录一个点
+              </text>
+              <g v-for="l in storageChart.labels" :key="l.x">
+                <text :x="l.x" :y="ST_H - 6" text-anchor="middle" fill="var(--hm-muted)" style="font-size: 10px">{{ l.t }}</text>
+              </g>
+            </svg>
+            <div class="mt-4 flex justify-between border-t pt-3 text-[11px]" style="border-color: var(--hm-inner); color: var(--hm-muted)">
+              <span>笔记 {{ storage?.note_count ?? 0 }}</span>
+              <span>评论 {{ storage?.comment_count ?? 0 }}</span>
+              <span>任务 {{ storage?.task_count ?? 0 }}</span>
+            </div>
           </div>
-          <div style="margin-top: 6px; font-size: 11px; color: hsl(var(--muted-foreground))">
-            {{ phaseText(t) }}
-            <span v-if="t.started_at" style="margin-left: 8px">{{ new Date(t.started_at).toLocaleTimeString() }} 开始</span>
+
+          <!-- ④ 运行中任务 -->
+          <div class="flex min-h-0 flex-1 flex-col rounded-[22px] p-6" style="background: var(--hm-card)">
+            <div class="mb-4 flex items-center justify-between">
+              <span class="text-lg font-bold" style="color: var(--hm-ink)">运行中任务</span>
+              <span class="text-[11px]" style="color: var(--hm-muted)">点击跳转详情</span>
+            </div>
+            <Empty v-if="!loading && !hasRunning" description="暂无运行中的任务" />
+            <div v-else class="flex max-h-[560px] flex-col gap-2 overflow-y-auto">
+              <div
+                v-for="t in runningTasks"
+                :key="`${t.kind}-${t.id}`"
+                class="flex cursor-pointer items-start gap-3 rounded-2xl p-3 transition-colors hover:bg-[var(--hm-inner)]"
+                @click="router.push(KIND_META[t.kind]?.route ?? '/')"
+              >
+                <div class="flex size-10 shrink-0 items-center justify-center rounded-xl" style="background: var(--hm-accent-soft); color: var(--hm-accent)">
+                  <component :is="KIND_META[t.kind]?.icon" class="size-5" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="truncate text-sm font-bold" style="color: var(--hm-ink)">{{ t.title }}</div>
+                    <span class="flex shrink-0 items-center gap-1.5 text-[11px]" style="color: var(--hm-muted)">
+                      <i
+                        class="h-1.5 w-1.5 rounded-full"
+                        :class="{ 'home-dot-running': t.status === 'running' }"
+                        :style="{ background: t.status === 'running' ? 'var(--hm-accent)' : 'var(--hm-muted)' }"
+                      ></i>
+                      {{ t.status === 'pending' ? '排队中' : '进行中' }}
+                    </span>
+                  </div>
+                  <div class="truncate text-xs" style="color: var(--hm-muted)">{{ phaseText(t) }}</div>
+                  <div class="mt-1.5 h-1 w-full overflow-hidden rounded-full" style="background: var(--hm-inner)">
+                    <div class="h-full rounded-full" style="background: var(--hm-accent)" :style="{ width: `${taskProgress(t)}%` }"></div>
+                  </div>
+                  <div class="mt-1.5 text-[11px]" style="color: var(--hm-muted)">
+                    <span v-if="t.started_at">{{ new Date(t.started_at).toLocaleTimeString() }} 开始</span>
+                    <span class="ml-2">{{ t.progress_current ?? 0 }}/{{ t.progress_total ?? 0 }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -527,82 +450,50 @@ onBeforeUnmount(() => {
   </Page>
 </template>
 
-<style>
-@keyframes pulse-dot {
+<style scoped>
+/* ===== 首页专属墨绿色板（Eclipse 风格），亮暗两套 ===== */
+.home-eclipse {
+  --hm-page: #e5e5e5;
+  --hm-card: #edece7;
+  --hm-inner: #e3e2dc;
+  --hm-ink: #2b3a45;
+  --hm-muted: #8a8f8a;
+  --hm-accent: #1a4d1a;
+  --hm-accent-mid: #5c8a52;
+  --hm-accent-soft: #a9c89b;
+  --hm-chart-2: #a9c89b;
+  --hm-dark-card: #3d453d;
+  --hm-dark-text: #f0efea;
+  background: var(--hm-page);
+}
+
+.dark .home-eclipse {
+  --hm-page: #141614;
+  --hm-card: #1e211e;
+  --hm-inner: #262a26;
+  --hm-ink: #e8eae6;
+  --hm-muted: #8a928a;
+  --hm-accent: #7db86a;
+  --hm-accent-mid: #5c8a52;
+  --hm-accent-soft: #35502e;
+  --hm-chart-2: #5c8a52;
+  --hm-dark-card: #2a2e2a;
+  --hm-dark-text: #e8eae6;
+}
+
+.home-dot-running {
+  animation: home-pulse 1.8s infinite;
+}
+
+@keyframes home-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--hm-accent) 45%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 7px rgba(34, 197, 94, 0);
+    box-shadow: 0 0 0 7px transparent;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
-  }
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>
-
-<style scoped>
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
-  margin-bottom: 14px;
-}
-.kpi-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-.storage-panel {
-  display: grid;
-  grid-template-columns: 0.9fr 1.4fr;
-  gap: 14px;
-  padding: 14px 16px;
-  margin-bottom: 14px;
-  border-radius: 12px;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--card));
-}
-.chart-row {
-  display: grid;
-  grid-template-columns: 1.6fr 1fr;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-/* 手机端：单列堆叠 + KPI 两列 + 图标缩小 */
-@media (max-width: 767px) {
-  .kpi-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-  }
-  .storage-panel {
-    grid-template-columns: 1fr;
-  }
-  .chart-row {
-    grid-template-columns: 1fr;
-  }
-}
-@media (max-width: 480px) {
-  .kpi-icon {
-    width: 34px !important;
-    height: 34px !important;
-    border-radius: 10px !important;
-  }
-  .kpi-grid > div {
-    padding: 12px !important;
-    gap: 10px !important;
-  }
-  .kpi-grid > div > div > div:first-of-type:not(:has(i)) {
-    font-size: 20px !important;
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 </style>

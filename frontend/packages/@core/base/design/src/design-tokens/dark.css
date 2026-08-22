@@ -2,14 +2,14 @@
 .dark[data-theme='custom'],
 .dark[data-theme='default'] {
   /* Default background color of <body />...etc */
-  --background: 222.34deg 10.43% 12.27%;
+  --background: 145deg 22% 11%;
 
   /* 主体区域背景色 */
-  --background-deep: 220deg 13.06% 9%;
+  --background-deep: 145deg 24% 8%;
   --foreground: 0 0% 95%;
 
   /* Background color for <Card /> */
-  --card: 222.34deg 10.43% 12.27%;
+  --card: 145deg 20% 15%;
 
   /* --card: 222.2 84% 4.9%; */
   --card-foreground: 210 40% 98%;
@@ -28,7 +28,7 @@
 
   /* --muted-foreground: 215 20.2% 65.1%; */
 
-  --muted: 240 3.7% 15.9%;
+  --muted: 145 12% 17%;
   --muted-foreground: 240 5% 64.9%;
 
   /* 主题颜色 */
@@ -57,23 +57,23 @@
   --warning-foreground: 0 0% 98%;
 
   /* 颜色次要 */
-  --secondary: 240 5% 17%;
+  --secondary: 145 10% 18%;
   --secondary-foreground: 0 0% 98%;
 
   /* Used for accents such as hover effects on <DropdownMenuItem>, <SelectItem>...etc */
-  --accent: 216 5% 19%;
-  --accent-dark: 240 0% 22%;
-  --accent-darker: 240 0% 26%;
-  --accent-lighter: 216 5% 12%;
-  --accent-hover: 216 5% 24%;
+  --accent: 145 12% 20%;
+  --accent-dark: 120 0% 22%;
+  --accent-darker: 120 0% 26%;
+  --accent-lighter: 145 10% 13%;
+  --accent-hover: 145 12% 24%;
   --accent-foreground: 0 0% 98%;
 
   /* Darker color */
-  --heavy: 216 5% 24%;
+  --heavy: 145 12% 24%;
   --heavy-foreground: var(--accent-foreground);
 
   /* Default border color */
-  --border: 240 3.7% 22%;
+  --border: 145 10% 23%;
 
   /* Border color for inputs such as <Input />, <Select />, <Textarea /> */
   --input: 0deg 0% 100% / 10%;
@@ -97,12 +97,12 @@
 
   /* =============component & UI============= */
 
-  --sidebar: 222.34deg 10.43% 12.27%;
-  --sidebar-deep: 220deg 13.06% 9%;
+  --sidebar: 145deg 22% 11%;
+  --sidebar-deep: 145deg 24% 8%;
   --menu: var(--sidebar);
 
   /* header */
-  --header: 222.34deg 10.43% 12.27%;
+  --header: 145deg 22% 11%;
 
   color-scheme: dark;
 }
@@ -353,7 +353,7 @@
   --primary-foreground: 240 5.9% 10%;
   --secondary: 240 3.7% 15.9%;
   --secondary-foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%;
+  --muted: 145 12% 17%;
   --muted-foreground: 240 5% 64.9%;
   --accent: 240 3.7% 15.9%;
   --accent-foreground: 0 0% 98%;

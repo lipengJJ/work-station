@@ -288,7 +288,7 @@ const headerSlots = computed(() => {
     :sidebar-width="preferences.sidebar.width"
     :side-collapse-width="preferences.sidebar.collapseWidth"
     :sidebar-logo-visible="preferences.logo.enable"
-    :tabbar-enable="preferences.tabbar.enable"
+    :tabbar-enable="false"
     :tabbar-height="preferences.tabbar.height"
     :z-index="preferences.app.zIndex"
     @side-mouse-leave="handleSideMouseLeave"

@@ -59,9 +59,9 @@ const FACTOR_OPTIONS = [
 ];
 const RATING_COLOR: Record<string, string> = { buy: 'green', hold: 'gold', avoid: 'red' };
 const RATING_STYLE: Record<string, { border: string; bg: string; text: string }> = {
-  buy: { border: 'border-emerald-500/40', bg: 'bg-emerald-500/10', text: 'text-emerald-300' },
-  hold: { border: 'border-amber-500/40', bg: 'bg-amber-500/10', text: 'text-amber-300' },
-  avoid: { border: 'border-rose-500/40', bg: 'bg-rose-500/10', text: 'text-rose-300' },
+  buy: { border: 'border-success/40', bg: 'bg-success/10', text: 'text-success' },
+  hold: { border: 'border-warning/40', bg: 'bg-warning/10', text: 'text-warning' },
+  avoid: { border: 'border-destructive/40', bg: 'bg-destructive/10', text: 'text-destructive' },
 };
 const RISK_LABEL: Record<string, string> = { low: '保守', medium: '平衡', high: '激进' };
 
@@ -370,7 +370,7 @@ onMounted(() => {
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 class="flex items-center gap-2 text-xl font-extrabold text-[hsl(var(--foreground))]">
-            <BrainCircuit class="h-5 w-5 text-indigo-400" />
+            <BrainCircuit class="h-5 w-5 text-primary" />
             <span>AI 个股分析</span>
           </h1>
           <p class="mt-1 text-xs text-[hsl(var(--muted-foreground))]">按策略框架分析个股近期情况，给出「买入 / 观望 / 回避」分级结论</p>
@@ -378,7 +378,7 @@ onMounted(() => {
         <div v-if="selectedStock" class="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] px-3 py-2">
           <span class="text-sm font-extrabold text-[hsl(var(--foreground))]">{{ selectedStock.symbol }}</span>
           <span class="text-xs text-[hsl(var(--muted-foreground))]">{{ selectedStock.name }}</span>
-          <span class="text-xs font-bold" :class="(selectedStock.change ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'">
+          <span class="text-xs font-bold" :class="(selectedStock.change ?? 0) >= 0 ? 'text-success' : 'text-destructive'">
             {{ (selectedStock.changePercent ?? 0) >= 0 ? '+' : '' }}{{ selectedStock.changePercent ?? 0 }}%
           </span>
         </div>
@@ -402,14 +402,14 @@ onMounted(() => {
                 <input
                   v-model="symbolInput"
                   placeholder="股票代码，如 AAPL / 0700.HK"
-                  class="h-9 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] pl-8 pr-3 text-xs text-[hsl(var(--foreground))] outline-none placeholder:text-[hsl(var(--muted-foreground))] focus:border-indigo-500"
+                  class="h-9 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] pl-8 pr-3 text-xs text-[hsl(var(--foreground))] outline-none placeholder:text-[hsl(var(--muted-foreground))] focus:border-primary"
                   @keyup.enter="!analyzing && runAnalysis()"
                 />
               </div>
               <div class="ml-auto flex items-center gap-2">
                 <button
                   v-if="!analyzing"
-                  class="flex h-9 items-center gap-1.5 rounded-lg bg-indigo-600 px-5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+                  class="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50"
                   :disabled="!activeStrategyId"
                   @click="runAnalysis"
                 >
@@ -418,7 +418,7 @@ onMounted(() => {
                 </button>
                 <button
                   v-else
-                  class="flex h-9 items-center gap-1.5 rounded-lg bg-rose-600 px-5 text-xs font-bold text-white hover:bg-rose-500"
+                  class="flex h-9 items-center gap-1.5 rounded-lg bg-destructive px-5 text-xs font-bold text-white hover:bg-destructive"
                   @click="cancelAnalysis"
                 >
                   <Square class="h-3.5 w-3.5" />
@@ -431,7 +431,7 @@ onMounted(() => {
             <div class="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] p-3">
               <div class="mb-2 flex items-center justify-between">
                 <span class="text-[10px] font-bold uppercase tracking-wider text-[hsl(var(--muted-foreground))]">选择分析策略</span>
-                <button class="text-[11px] text-indigo-400 hover:text-indigo-300" @click="activeTab = 'strategies'">
+                <button class="text-[11px] text-primary hover:text-primary" @click="activeTab = 'strategies'">
                   管理策略 →
                 </button>
               </div>
@@ -443,16 +443,16 @@ onMounted(() => {
                   class="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-bold transition-all"
                   :class="
                     activeStrategyId === s.id
-                      ? 'border-indigo-400 bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
-                      : 'border-[hsl(var(--border))] bg-[hsl(var(--accent))] text-[hsl(var(--muted-foreground))] hover:border-indigo-500/50 hover:text-[hsl(var(--foreground))]'
+                      ? 'border-primary bg-primary text-white shadow-lg shadow-primary/20'
+                      : 'border-[hsl(var(--border))] bg-[hsl(var(--accent))] text-[hsl(var(--muted-foreground))] hover:border-primary/50 hover:text-[hsl(var(--foreground))]'
                   "
                   @click="activeStrategyId = s.id"
                 >
-                  <span class="h-1.5 w-1.5 rounded-full" :class="s.is_preset ? 'bg-indigo-300' : 'bg-emerald-400'"></span>
+                  <span class="h-1.5 w-1.5 rounded-full" :class="s.is_preset ? 'bg-primary' : 'bg-success'"></span>
                   {{ s.name }}
                 </button>
                 <button
-                  class="flex items-center gap-1 rounded-full border border-dashed border-[hsl(var(--border))] px-3 py-1.5 text-[11px] font-bold text-[hsl(var(--muted-foreground))] hover:border-indigo-500/50 hover:text-indigo-300"
+                  class="flex items-center gap-1 rounded-full border border-dashed border-[hsl(var(--border))] px-3 py-1.5 text-[11px] font-bold text-[hsl(var(--muted-foreground))] hover:border-primary/50 hover:text-primary"
                   @click="openCreate"
                 >
                   <Plus class="h-3 w-3" />
@@ -460,7 +460,7 @@ onMounted(() => {
                 </button>
               </div>
               <p v-if="activeStrategy" class="mt-2 text-[11px] text-[hsl(var(--muted-foreground))]">
-                <span class="font-bold text-indigo-300">{{ activeStrategy.name }}</span>
+                <span class="font-bold text-primary">{{ activeStrategy.name }}</span>
                 {{ activeStrategy.description || '（无描述）' }}
               </p>
             </div>
@@ -502,29 +502,29 @@ onMounted(() => {
                 </div>
               </div>
 
-              <div v-if="aiError" class="mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+              <div v-if="aiError" class="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
                 {{ aiError }}
               </div>
 
               <!-- 空态：三步引导 -->
               <div v-if="!reportMd && !analyzing && !aiError" class="py-14 text-center sm:py-16">
-                <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-indigo-500/20 bg-indigo-500/10">
-                  <BrainCircuit class="h-8 w-8 text-indigo-400" />
+                <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10">
+                  <BrainCircuit class="h-8 w-8 text-primary" />
                 </div>
                 <p class="mt-4 text-sm font-bold text-[hsl(var(--foreground))]">开始一次策略分析</p>
                 <div class="mx-auto mt-4 grid max-w-lg grid-cols-1 gap-2 sm:grid-cols-3">
                   <div class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] px-3 py-2.5">
-                    <div class="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-extrabold text-white">1</div>
+                    <div class="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-extrabold text-white">1</div>
                     <div class="mt-1.5 text-[11px] font-bold text-[hsl(var(--muted-foreground))]">输入股票代码</div>
                     <div class="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">如 AAPL / 0700.HK</div>
                   </div>
                   <div class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] px-3 py-2.5">
-                    <div class="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-extrabold text-white">2</div>
+                    <div class="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-extrabold text-white">2</div>
                     <div class="mt-1.5 text-[11px] font-bold text-[hsl(var(--muted-foreground))]">选择策略框架</div>
                     <div class="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">价值投资 / 趋势 / 防守</div>
                   </div>
                   <div class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] px-3 py-2.5">
-                    <div class="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-extrabold text-white">3</div>
+                    <div class="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-extrabold text-white">3</div>
                     <div class="mt-1.5 text-[11px] font-bold text-[hsl(var(--muted-foreground))]">AI 输出结论</div>
                     <div class="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">买入 / 观望 / 回避 + 依据</div>
                   </div>
@@ -534,17 +534,17 @@ onMounted(() => {
               <!-- 生成中：步骤指示 -->
               <div v-else-if="!reportMd && analyzing" class="py-14 text-center sm:py-16">
                 <div class="relative mx-auto h-12 w-12">
-                  <Loader2 class="h-12 w-12 animate-spin text-indigo-400" />
+                  <Loader2 class="h-12 w-12 animate-spin text-primary" />
                 </div>
                 <p class="mt-4 text-sm font-bold text-[hsl(var(--foreground))]">
                   正在用「{{ activeStrategy?.name || '--' }}」策略分析 {{ symbolInput.toUpperCase() }}
                 </p>
                 <div class="mx-auto mt-4 flex max-w-sm items-center justify-center gap-2 text-[11px]">
-                  <span class="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 font-bold text-emerald-300">
+                  <span class="flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-1 font-bold text-success">
                     <CheckCircle2 class="h-3 w-3" /> 拉取数据
                   </span>
                   <span class="h-px w-4 bg-[hsl(var(--muted))]"></span>
-                  <span class="flex items-center gap-1 rounded-full bg-indigo-500/15 px-2.5 py-1 font-bold text-indigo-300">
+                  <span class="flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-1 font-bold text-primary">
                     <Loader2 class="h-3 w-3 animate-spin" /> 策略分析
                   </span>
                   <span class="h-px w-4 bg-[hsl(var(--muted))]"></span>
@@ -585,7 +585,7 @@ onMounted(() => {
                 策略是 AI 分析的「框架」：关注哪些数据、风险偏好、什么条件下买入/观望/回避。内置 3 个预设，也可自建。
               </p>
               <button
-                class="flex items-center gap-1 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-500"
+                class="flex items-center gap-1 rounded-lg bg-primary px-3.5 py-2 text-xs font-bold text-white hover:bg-primary"
                 @click="openCreate"
               >
                 <Plus class="h-3.5 w-3.5" />
@@ -604,8 +604,8 @@ onMounted(() => {
                 class="flex min-w-0 flex-col rounded-2xl border p-4 transition-colors"
                 :class="
                   activeStrategyId === s.id
-                    ? 'border-indigo-500/60 bg-indigo-500/10'
-                    : 'border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] hover:border-indigo-500/40'
+                    ? 'border-primary/60 bg-primary/10'
+                    : 'border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] hover:border-primary/40'
                 "
               >
                 <div class="flex items-center justify-between">
@@ -613,7 +613,7 @@ onMounted(() => {
                   <span
                     :class="
                       s.is_preset
-                        ? 'bg-indigo-500/20 text-indigo-300'
+                        ? 'bg-primary/20 text-primary'
                         : 'bg-slate-500/20 text-[hsl(var(--muted-foreground))]'
                     "
                     class="rounded px-1.5 py-0.5 text-[10px] font-bold"
@@ -630,21 +630,21 @@ onMounted(() => {
                 </div>
                 <div class="mt-4 flex items-center gap-2 border-t border-[hsl(var(--border))] pt-3">
                   <button
-                    class="flex flex-1 items-center justify-center gap-1 rounded-lg border border-indigo-500/40 py-1.5 text-[11px] font-bold text-indigo-300 hover:bg-indigo-500/10"
+                    class="flex flex-1 items-center justify-center gap-1 rounded-lg border border-primary/40 py-1.5 text-[11px] font-bold text-primary hover:bg-primary/10"
                     @click="useStrategy(s)"
                   >
                     <Play class="h-3 w-3" />
                     使用此策略
                   </button>
                   <button
-                    class="rounded-lg border border-[hsl(var(--border))] p-2 text-[hsl(var(--muted-foreground))] hover:border-indigo-500/40 hover:text-indigo-300"
+                    class="rounded-lg border border-[hsl(var(--border))] p-2 text-[hsl(var(--muted-foreground))] hover:border-primary/40 hover:text-primary"
                     title="编辑"
                     @click="openEdit(s)"
                   >
                     <Pencil class="h-3.5 w-3.5" />
                   </button>
                   <button
-                    class="rounded-lg border border-[hsl(var(--border))] p-2 text-[hsl(var(--muted-foreground))] hover:border-rose-500/40 hover:text-rose-400"
+                    class="rounded-lg border border-[hsl(var(--border))] p-2 text-[hsl(var(--muted-foreground))] hover:border-destructive/40 hover:text-destructive"
                     title="删除"
                     @click="removeStrategy(s)"
                   >
@@ -699,13 +699,13 @@ onMounted(() => {
                 <template v-else-if="column.key === 'created_at'">{{ formatTime(record.created_at) }}</template>
                 <template v-else-if="column.key === 'action'">
                   <button
-                    class="mr-3 text-[11px] font-bold text-indigo-400 hover:text-indigo-300"
+                    class="mr-3 text-[11px] font-bold text-primary hover:text-primary"
                     @click="openDetail(record as StrategyAiApi.ReportListItem)"
                   >
                     查看
                   </button>
                   <button
-                    class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-rose-400"
+                    class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-destructive"
                     @click="removeReport(record as StrategyAiApi.ReportListItem)"
                   >
                     删除
@@ -802,7 +802,7 @@ onMounted(() => {
               :disabled="!!editingStrategy?.is_preset"
             />
           </div>
-          <p v-if="editingStrategy?.is_preset" class="text-[11px] text-amber-400">
+          <p v-if="editingStrategy?.is_preset" class="text-[11px] text-warning">
             预设策略只允许修改名称和描述，规则保持内置框架。
           </p>
         </div>

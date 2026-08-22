@@ -176,7 +176,7 @@ const tableData = computed(() => {
 
 <template>
   <div v-if="loading" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">正在加载财务数据…</div>
-  <div v-else-if="errorMsg" class="py-12 text-center text-xs text-rose-400">{{ errorMsg }}</div>
+  <div v-else-if="errorMsg" class="py-12 text-center text-xs text-destructive">{{ errorMsg }}</div>
   <div v-else-if="!data" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
   <div v-else class="space-y-4">
     <!-- 预警信号 -->
@@ -197,7 +197,7 @@ const tableData = computed(() => {
       <div class="flex flex-wrap items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1">
         <button
           v-for="m in METRICS" :key="m.key"
-          class="rounded px-2 py-1 text-[11px] font-semibold" :class="selectedMetricKey === m.key ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
+          class="rounded px-2 py-1 text-[11px] font-semibold" :class="selectedMetricKey === m.key ? 'bg-primary text-white' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'"
           @click="selectedMetricKey = m.key"
         >
           {{ m.label }}
@@ -205,16 +205,16 @@ const tableData = computed(() => {
       </div>
       <span class="flex-1"></span>
       <div class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-[11px] font-semibold">
-        <button class="rounded px-2 py-1" :class="period === 'quarterly' ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="period = 'quarterly'">季度</button>
-        <button class="rounded px-2 py-1" :class="period === 'annual' ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="period = 'annual'">年度</button>
+        <button class="rounded px-2 py-1" :class="period === 'quarterly' ? 'bg-primary text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="period = 'quarterly'">季度</button>
+        <button class="rounded px-2 py-1" :class="period === 'annual' ? 'bg-primary text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="period = 'annual'">年度</button>
       </div>
       <div class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-[11px] font-semibold">
-        <button class="rounded px-2 py-1" :class="mode === 'value' ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="mode = 'value'">数值</button>
-        <button class="rounded px-2 py-1" :class="mode === 'growth' ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="mode = 'growth'">同比增速</button>
+        <button class="rounded px-2 py-1" :class="mode === 'value' ? 'bg-primary text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="mode = 'value'">数值</button>
+        <button class="rounded px-2 py-1" :class="mode === 'growth' ? 'bg-primary text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="mode = 'growth'">同比增速</button>
       </div>
       <div class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-[11px] font-semibold">
-        <button class="rounded px-2 py-1" :class="viewMode === 'chart' ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="viewMode = 'chart'">图表</button>
-        <button class="rounded px-2 py-1" :class="viewMode === 'table' ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="viewMode = 'table'">数据表</button>
+        <button class="rounded px-2 py-1" :class="viewMode === 'chart' ? 'bg-primary text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="viewMode = 'chart'">图表</button>
+        <button class="rounded px-2 py-1" :class="viewMode === 'table' ? 'bg-primary text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="viewMode = 'table'">数据表</button>
       </div>
     </div>
 

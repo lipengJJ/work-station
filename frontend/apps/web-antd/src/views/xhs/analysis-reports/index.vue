@@ -115,19 +115,19 @@ onMounted(() => {
           <input
             v-model="searchQuery"
             placeholder="搜索报告标题"
-            class="w-64 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-1.5 pr-3 pl-8 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+            class="w-64 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-1.5 pr-3 pl-8 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
           />
         </div>
         <select
           v-model="projectFilter"
-          class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+          class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
         >
           <option :value="undefined">全部项目</option>
           <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
         <select
           v-model="sort"
-          class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+          class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
         >
           <option value="created_desc">最新生成优先</option>
           <option value="created_asc">最早生成优先</option>
@@ -136,8 +136,8 @@ onMounted(() => {
 
       <div class="shrink-0 overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] shadow-xl">
         <div v-if="!loading && reports.length === 0" class="flex flex-col items-center justify-center gap-3 p-12 text-center">
-          <div class="flex h-14 w-14 items-center justify-center rounded-2xl border border-indigo-500/20 bg-indigo-500/10">
-            <FileText class="h-7 w-7 text-indigo-400" />
+          <div class="flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10">
+            <FileText class="h-7 w-7 text-primary" />
           </div>
           <p class="text-sm font-semibold text-[hsl(var(--foreground))]">
             {{ searchQuery || projectFilter ? '没有匹配的报告' : '还没有保存过报告' }}
@@ -164,7 +164,7 @@ onMounted(() => {
                 v-for="r in reports"
                 :key="r.id"
                 tabindex="0"
-                class="cursor-pointer transition-colors hover:bg-[hsl(var(--accent))] focus:bg-[hsl(var(--accent))] focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500"
+                class="cursor-pointer transition-colors hover:bg-[hsl(var(--accent))] focus:bg-[hsl(var(--accent))] focus:outline-none focus-visible:ring-1 focus-visible:ring-primary"
                 @click="openReport(r)"
                 @keyup.enter="openReport(r)"
               >
@@ -180,7 +180,7 @@ onMounted(() => {
                   <Tag color="success">{{ r.status }}</Tag>
                 </td>
                 <td class="px-4 py-4 text-right" @click.stop>
-                  <button class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-rose-400" @click="removeReport(r)">删除</button>
+                  <button class="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-destructive" @click="removeReport(r)">删除</button>
                 </td>
               </tr>
             </tbody>

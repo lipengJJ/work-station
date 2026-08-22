@@ -52,7 +52,7 @@ function cardColorClass(card: CardDef): string {
   if (raw === null || raw === undefined) return 'text-[hsl(var(--muted-foreground))]';
   if (card.polarity === 'neutral') return 'text-[hsl(var(--foreground))]';
   const positive = card.polarity === 'higher-better' ? raw > 0 : raw < 0;
-  return positive ? 'text-emerald-400' : 'text-rose-400';
+  return positive ? 'text-success' : 'text-destructive';
 }
 
 const hasOverview = computed(() => !!props.overview);

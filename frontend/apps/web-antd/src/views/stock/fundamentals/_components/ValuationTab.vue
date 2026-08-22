@@ -91,7 +91,7 @@ watch([activeSummary], () => {
 
 <template>
   <div v-if="loading" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">正在加载估值数据…</div>
-  <div v-else-if="errorMsg" class="py-12 text-center text-xs text-rose-400">{{ errorMsg }}</div>
+  <div v-else-if="errorMsg" class="py-12 text-center text-xs text-destructive">{{ errorMsg }}</div>
   <div v-else-if="!data" class="py-12 text-center text-xs text-[hsl(var(--muted-foreground))]">{{ NO_DATA_TEXT }}</div>
   <div v-else class="space-y-4">
     <!-- 当前估值 -->
@@ -113,12 +113,12 @@ watch([activeSummary], () => {
         <h3 class="text-xs font-bold text-[hsl(var(--muted-foreground))]">历史估值区间（用季度 TTM 财务数据 × 披露后股价推导，避免未来数据泄漏）</h3>
         <div class="flex items-center gap-2">
           <div class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-[11px] font-semibold">
-            <button v-for="k in (['pe', 'ps', 'pb'] as MultipleKey[])" :key="k" class="rounded px-2 py-1" :class="selectedMultiple === k ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="selectedMultiple = k">
+            <button v-for="k in (['pe', 'ps', 'pb'] as MultipleKey[])" :key="k" class="rounded px-2 py-1" :class="selectedMultiple === k ? 'bg-primary text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="selectedMultiple = k">
               {{ k.toUpperCase() }}
             </button>
           </div>
           <div class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 text-[11px] font-semibold">
-            <button v-for="y in [1, 3, 5]" :key="y" class="rounded px-2 py-1" :class="windowYears === y ? 'bg-indigo-600 text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="windowYears = y as 1 | 3 | 5">
+            <button v-for="y in [1, 3, 5]" :key="y" class="rounded px-2 py-1" :class="windowYears === y ? 'bg-primary text-white' : 'text-[hsl(var(--muted-foreground))]'" @click="windowYears = y as 1 | 3 | 5">
               {{ y }}年
             </button>
           </div>
@@ -130,9 +130,9 @@ watch([activeSummary], () => {
         <div class="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
           <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">当前</div><div class="font-mono text-sm font-bold text-[hsl(var(--foreground))]">{{ formatMultiple(activeSummary.current) }}</div></div>
           <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">历史中位数</div><div class="font-mono text-sm font-bold text-[hsl(var(--foreground))]">{{ formatMultiple(activeSummary.median) }}</div></div>
-          <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">历史分位</div><div class="font-mono text-sm font-bold text-amber-400">{{ activeSummary.percentile }}%</div></div>
-          <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">区间最低</div><div class="font-mono text-sm font-bold text-emerald-400">{{ formatMultiple(activeSummary.min) }}</div></div>
-          <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">区间最高</div><div class="font-mono text-sm font-bold text-rose-400">{{ formatMultiple(activeSummary.max) }}</div></div>
+          <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">历史分位</div><div class="font-mono text-sm font-bold text-warning">{{ activeSummary.percentile }}%</div></div>
+          <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">区间最低</div><div class="font-mono text-sm font-bold text-success">{{ formatMultiple(activeSummary.min) }}</div></div>
+          <div class="rounded-lg bg-[hsl(var(--background-deep))] p-2"><div class="text-[10px] text-[hsl(var(--muted-foreground))]">区间最高</div><div class="font-mono text-sm font-bold text-destructive">{{ formatMultiple(activeSummary.max) }}</div></div>
         </div>
         <EchartsUI ref="chartRef" height="280px" />
       </template>
@@ -148,7 +148,7 @@ watch([activeSummary], () => {
           <div v-for="(s, key) in { 悲观: data.scenarios.bear, 基准: data.scenarios.base, 乐观: data.scenarios.bull }" :key="key" class="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
             <div class="text-xs font-bold text-[hsl(var(--foreground))]">{{ key }}情景</div>
             <div class="mt-1 font-mono text-xl font-black text-[hsl(var(--foreground))]">{{ formatUsdPerShare(s.implied_price) }}</div>
-            <div class="font-mono text-[11px] font-bold" :class="s.vs_current_percent >= 0 ? 'text-rose-400' : 'text-emerald-400'">
+            <div class="font-mono text-[11px] font-bold" :class="s.vs_current_percent >= 0 ? 'text-destructive' : 'text-success'">
               {{ formatPercent(s.vs_current_percent) }} vs 当前价
             </div>
             <div class="mt-2 space-y-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
@@ -158,7 +158,7 @@ watch([activeSummary], () => {
             </div>
           </div>
         </div>
-        <p class="mt-3 text-[10px] text-amber-300">{{ data.scenarios.disclaimer }}</p>
+        <p class="mt-3 text-[10px] text-warning">{{ data.scenarios.disclaimer }}</p>
       </template>
     </div>
   </div>

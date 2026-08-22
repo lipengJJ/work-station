@@ -199,12 +199,12 @@ watch(drawerOpen, (open) => {
           <input
             v-model="searchQuery"
             placeholder="搜索 Skill 名称或描述"
-            class="w-64 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-1.5 pr-3 pl-8 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+            class="w-64 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] py-1.5 pr-3 pl-8 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
           />
         </div>
         <select
           v-model="categoryFilter"
-          class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-indigo-500"
+          class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
         >
           <option :value="undefined">全部分类</option>
           <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
@@ -213,8 +213,8 @@ watch(drawerOpen, (open) => {
 
       <div class="shrink-0 overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] shadow-xl">
         <div v-if="!loading && filteredSkills.length === 0" class="flex flex-col items-center justify-center gap-3 p-12 text-center">
-          <div class="flex h-14 w-14 items-center justify-center rounded-2xl border border-indigo-500/20 bg-indigo-500/10">
-            <Puzzle class="h-7 w-7 text-indigo-400" />
+          <div class="flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10">
+            <Puzzle class="h-7 w-7 text-primary" />
           </div>
           <p class="text-sm font-semibold text-[hsl(var(--foreground))]">
             {{ searchQuery || categoryFilter ? '没有匹配的 Skill' : '还没有登记任何 Skill' }}
@@ -239,7 +239,7 @@ watch(drawerOpen, (open) => {
                 v-for="s in filteredSkills"
                 :key="s.skill_key"
                 tabindex="0"
-                class="cursor-pointer transition-colors hover:bg-[hsl(var(--accent))] focus:bg-[hsl(var(--accent))] focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500"
+                class="cursor-pointer transition-colors hover:bg-[hsl(var(--accent))] focus:bg-[hsl(var(--accent))] focus:outline-none focus-visible:ring-1 focus-visible:ring-primary"
                 @click="openDetail(s)"
                 @keyup.enter="openDetail(s)"
               >
@@ -283,7 +283,7 @@ watch(drawerOpen, (open) => {
 
             <p class="text-sm text-[hsl(var(--muted-foreground))]">{{ detail.description }}</p>
 
-            <div v-if="detail.default_prompt" class="mt-4 rounded-xl border-l-2 border-indigo-500/50 bg-[hsl(var(--background-deep))] px-4 py-3 text-xs text-[hsl(var(--muted-foreground))] italic">
+            <div v-if="detail.default_prompt" class="mt-4 rounded-xl border-l-2 border-primary/50 bg-[hsl(var(--background-deep))] px-4 py-3 text-xs text-[hsl(var(--muted-foreground))] italic">
               {{ detail.default_prompt }}
             </div>
 
@@ -305,8 +305,8 @@ watch(drawerOpen, (open) => {
                 <ShieldAlert class="h-3.5 w-3.5" />校验结果
               </div>
               <ul class="space-y-1 text-xs">
-                <li v-for="(e, i) in detail.validation.errors" :key="`err-${i}`" class="text-rose-400">✕ {{ e }}</li>
-                <li v-for="(w, i) in detail.validation.warnings" :key="`warn-${i}`" class="text-amber-400">⚠ {{ w }}</li>
+                <li v-for="(e, i) in detail.validation.errors" :key="`err-${i}`" class="text-destructive">✕ {{ e }}</li>
+                <li v-for="(w, i) in detail.validation.warnings" :key="`warn-${i}`" class="text-warning">⚠ {{ w }}</li>
               </ul>
             </div>
 
@@ -360,7 +360,7 @@ watch(drawerOpen, (open) => {
                 <div v-else>
                   <div class="mb-2 flex items-center justify-between font-mono text-[11px] text-[hsl(var(--muted-foreground))]">
                     <span>{{ selectedFilePath }}</span>
-                    <span v-if="fileTruncated" class="text-amber-400">内容过长，仅预览（不可编辑）</span>
+                    <span v-if="fileTruncated" class="text-warning">内容过长，仅预览（不可编辑）</span>
                   </div>
                   <div v-if="fileLoading" class="p-6 text-center text-xs text-[hsl(var(--muted-foreground))]">加载中…</div>
                   <template v-else>
@@ -368,13 +368,13 @@ watch(drawerOpen, (open) => {
                       v-model="fileContent"
                       :disabled="fileTruncated"
                       spellcheck="false"
-                      class="max-h-[560px] min-h-[320px] w-full resize-y rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 font-mono text-[11px] leading-relaxed whitespace-pre text-[hsl(var(--muted-foreground))] outline-none focus:border-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      class="max-h-[560px] min-h-[320px] w-full resize-y rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 font-mono text-[11px] leading-relaxed whitespace-pre text-[hsl(var(--muted-foreground))] outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
                     ></textarea>
                     <div class="mt-2 flex items-center justify-between">
                       <span class="text-[11px] text-[hsl(var(--muted-foreground))]">修改后点击保存，系统会自动重新校验并生成新版本</span>
                       <button
                         :disabled="fileTruncated || fileSaving || fileContent.length === 0"
-                        class="rounded-lg bg-indigo-500 px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
+                        class="rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
                         @click="saveFileContent"
                       >
                         {{ fileSaving ? '保存中…' : '保存' }}
