@@ -25,11 +25,24 @@ class RssAdapter(HotSourceAdapter):
     def fetch(self, params: dict) -> list[RawEntry]:
         url = params.get("url", "")
         if not url:
-            raise HotSourceAdapterError("rss adapter 缺少 url 参数")
-        content = self._request(url, timeout=20).content
+            raise HotSourceAdapterError("rss adapter 缺少 url 参数", kind="parse_error")
+        resp = self._request(url, timeout=20)
+        content = resp.content
+        content_type = (resp.headers.get("Content-Type") or "").lower()
         feed = feedparser.parse(content)
+        # feedparser 很宽容，喂给它一个 HTML 错误页也不一定置 bozo，只是解析出 0 条。
+        # 所以先看 Content-Type：拿到 text/html 又没条目，基本可以断定 URL 填错了。
+        if "html" in content_type and not feed.entries:
+            raise HotSourceAdapterError(
+                f"返回的是网页不是 feed（Content-Type: {content_type}），"
+                f"URL 可能填错: {url}",
+                kind="parse_error",
+            )
         if getattr(feed, "bozo", 0) and not feed.entries:
-            raise HotSourceAdapterError(f"rss feed 解析失败（bozo）: {url}")
+            raise HotSourceAdapterError(
+                f"rss feed 解析失败（返回的多半是 HTML 错误页而不是 feed）: {url}",
+                kind="parse_error",
+            )
         entries: list[RawEntry] = []
         for idx, entry in enumerate(feed.entries or [], 1):
             title = (entry.get("title") or "").strip()
@@ -60,6 +73,12 @@ class RssAdapter(HotSourceAdapter):
                     rank=idx, title=title, url=link, summary=summary,
                     published_at=published_at, full_content=full_content,
                 )
+            )
+        if not entries:
+            # 能解析但一条都没有：多半是 URL 填错（返回了别的 XML）或 feed 已停更。
+            # 归为永久类，让它进「需要处理」而不是被当成网络抖动一直重试。
+            raise HotSourceAdapterError(
+                f"feed 解析成功但没有任何条目: {url}", kind="empty_feed"
             )
         return entries
 

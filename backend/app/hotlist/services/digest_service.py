@@ -4,17 +4,19 @@
 （400 行、17 个参数，是 CLI 里为避免全局状态一路传参的产物）：
 
     select_scope(db, mode, stat_date, source_ids) -> list[HotItem]
-    match_groups(items, word_groups, global_filters)
-    -> dict[rule_id, list[HotItem]]
-    rank_within_group(items, max_count)           -> list[HotItem]
-    build_digest(db, mode, stat_date, source_ids) -> dict
+    group_by_topic_hits(db, items)                 -> dict[topic_id, list[HotItem]]
+    rank_within_group(items, max_count)            -> list[HotItem]
+    build_digest(db, mode, stat_date, source_ids)  -> dict
+
+分组依据不再是关键词规则，而是语义检索写入的 HotSemanticHit：条目被哪个主题
+语义召回，就归到哪个主题组（rule_id 字段沿用旧字段名，值为 topic_id）。
 """
 from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.hotlist.models import HotItem
-from app.hotlist.services import diff_service, keyword_rules
+from app.hotlist.models import HotItem, HotSemanticHit, HotTopic
+from app.hotlist.services import diff_service
 
 
 def select_scope(
@@ -31,18 +33,22 @@ def select_scope(
     return q.all()
 
 
-def match_groups(
-    items: list[HotItem], word_groups: list[dict], global_filters: list[str]
-) -> dict[int, list[HotItem]]:
-    """按频率词规则把条目分到各自的词组下；一个条目命中多个词组时，每个词组都记一份。
-    标题 + 摘要一起匹配，理由见 crawl_service.match_rules_and_record_hits 里的注释。"""
+def group_by_topic_hits(db: Session, items: list[HotItem]) -> dict[int, list[HotItem]]:
+    """按语义命中把条目分到各自命中的主题下；一个条目命中多个主题时，每个主题都记一份。"""
+    if not items:
+        return {}
+    item_ids = [it.id for it in items]
+    rows = (
+        db.query(HotSemanticHit.topic_id, HotSemanticHit.item_id)
+        .filter(HotSemanticHit.item_id.in_(item_ids))
+        .all()
+    )
     grouped: dict[int, list[HotItem]] = {}
-    for item in items:
-        match_text = f"{item.title} {item.summary}"
-        for rule_id in keyword_rules.match_groups(
-            match_text, word_groups, global_filters
-        ):
-            grouped.setdefault(rule_id, []).append(item)
+    by_id = {it.id: it for it in items}
+    for topic_id, item_id in rows:
+        item = by_id.get(item_id)
+        if item is not None:
+            grouped.setdefault(topic_id, []).append(item)
     return grouped
 
 
@@ -57,12 +63,20 @@ def rank_within_group(
 def build_digest(
     db: Session, mode: str, stat_date: str, source_ids: list[str] | None = None
 ) -> dict:
-    """摘要组装主入口。没有配置任何词组规则时退化成「全部条目」一组，
-    保证摘要页在用户还没配规则时也有内容可看，不是一片空白。"""
+    """摘要组装主入口。没有任何语义命中时退化成「全部条目」一组，
+    保证摘要页在还没有语义命中时也有内容可看，不是一片空白。"""
     items = select_scope(db, mode, stat_date, source_ids)
-    word_groups, _filter_words, global_filters = keyword_rules.load_rules(db)
+    if not items:
+        return {
+            "mode": mode,
+            "stat_date": stat_date,
+            "total_items": 0,
+            "groups": [],
+        }
 
-    if not word_groups:
+    grouped = group_by_topic_hits(db, items)
+
+    if not grouped:
         ranked = rank_within_group(items)
         groups_out = (
             [{"rule_id": None, "display_name": "全部条目", "items": ranked}]
@@ -76,17 +90,21 @@ def build_digest(
             "groups": groups_out,
         }
 
-    grouped = match_groups(items, word_groups, global_filters)
-    meta_by_rule_id = {g["rule_id"]: g for g in word_groups}
+    topic_meta = {
+        t.id: t
+        for t in db.query(HotTopic)
+        .filter(HotTopic.id.in_(grouped.keys()))
+        .all()
+    }
 
     groups_out = []
-    for rule_id, group_items in grouped.items():
-        meta = meta_by_rule_id.get(rule_id, {})
-        ranked = rank_within_group(group_items, meta.get("max_count", 0))
+    for topic_id, group_items in grouped.items():
+        meta = topic_meta.get(topic_id)
+        ranked = rank_within_group(group_items, meta.max_items if meta else 0)
         groups_out.append(
             {
-                "rule_id": rule_id,
-                "display_name": meta.get("display_name") or "未命名规则",
+                "rule_id": topic_id,
+                "display_name": meta.name if meta else "未命名主题",
                 "items": ranked,
             }
         )

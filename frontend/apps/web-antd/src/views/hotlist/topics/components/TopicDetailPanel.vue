@@ -25,7 +25,7 @@ import {
 } from 'ant-design-vue';
 import { FolderInput, Play, RefreshCw, Upload as UploadIcon } from 'lucide-vue-next';
 
-import RuleTab from './RuleTab.vue';
+import { previewSemanticApi } from '#/api/core/topics';
 import TopicSourcePickerModal from './TopicSourcePickerModal.vue';
 
 import {
@@ -64,9 +64,9 @@ function statusInfo(status: string) {
   return (
     {
       pending: { label: '排队中', dot: 'bg-slate-500', text: 'text-[hsl(var(--muted-foreground))]' },
-      running: { label: '生成中', dot: 'bg-indigo-400', text: 'text-indigo-400' },
-      success: { label: '成功', dot: 'bg-emerald-400', text: 'text-emerald-400' },
-      failed: { label: '失败', dot: 'bg-rose-500', text: 'text-rose-400' },
+      running: { label: '生成中', dot: 'bg-primary', text: 'text-primary' },
+      success: { label: '成功', dot: 'bg-success', text: 'text-success' },
+      failed: { label: '失败', dot: 'bg-destructive', text: 'text-destructive' },
     } as Record<string, { label: string; dot: string; text: string }>
   )[status] || { label: status, dot: 'bg-slate-500', text: 'text-[hsl(var(--muted-foreground))]' };
 }
@@ -89,8 +89,7 @@ async function fetchTopic() {
 }
 
 // -------------------------------------------------------------- 步骤条（workflow） ----
-const activeStep = ref<'config' | 'notify' | 'reports' | 'rules' | 'sources'>('sources');
-const ruleCount = ref(0);
+const activeStep = ref<'config' | 'notify' | 'reports' | 'sources'>('sources');
 
 const steps = computed(() => {
   const hitOn = topic.value?.hit_notify_enabled;
@@ -103,12 +102,6 @@ const steps = computed(() => {
       label: '数据源',
       badge: `${topic.value?.enabled_source_count ?? 0} 个源`,
       done: (topic.value?.enabled_source_count ?? 0) > 0,
-    },
-    {
-      key: 'rules' as const,
-      label: '关键词规则',
-      badge: ruleCount.value > 0 ? `${ruleCount.value} 组` : '全量分析',
-      done: ruleCount.value > 0,
     },
     {
       key: 'config' as const,
@@ -275,6 +268,9 @@ const form = ref({
   skill_key: '',
   template_key: '',
   extra_question: '',
+  interest_query: '',
+  similarity_threshold: 0.35,
+  retrieval_size: 100,
   digest_strategy: 'funnel' as TopicsApi.DigestStrategy,
   digest_period: 'weekly' as TopicsApi.DigestPeriod,
   digest_cron: '0 8 * * 1',
@@ -318,6 +314,9 @@ function fillForm() {
     skill_key: t.skill_key,
     template_key: t.template_key || '',
     extra_question: t.extra_question,
+    interest_query: t.interest_query || '',
+    similarity_threshold: t.similarity_threshold ?? 0.35,
+    retrieval_size: t.retrieval_size || 100,
     digest_strategy: t.digest_strategy,
     digest_period: t.digest_period,
     digest_cron: t.digest_cron,
@@ -394,6 +393,9 @@ async function saveConfig() {
       skill_key: f.skill_key,
       template_key: f.template_key || null,
       extra_question: f.extra_question,
+      interest_query: f.interest_query,
+      similarity_threshold: f.similarity_threshold,
+      retrieval_size: f.retrieval_size,
       digest_strategy: f.digest_strategy,
       digest_period: f.digest_period,
       digest_cron: f.digest_cron,
@@ -421,6 +423,42 @@ async function saveConfig() {
     message.error(`保存失败：${e.message}`);
   } finally {
     saving.value = false;
+  }
+}
+
+// -------------------------------------------------------------- 语义检索预览 ----
+// 匹配范围三档 → 经模型校准的阈值（文档 §10.2；有评估数据后按实际模型调整）
+const THRESHOLD_PRESETS = [
+  { label: '严格', value: 0.5, hint: '只召回高度相关' },
+  { label: '均衡', value: 0.35, hint: '推荐' },
+  { label: '宽松', value: 0.2, hint: '召回更多' },
+];
+const previewLoading = ref(false);
+const previewResult = ref<TopicsApi.SemanticPreviewOut | null>(null);
+const previewQuery = ref('');
+
+function thresholdLabel(v: number) {
+  return THRESHOLD_PRESETS.find((p) => Math.abs(p.value - v) < 0.001)?.label ?? `自定义 ${v.toFixed(2)}`;
+}
+
+async function runPreview() {
+  if (!previewQuery.value.trim()) {
+    message.warning('请先填写关注需求');
+    return;
+  }
+  previewLoading.value = true;
+  previewResult.value = null;
+  try {
+    previewResult.value = await previewSemanticApi(props.topicId, {
+      interest_query: previewQuery.value.trim(),
+      period_days: 7,
+      similarity_threshold: form.value.similarity_threshold,
+      limit: 20,
+    });
+  } catch (e: any) {
+    message.error(`检索预览失败：${e.response?.data?.detail || e.message}`);
+  } finally {
+    previewLoading.value = false;
   }
 }
 
@@ -504,14 +542,14 @@ onMounted(async () => {
           class="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors"
           :class="
             activeStep === step.key
-              ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400'
+              ? 'border-primary bg-primary/10 text-primary'
               : 'border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'
           "
           @click="activeStep = step.key"
         >
           <span
             class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
-            :class="step.done ? 'bg-emerald-500/20 text-emerald-400' : 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]'"
+            :class="step.done ? 'bg-success/20 text-success' : 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]'"
           >
             {{ idx + 1 }}
           </span>
@@ -524,7 +562,7 @@ onMounted(async () => {
       <div v-show="activeStep === 'sources'">
         <div class="mb-4 flex flex-wrap items-center gap-2">
           <button
-            class="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500"
+            class="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary"
             @click="pickerOpen = true"
           >
             <FolderInput class="h-3.5 w-3.5" />
@@ -550,7 +588,7 @@ onMounted(async () => {
             全关
           </button>
           <button
-            class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs text-rose-400 disabled:opacity-40"
+            class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs text-destructive disabled:opacity-40"
             :disabled="staleIds.length === 0"
             @click="disableStale"
           >
@@ -558,11 +596,11 @@ onMounted(async () => {
           </button>
           <span class="ml-auto text-xs text-[hsl(var(--muted-foreground))]">
             启用
-            <b :class="topic.enabled_source_count > 100 ? 'text-amber-500' : 'text-[hsl(var(--foreground))]'">
+            <b :class="topic.enabled_source_count > 100 ? 'text-warning' : 'text-[hsl(var(--foreground))]'">
               {{ topic.enabled_source_count }}
             </b>
             个源
-            <span v-if="topic.enabled_source_count > 100" class="text-amber-500">
+            <span v-if="topic.enabled_source_count > 100" class="text-warning">
               · 超过 100 护栏，可能拖慢抓取
             </span>
           </span>
@@ -607,13 +645,13 @@ onMounted(async () => {
                           <span
                             v-else-if="record.last_status === 'failed'"
                             class="inline-flex items-center gap-1.5"
-                            :class="record.consecutive_failures >= 5 ? 'text-rose-500/60' : 'text-rose-400'"
+                            :class="record.consecutive_failures >= 5 ? 'text-destructive/60' : 'text-destructive'"
                           >
-                            <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+                            <span class="h-1.5 w-1.5 rounded-full bg-destructive"></span>
                             失败×{{ record.consecutive_failures }}{{ record.consecutive_failures >= 5 ? '（失效）' : '' }}
                           </span>
-                          <span v-else-if="record.last_status === 'success'" class="inline-flex items-center gap-1.5 text-emerald-400">
-                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                          <span v-else-if="record.last_status === 'success'" class="inline-flex items-center gap-1.5 text-success">
+                            <span class="h-1.5 w-1.5 rounded-full bg-success"></span>
                             正常
                           </span>
                           <span v-else class="inline-flex items-center gap-1.5 text-[hsl(var(--muted-foreground))]">
@@ -642,10 +680,6 @@ onMounted(async () => {
       </div>
 
       <!-- ============================================================ 关键词规则 -->
-      <div v-show="activeStep === 'rules'">
-        <RuleTab :topic-id="topicId" @count-change="(n) => (ruleCount = n)" />
-      </div>
-
       <!-- ============================================================ 分析配置 -->
       <div v-show="activeStep === 'config'">
         <div class="max-w-3xl">
@@ -675,12 +709,87 @@ onMounted(async () => {
                 :options="skillTemplates.map((t) => ({ value: t.template_key, label: t.name }))"
               />
             </FormItem>
-            <FormItem label="额外要求（透传给 AI 的补充指令）">
+            <FormItem label="额外要求（仅影响报告写作，不影响文章检索）">
               <Input.TextArea
                 v-model:value="form.extra_question"
                 :rows="2"
                 placeholder="例：重点关注能直接集成进 FastAPI 单体应用的项目，务必注明 License"
               />
+            </FormItem>
+
+            <div class="mb-2 mt-6 border-b border-[hsl(var(--border))] pb-1 text-sm font-medium text-[hsl(var(--foreground))]">语义检索（替代关键词规则）</div>
+            <FormItem
+              label="关注需求"
+              required
+              :extra="'自然语言描述你想看什么，例如：我想看 AI 工具链相关的新闻或知识。生成报告前必填。'"
+            >
+              <Input.TextArea
+                v-model:value="form.interest_query"
+                :rows="4"
+                :maxlength="4000"
+                placeholder="例：我想看 AI 工具链相关的新闻或者知识，关注 Agent runtime、MCP、模型网关"
+              />
+            </FormItem>
+            <div class="grid grid-cols-1 gap-x-6 md:grid-cols-2">
+              <FormItem label="匹配范围（语义相关度阈值）">
+                <Radio.Group
+                  :value="form.similarity_threshold"
+                  class="flex flex-wrap gap-2"
+                  @change="(e: any) => (form.similarity_threshold = Number(e.target.value))"
+                >
+                  <Radio v-for="p in THRESHOLD_PRESETS" :key="p.label" :value="p.value">
+                    {{ p.label }}（{{ p.value }}）
+                  </Radio>
+                </Radio.Group>
+                <div class="mt-1 text-[11px] text-[hsl(var(--muted-foreground))]">
+                  当前：{{ thresholdLabel(form.similarity_threshold) }}
+                </div>
+              </FormItem>
+              <FormItem label="语义召回数量（retrieval_size）">
+                <InputNumber v-model:value="form.retrieval_size" :min="10" :max="500" class="w-full" />
+              </FormItem>
+            </div>
+            <FormItem label="检索预览（近 7 天 Top 20，不影响报告）">
+              <Input.TextArea
+                v-model:value="previewQuery"
+                :rows="2"
+                placeholder="临时填一个关注需求点「预览」看召回效果（不会保存）"
+              />
+              <div class="mt-2 flex items-center gap-3">
+                <button
+                  :disabled="previewLoading"
+                  class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] disabled:opacity-50"
+                  @click="runPreview"
+                >
+                  {{ previewLoading ? '检索中…' : '检索预览' }}
+                </button>
+                <span v-if="previewResult" class="text-[11px] text-[hsl(var(--muted-foreground))]">
+                  已索引 {{ previewResult.indexed_count }}
+                  <span v-if="previewResult.missing_embedding_count" class="text-warning">
+                    · {{ previewResult.missing_embedding_count }} 篇缺向量
+                  </span>
+                  · 命中 {{ previewResult.matched_count }} 篇
+                </span>
+              </div>
+              <div v-if="previewResult && previewResult.items.length" class="mt-2 max-h-64 overflow-y-auto rounded-lg border border-[hsl(var(--border))] p-2">
+                <div
+                  v-for="(it, i) in previewResult.items"
+                  :key="it.item.id"
+                  class="flex items-start gap-2 border-b border-[hsl(var(--border))] py-1.5 text-xs last:border-0"
+                >
+                  <span class="mt-0.5 w-6 shrink-0 font-mono text-[10px] text-[hsl(var(--muted-foreground))]">{{ i + 1 }}</span>
+                  <div class="min-w-0 flex-1">
+                    <div class="truncate font-medium text-[hsl(var(--foreground))]">{{ it.item.title }}</div>
+                    <div class="text-[10px] text-[hsl(var(--muted-foreground))]">{{ it.item.source_id }}</div>
+                  </div>
+                  <span class="shrink-0 font-mono text-[10px]" :class="it.semantic_score >= (form.similarity_threshold) ? 'text-success' : 'text-warning'">
+                    {{ it.semantic_score.toFixed(2) }}
+                  </span>
+                </div>
+              </div>
+              <div v-if="previewResult && !previewResult.items.length && !previewLoading" class="mt-2 text-[11px] text-[hsl(var(--muted-foreground))]">
+                暂无命中：可调低「匹配范围」到宽松，或扩大关注需求描述
+              </div>
             </FormItem>
 
             <div class="grid grid-cols-1 gap-x-6 md:grid-cols-2">
@@ -736,7 +845,7 @@ onMounted(async () => {
             <div class="flex gap-2">
               <button
                 :disabled="saving"
-                class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+                class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50"
                 @click="saveConfig"
               >
                 保存配置
@@ -763,7 +872,7 @@ onMounted(async () => {
               实时命中推送（hit_notify_*）
             </div>
             <p class="mb-3 text-xs text-[hsl(var(--muted-foreground))]">
-              抓取时命中本主题的关键词规则后，按频率推送命中条目（无规则主题开启后推「全部命中」）
+              新文章与主题「关注需求」的语义相关度超过阈值时，按频率推送命中条目
             </p>
             <FormItem label="开启实时命中推送">
               <Switch v-model:checked="form.hit_notify_enabled" />
@@ -825,7 +934,7 @@ onMounted(async () => {
 
             <button
               :disabled="saving"
-              class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+              class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50"
               @click="saveConfig"
             >
               保存配置
@@ -839,7 +948,7 @@ onMounted(async () => {
         <div class="mb-4 flex flex-wrap items-center gap-2">
           <button
             :disabled="generating"
-            class="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+            class="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50"
             @click="generate()"
           >
             <Play class="h-3.5 w-3.5" />
@@ -961,7 +1070,7 @@ onMounted(async () => {
         <button class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs" @click="opmlOpen = false">取消</button>
         <button
           :disabled="opmlSaving"
-          class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+          class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50"
           @click="submitImport"
         >
           导入
@@ -987,7 +1096,7 @@ onMounted(async () => {
       <div class="flex justify-end gap-2">
         <button class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs" @click="advancedOpen = false">取消</button>
         <button
-          class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500"
+          class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary"
           @click="submitAdvanced"
         >
           开始生成

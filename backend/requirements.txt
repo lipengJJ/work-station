@@ -27,3 +27,4 @@ playwright
 # ai_trending 热点聚合：RSS 2.0 / Atom 统一解析（InfoQ / 36氪 / arXiv）
 feedparser>=6.0
 boto3>=1.34
+numpy>=1.26  # 语义检索向量编解码与批量点积（显式声明，不依赖 yfinance 的传递依赖）

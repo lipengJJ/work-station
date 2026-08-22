@@ -16,12 +16,14 @@ import json
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.triggers.cron import CronTrigger
 from loguru import logger
+from sqlalchemy import or_
 
 from app.core.database import SessionLocal
 from app.core.scheduler import get_scheduler
-from app.hotlist.models import HotSource, HotTopic
+from app.hotlist.models import HotItem, HotItemEmbedding, HotSource, HotTopic
 from app.hotlist.services import (
     crawl_service,
+    embedding_service,
     push_service,
     publish_service,
     topic_report_service,
@@ -31,6 +33,8 @@ JOB_ID_PREFIX = "hotlist_"
 TOPIC_JOB_PREFIX = "hotlist_topic_"
 CLEANUP_JOB_ID = "hotlist_cleanup"
 PUSH_SWEEP_JOB_ID = "hotlist_push_sweep"
+EMBEDDING_BACKFILL_JOB_ID = "hotlist_embedding_backfill"
+EMBEDDING_BACKFILL_BATCH = 200
 
 
 def _job_id(source_id: str) -> str:
@@ -219,6 +223,37 @@ def unregister_job(source_id: str) -> None:
         pass
 
 
+def _embedding_backfill_job() -> None:
+    """低频补偿任务：补算缺失/pending/failed 的文章向量。每轮最多 200 条。
+
+    正常启动不做同步全量计算，避免启动过程依赖外部模型；初次抓取实时建立索引，
+    历史缺索引的文章由本任务逐步补齐。
+    """
+    db = SessionLocal()
+    try:
+        items = (
+            db.query(HotItem)
+            .outerjoin(HotItemEmbedding, HotItemEmbedding.item_id == HotItem.id)
+            .filter(
+                or_(
+                    HotItemEmbedding.item_id.is_(None),
+                    HotItemEmbedding.status != "success",
+                )
+            )
+            .order_by(HotItem.last_crawl_time.desc())
+            .limit(EMBEDDING_BACKFILL_BATCH)
+            .all()
+        )
+        if not items:
+            return
+        stat = embedding_service.ensure_item_embeddings(db, items, best_effort=True)
+        logger.info(f"hotlist 语义向量补偿任务完成: {stat}")
+    except Exception:  # noqa: BLE001
+        logger.exception("hotlist 语义向量补偿任务失败")
+    finally:
+        db.close()
+
+
 def register_all_enabled_jobs() -> None:
     """进程启动时按当前 hot_sources 表状态注册全部 job（main.py lifespan 调用）。"""
     db = SessionLocal()
@@ -249,4 +284,12 @@ def register_all_enabled_jobs() -> None:
         id=PUSH_SWEEP_JOB_ID,
         replace_existing=True,
         minutes=15,
+    )
+    # 语义向量低频补偿：每 30 分钟扫描缺索引的文章，分批补算
+    scheduler.add_job(
+        func=_embedding_backfill_job,
+        trigger="interval",
+        id=EMBEDDING_BACKFILL_JOB_ID,
+        replace_existing=True,
+        minutes=30,
     )

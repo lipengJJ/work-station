@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -37,7 +37,17 @@ class HotTopic(Base):
     """指向 skills 表。空 = 用内置默认周报 Prompt（让用户不配 Skill 也能先跑起来）。"""
     template_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     extra_question: Mapped[str] = mapped_column(Text, default="")
-    """每次分析追加的自定义要求，透传给 prepare_run 的 question。"""
+    """每次分析追加的自定义要求，透传给 prepare_run 的 question。仅影响报告写作，不影响文章检索。"""
+
+    # ---------------------------------------------------------- 语义检索配置 ----
+    interest_query: Mapped[str] = mapped_column(Text, default="")
+    """用户自然语言关注需求，例如「我想看 AI 工具链相关的新闻或者知识」。决定「找什么」。"""
+    retrieval_mode: Mapped[str] = mapped_column(String(16), default="semantic")
+    """第一版只开放 semantic；保留未来 hybrid 值。"""
+    similarity_threshold: Mapped[float] = mapped_column(Float, default=0.35)
+    """语义召回门槛，模型相关，必须通过预览/样本校准，不能视为通用常量。"""
+    retrieval_size: Mapped[int] = mapped_column(Integer, default=100)
+    """语义召回给 Funnel 的最大条数，建议范围 10~500。"""
 
     digest_strategy: Mapped[str] = mapped_column(String(16), default="funnel")
     """裁剪策略：simple / two_stage / funnel。不同主题可以不同——

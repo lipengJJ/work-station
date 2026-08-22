@@ -20,7 +20,6 @@ from app.analysis.controllers import analyses as analyses_api
 from app.hotlist.controllers import digest as hotlist_digest_api
 from app.hotlist.controllers import hotlist as hotlist_api
 from app.hotlist.controllers import reports as hotlist_reports_api
-from app.hotlist.controllers import rules as hotlist_rules_api
 from app.hotlist.controllers import sources as hotlist_sources_api
 from app.hotlist.controllers import topics as hotlist_topics_api
 from app.resource.controllers import resource as resource_api
@@ -134,7 +133,6 @@ def create_app() -> FastAPI:
     app.include_router(hotlist_api.router)
     app.include_router(hotlist_sources_api.router)
     app.include_router(hotlist_sources_api.group_router)
-    app.include_router(hotlist_rules_api.router)
     app.include_router(hotlist_digest_api.router)
     app.include_router(hotlist_topics_api.router)
     app.include_router(hotlist_reports_api.router)

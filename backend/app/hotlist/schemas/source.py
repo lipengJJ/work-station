@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SourceOut(BaseModel):
@@ -27,9 +27,25 @@ class SourceOut(BaseModel):
     last_status: str = ""
     last_error: str = ""
     consecutive_failures: int = 0
+    last_error_kind: str = ""
+    """失败类型（dns_error / http_404 / parse_error …），见 HotSource.last_error_kind。
+    前端据此把「失败」拆成瞬时/永久/需干预三档展示，而不是一律「失败（连续 N 次）」。"""
+    last_error_label: str = ""
+    """last_error_kind 的中文说明，前端直接展示。"""
+    transient_failures: int = 0
+    permanent_failures: int = 0
     fail_count: int = 0
     last_success_at: datetime | None = None
     total_fetched: int = 0
+
+    @model_validator(mode="after")
+    def _fill_error_label(self) -> "SourceOut":
+        """last_error_kind → 中文说明。延迟 import 避免 schemas 在模块级依赖 services。"""
+        if self.last_error_kind and not self.last_error_label:
+            from app.hotlist.services.adapters.base import kind_label
+
+            self.last_error_label = kind_label(self.last_error_kind)
+        return self
 
 
 class SourceIn(BaseModel):
@@ -66,6 +82,12 @@ class SourceBatchIn(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
     group_id: int | None = None
     enabled: bool | None = None
+
+
+class SourceCrawlIn(BaseModel):
+    """立即抓取：source_ids 为空 = 全部启用中的源。"""
+
+    source_ids: list[str] = Field(default_factory=list)
 
 
 class SourceImportOpmlIn(BaseModel):

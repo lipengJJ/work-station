@@ -19,7 +19,15 @@ export namespace HotlistApi {
     last_fetched_at: null | string;
     last_status: SourceStatus;
     last_error: string;
+    /** 失败类型：dns_error / http_404 / parse_error / upstream_down … 空 = 没失败过 */
+    last_error_kind: string;
+    /** last_error_kind 的中文说明，后端填好直接展示 */
+    last_error_label: string;
     consecutive_failures: number;
+    /** 瞬时失败次数（DNS 抖动 / 上游故障），不判定源失效 */
+    transient_failures: number;
+    /** 永久失败次数（404 / 解析失败 / 被拒），失效判定只看这个 */
+    permanent_failures: number;
     fail_count: number;
     last_success_at: null | string;
     total_fetched: number;
@@ -124,7 +132,8 @@ export namespace HotlistApi {
   export type SortField = 'rank' | 'time' | 'weight';
 
   export interface ListItemsParams {
-    source_id?: string;
+    /** 分组过滤：空=全部；'ungrouped'=未分组；其余为分组 id */
+    group?: string;
     source_kind?: SourceKind | '';
     stat_date?: string;
     sort?: SortField;
@@ -138,62 +147,22 @@ export namespace HotlistApi {
     message: string;
   }
 
-  // -------------------------------------------------------------- 频率词规则 ----
-  export interface Word {
-    word: string;
-    is_regex: boolean;
-    display_name?: null | string;
+  /** 手动批量抓取：POST /sources/crawl 的返回。 */
+  export interface CrawlTrigger {
+    triggered: boolean;
+    count: number;
+    job_id: string;
   }
 
-  export type RuleType = 'global_filter' | 'group';
-
-  export interface Rule {
-    id: number;
-    rule_type: RuleType;
-    topic_id: null | number;
-    display_name: string;
-    normal_words: Word[];
-    required_words: Word[];
-    exclude_words: Word[];
-    max_count: number;
-    enabled: boolean;
-    sort_order: number;
-    created_at: null | string;
-    updated_at: null | string;
-  }
-
-  export interface RuleParams {
-    display_name?: string;
-    normal_words?: Word[];
-    required_words?: Word[];
-    exclude_words?: Word[];
-    max_count?: number;
-    enabled?: boolean;
-    sort_order?: number;
-    topic_id?: null | number;
-  }
-
-  export interface GlobalFilterParams {
-    word: string;
-    enabled?: boolean;
-    sort_order?: number;
-  }
-
-  export interface RuleImportResult {
-    created_groups: number;
-    created_global_filters: number;
-  }
-
-  export interface RulePreviewParams {
-    normal_words?: Word[];
-    required_words?: Word[];
-    exclude_words?: Word[];
-    sample_limit?: number;
-  }
-
-  export interface RulePreviewResult {
-    matched_count: number;
-    samples: Item[];
+  /** 手动批量抓取进度：GET /sources/crawl-status 的返回。 */
+  export interface CrawlStatus {
+    running: boolean;
+    total?: number;
+    done?: number;
+    source_ids?: string[];
+    finished?: boolean;
+    skipped?: boolean;
+    failed?: number;
   }
 
   // -------------------------------------------------------------- 摘要 ----
@@ -215,7 +184,8 @@ export namespace HotlistApi {
   export interface DigestParams {
     mode: DigestMode;
     stat_date?: string;
-    source_ids?: string;
+    /** 分组过滤：空=全部；'ungrouped'=未分组；其余为分组 id */
+    group?: string;
   }
 }
 
@@ -273,6 +243,26 @@ export async function batchSourcesApi(body: HotlistApi.SourceBatchParams) {
   );
 }
 
+/** 立即抓取选中的源（后台执行，立即返回；source_ids 为空 = 全部启用中的源） */
+export async function crawlSourcesApi(sourceIds: string[]) {
+  return requestClient.post<HotlistApi.CrawlTrigger>(
+    '/hotlist/sources/crawl',
+    { source_ids: sourceIds },
+  );
+}
+
+/** 查询一次手动批量抓取的进度（页面刷新后靠 job_id 恢复显示） */
+export async function getCrawlStatusApi(jobId: string) {
+  return requestClient.get<HotlistApi.CrawlStatus>('/hotlist/sources/crawl-status', {
+    params: { job_id: jobId },
+  });
+}
+
+/** 立即抓取单个源（同步执行，返回该源抓完后的最新状态） */
+export async function crawlOneSourceApi(sourceId: string) {
+  return requestClient.post<HotlistApi.Source>(`/hotlist/sources/${sourceId}/crawl`);
+}
+
 /** 批量导入 OPML 到分组（content 优先；opml_url 可选） */
 export async function importSourcesOpmlApi(body: HotlistApi.SourceImportOpmlParams) {
   return requestClient.post<HotlistApi.SourceImportOpmlResult>('/hotlist/sources/import-opml', body);
@@ -293,63 +283,9 @@ export async function triggerHotlistCrawlApi() {
   return requestClient.post<HotlistApi.CrawlResult>('/hotlist/crawl');
 }
 
-// -------------------------------------------------------------- 频率词规则 ----
-
-/** 主题下的词组规则列表 */
-export async function listTopicRulesApi(topicId: number) {
-  return requestClient.get<HotlistApi.Rule[]>(`/hotlist/topics/${topicId}/rules`);
-}
-
-/** 新建主题下的词组规则 */
-export async function createTopicRuleApi(topicId: number, body: HotlistApi.RuleParams) {
-  return requestClient.post<HotlistApi.Rule>(`/hotlist/topics/${topicId}/rules`, body);
-}
-
-/** 更新词组规则（全字段可选，覆盖式保存；不允许改归属） */
-export async function updateHotlistRuleApi(ruleId: number, body: HotlistApi.RuleParams) {
-  return requestClient.put<HotlistApi.Rule>(`/hotlist/rules/${ruleId}`, body);
-}
-
-/** 删除词组规则 */
-export async function deleteHotlistRuleApi(ruleId: number) {
-  return requestClient.delete<{ ok: boolean }>(`/hotlist/rules/${ruleId}`);
-}
-
-/** 批量导入 TrendRadar 格式文本到该主题 */
-export async function importTopicRulesApi(topicId: number, text: string) {
-  return requestClient.post<HotlistApi.RuleImportResult>(`/hotlist/topics/${topicId}/rules/import`, {
-    text,
-  });
-}
-
-/** 试跑：用该主题的源 + 规则，拿当天已抓数据跑一遍匹配，返回命中条数 + 样例 */
-export async function previewTopicRuleApi(topicId: number, body: HotlistApi.RulePreviewParams) {
-  return requestClient.post<HotlistApi.RulePreviewResult>(
-    `/hotlist/topics/${topicId}/rules/preview`,
-    body,
-  );
-}
-
-// -------------------------------------------------------------- 全局过滤词 ----
-
-/** 全局过滤词列表（对所有主题生效） */
-export async function listGlobalFiltersApi() {
-  return requestClient.get<HotlistApi.Rule[]>('/hotlist/global-filters');
-}
-
-/** 新建全局过滤词（命中即从所有词组匹配结果中剔除） */
-export async function createGlobalFilterApi(body: HotlistApi.GlobalFilterParams) {
-  return requestClient.post<HotlistApi.Rule>('/hotlist/global-filters', body);
-}
-
-/** 删除全局过滤词 */
-export async function deleteGlobalFilterApi(ruleId: number) {
-  return requestClient.delete<{ ok: boolean }>(`/hotlist/global-filters/${ruleId}`);
-}
-
 // -------------------------------------------------------------- 摘要 ----
 
-/** 热点摘要（daily=当日全部 / incremental=只看新增 / current=当前榜单），按规则分组 */
+/** 热点摘要（daily=当日全部 / incremental=只看新增 / current=当前榜单），按语义命中主题分组 */
 export async function getHotlistDigestApi(params: HotlistApi.DigestParams) {
   return requestClient.get<HotlistApi.Digest>('/hotlist/digest', { params });
 }

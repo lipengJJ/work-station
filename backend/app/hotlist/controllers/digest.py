@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.hotlist.schemas.digest import DigestOut
-from app.hotlist.services import digest_service
+from app.hotlist.services import digest_service, source_service
 
 router = APIRouter(prefix="/api/hotlist", tags=["hotlist"])
 
@@ -26,17 +26,16 @@ VALID_MODES = {"daily", "incremental", "current"}
 def get_digest(
     mode: str = Query("daily"),
     stat_date: str = Query("", max_length=10),
-    source_ids: str = Query("", description="逗号分隔的源 id 列表，空 = 全部源"),
+    group: str = Query("", description="分组过滤：空=全部；'ungrouped'=未分组；其余为分组 id"),
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ) -> DigestOut:
     if mode not in VALID_MODES:
         raise HTTPException(400, f"未知模式: {mode}（可选：daily/incremental/current）")
     date_str = stat_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    ids = (
-        [s.strip() for s in source_ids.split(",") if s.strip()]
-        if source_ids
-        else []
-    )
-    result = digest_service.build_digest(db, mode, date_str, ids or None)
+    try:
+        ids = source_service.resolve_group_source_ids(db, group)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    result = digest_service.build_digest(db, mode, date_str, ids)
     return DigestOut.model_validate(result)

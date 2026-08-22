@@ -101,7 +101,7 @@ async function submit() {
           <label class="flex items-center gap-1 text-[11px] text-[hsl(var(--muted-foreground))]">
             <input
               type="checkbox"
-              class="accent-indigo-500"
+              class="accent-primary"
               :checked="isGroupAllSelected(group.sources)"
               @change="(e) => toggleGroup(group.sources, (e.target as HTMLInputElement).checked)"
             />
@@ -113,9 +113,9 @@ async function submit() {
             v-for="s in group.sources"
             :key="s.id"
             class="flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs"
-            :class="selectedIds.includes(s.id) ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400' : 'border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]'"
+            :class="selectedIds.includes(s.id) ? 'border-primary bg-primary/10 text-primary' : 'border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]'"
           >
-            <input v-model="selectedIds" type="checkbox" class="accent-indigo-500" :value="s.id" />
+            <input v-model="selectedIds" type="checkbox" class="accent-primary" :value="s.id" />
             {{ s.name || s.id }}
           </label>
         </div>
@@ -127,7 +127,7 @@ async function submit() {
         <button class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs" @click="open = false">取消</button>
         <button
           :disabled="saving"
-          class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+          class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50"
           @click="submit"
         >
           应用

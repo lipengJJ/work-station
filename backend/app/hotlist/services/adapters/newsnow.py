@@ -48,11 +48,13 @@ class NewsNowAdapter(HotSourceAdapter):
 
     def _get_json_with_retry(self, url: str) -> dict:
         last_error = ""
+        last_kind = ""
         for attempt in range(len(RETRY_BASE_DELAYS) + 1):
             try:
                 return self._get_json(url, timeout=20)
             except HotSourceAdapterError as exc:
                 last_error = str(exc)
+                last_kind = getattr(exc, "kind", "")
             if attempt < len(RETRY_BASE_DELAYS):
                 delay = (
                     RETRY_BASE_DELAYS[attempt]
@@ -64,16 +66,22 @@ class NewsNowAdapter(HotSourceAdapter):
                     f"{delay:.1f}s 后重试"
                 )
                 time.sleep(delay)
-        raise HotSourceAdapterError(f"newsnow 连续请求失败: {last_error}")
+        raise HotSourceAdapterError(
+            f"newsnow 连续请求失败: {last_error}", kind=last_kind
+        )
 
     def fetch(self, params: dict) -> list[RawEntry]:
         platform = params.get("platform", "")
         if not platform:
-            raise HotSourceAdapterError("newsnow adapter 缺少 platform 参数")
+            raise HotSourceAdapterError(
+                "newsnow adapter 缺少 platform 参数", kind="parse_error"
+            )
         url = f"{self._api_url()}?id={platform}&latest"
         data = self._get_json_with_retry(url)
         if data.get("status") not in ("success", "cache"):
-            raise HotSourceAdapterError(f"响应状态异常: {data.get('status')}")
+            raise HotSourceAdapterError(
+                f"响应状态异常: {data.get('status')}", kind="upstream_5xx"
+            )
 
         entries: list[RawEntry] = []
         for idx, item in enumerate(data.get("items", []), 1):

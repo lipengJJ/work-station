@@ -6,12 +6,14 @@ from app.hotlist.models.hot_crawl_record import (
 )
 from app.hotlist.models.hot_item import HotItem
 from app.hotlist.models.hot_item_content import HotItemContent
-from app.hotlist.models.hot_keyword_rule import HotKeywordRule
+from app.hotlist.models.hot_item_embedding import HotItemEmbedding
 from app.hotlist.models.hot_rank_history import HotRankHistory
-from app.hotlist.models.hot_rule_hit import HotRuleHit
+from app.hotlist.models.hot_report_candidate import HotReportCandidate
+from app.hotlist.models.hot_semantic_hit import HotSemanticHit
 from app.hotlist.models.hot_source import HotSource
 from app.hotlist.models.hot_source_group import HotSourceGroup
 from app.hotlist.models.hot_topic import HotTopic
+from app.hotlist.models.hot_topic_embedding import HotTopicEmbedding
 from app.hotlist.models.hot_topic_report import HotTopicReport
 from app.hotlist.models.hot_topic_source import HotTopicSource
 
@@ -20,12 +22,14 @@ __all__ = [
     "HotCrawlSourceStatus",
     "HotItem",
     "HotItemContent",
-    "HotKeywordRule",
+    "HotItemEmbedding",
     "HotRankHistory",
-    "HotRuleHit",
+    "HotReportCandidate",
+    "HotSemanticHit",
     "HotSource",
     "HotSourceGroup",
     "HotTopic",
+    "HotTopicEmbedding",
     "HotTopicReport",
     "HotTopicSource",
 ]

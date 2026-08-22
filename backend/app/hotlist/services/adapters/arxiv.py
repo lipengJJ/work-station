@@ -30,7 +30,7 @@ class ArxivAdapter(HotSourceAdapter):
         content = self._request(API_URL, timeout=20).content
         feed = feedparser.parse(content)
         if getattr(feed, "bozo", 0) and not feed.entries:
-            raise HotSourceAdapterError("arxiv feed 解析失败（bozo）")
+            raise HotSourceAdapterError("arxiv feed 解析失败（bozo）", kind="parse_error")
         entries: list[RawEntry] = []
         for idx, entry in enumerate(feed.entries or [], 1):
             title = " ".join((entry.get("title") or "").split())

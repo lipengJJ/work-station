@@ -16,6 +16,11 @@ export namespace TopicsApi {
     skill_key: string;
     template_key: null | string;
     extra_question: string;
+    // 语义检索配置（替代旧关键词规则）
+    interest_query: string;
+    retrieval_mode: 'semantic';
+    similarity_threshold: number;
+    retrieval_size: number;
     digest_strategy: DigestStrategy;
     digest_period: DigestPeriod;
     digest_cron: string;
@@ -53,6 +58,10 @@ export namespace TopicsApi {
     skill_key?: string;
     template_key?: null | string;
     extra_question?: string;
+    interest_query?: string;
+    retrieval_mode?: 'semantic';
+    similarity_threshold?: number;
+    retrieval_size?: number;
     digest_strategy?: DigestStrategy;
     digest_period?: DigestPeriod;
     digest_cron?: string;
@@ -252,4 +261,41 @@ export async function publishReportApi(reportId: number) {
 
 export async function notifyReportApi(reportId: number) {
   return requestClient.post<{ ok: boolean; message: string }>(`/hotlist/reports/${reportId}/notify`);
+}
+
+export namespace TopicsApi {
+  export interface SemanticPreviewIn {
+    interest_query: string;
+    period_days?: number;
+    similarity_threshold?: number;
+    limit?: number;
+  }
+
+  export interface SemanticPreviewItem {
+    item: {
+      id: number;
+      title: string;
+      source_id: string;
+      published_at: null | string;
+      last_crawl_time: null | string;
+    };
+    semantic_score: number;
+    hot_score: number;
+    final_score: number;
+  }
+
+  export interface SemanticPreviewOut {
+    indexed_count: number;
+    missing_embedding_count: number;
+    matched_count: number;
+    model_key: string;
+    items: SemanticPreviewItem[];
+  }
+}
+
+export async function previewSemanticApi(topicId: number, body: TopicsApi.SemanticPreviewIn) {
+  return requestClient.post<TopicsApi.SemanticPreviewOut>(
+    `/hotlist/topics/${topicId}/semantic-preview`,
+    body,
+  );
 }

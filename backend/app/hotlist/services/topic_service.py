@@ -15,14 +15,21 @@ import re
 import secrets
 from typing import Optional
 
+import numpy as np
 from loguru import logger
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.hotlist.models import HotItem, HotSource, HotTopic, HotTopicSource
+from app.hotlist.models import (
+    HotItem,
+    HotSource,
+    HotTopic,
+    HotTopicEmbedding,
+    HotTopicSource,
+)
 from app.hotlist.schemas.topic import TopicIn, TopicSourceOut, TopicUpdateIn
 
-STALE_FAILURE_THRESHOLD = 5  # 连续失败 >=5 自动置灰
+STALE_FAILURE_THRESHOLD = 5  # 连续「永久类」失败 >=5 才置灰，见 list_stale_source_ids
 
 _SLUG_RE = re.compile(r"[^a-z0-9-]+")
 
@@ -65,6 +72,10 @@ def create_topic(db: Session, data: TopicIn) -> HotTopic:
         skill_key=data.skill_key,
         template_key=data.template_key,
         extra_question=data.extra_question,
+        interest_query=data.interest_query,
+        retrieval_mode=data.retrieval_mode,
+        similarity_threshold=data.similarity_threshold,
+        retrieval_size=data.retrieval_size,
         digest_strategy=data.digest_strategy,
         digest_period=data.digest_period,
         digest_cron=data.digest_cron,
@@ -120,8 +131,23 @@ def update_topic(db: Session, topic_id: int, data: TopicUpdateIn) -> HotTopic:
         updates["hit_notify_channel_ids"] = json.dumps(
             updates["hit_notify_channel_ids"]
         )
+    old_interest = topic.interest_query  # setattr 前记录旧值
     for key, value in updates.items():
         setattr(topic, key, value)
+    # 关注需求变化：使主题向量失效（删除行，下次 ensure 补算），避免旧需求向量被误用
+    if (
+        "interest_query" in updates
+        and updates["interest_query"] is not None
+        and updates["interest_query"] != (old_interest or "")
+    ):
+        db.query(HotTopicEmbedding).filter(
+            HotTopicEmbedding.topic_id == topic_id
+        ).delete()
+        # 需求变更后旧语义命中不可再推送（query_hash 不匹配）
+        from app.hotlist.models import HotSemanticHit
+        db.query(HotSemanticHit).filter(
+            HotSemanticHit.topic_id == topic_id, HotSemanticHit.notified.is_(False)
+        ).delete()
     db.commit()
     db.refresh(topic)
     return topic
@@ -311,6 +337,9 @@ def list_topic_sources(db: Session, topic_id: int) -> list[TopicSourceOut]:
                 last_status=source.last_status,
                 last_error=source.last_error,
                 consecutive_failures=source.consecutive_failures,
+                last_error_kind=source.last_error_kind,
+                transient_failures=source.transient_failures,
+                permanent_failures=source.permanent_failures,
                 fail_count=source.fail_count,
                 last_success_at=source.last_success_at,
                 total_fetched=source.total_fetched,
@@ -323,7 +352,13 @@ def list_topic_sources(db: Session, topic_id: int) -> list[TopicSourceOut]:
 
 
 def list_stale_source_ids(db: Session, topic_id: int) -> list[str]:
-    """主题下连续失败 >=5 的源 id（供前端置灰 + 一键关闭）。"""
+    """主题下真正失效的源 id（供前端置灰 + 一键关闭）。
+
+    判定只看 permanent_failures（404 / 解析失败 / 空 feed / 被拒），**不看**
+    transient_failures（DNS 抖动、连接超时、上游 5xx、上游熔断）。
+    否则一次本机断网或一个第三方上游挂掉，就能把几十个完全健康的源标成失效，
+    用户点一下「一键关闭」就全关了，而且关掉之后不再抓取、无法自愈。
+    """
     links = (
         db.query(HotTopicSource)
         .filter(
@@ -340,7 +375,7 @@ def list_stale_source_ids(db: Session, topic_id: int) -> list[str]:
         for row in db.query(HotSource.id)
         .filter(
             HotSource.id.in_(source_ids),
-            HotSource.consecutive_failures >= STALE_FAILURE_THRESHOLD,
+            HotSource.permanent_failures >= STALE_FAILURE_THRESHOLD,
         )
         .all()
     ]
@@ -348,7 +383,10 @@ def list_stale_source_ids(db: Session, topic_id: int) -> list[str]:
 
 
 def disable_stale_sources(db: Session, topic_id: int) -> int:
-    """一键关闭主题下所有失效源（连续失败 >=5 且本主题启用中）。返回关闭条数。"""
+    """一键关闭主题下所有失效源（永久类失败 >=5 且本主题启用中）。返回关闭条数。
+
+    只由用户显式点击触发，不会自动执行——自动关闭一旦误判就无法自愈。
+    """
     stale = list_stale_source_ids(db, topic_id)
     if not stale:
         return 0
@@ -419,3 +457,84 @@ def source_count_for_topic(db: Session, topic_id: int) -> int:
         )
         .count()
     )
+
+
+def preview_semantic_retrieval(
+    db: Session,
+    topic: HotTopic,
+    interest_query: str,
+    period_days: int = 7,
+    similarity_threshold: float | None = None,
+    limit: int = 20,
+) -> dict:
+    """语义检索预览：用临时 interest_query 生成查询向量（不落库，避免不必要的向量费用），
+    取近 period_days 候选池做语义召回，返回索引统计 + Top 结果。"""
+    from app.common.services.embedding_config import (
+        get_embedding_api_key,
+        get_embedding_dimension,
+        get_embedding_model,
+        get_embedding_provider,
+    )
+    from app.common.services.embedding_gateway.base import (
+        EmbeddingRequest,
+        TASK_QUERY,
+    )
+    from app.common.services.embedding_gateway.service import build_model_key, embed
+    from app.hotlist.services import embedding_service
+    from app.hotlist.services.topic_report_service import fetch_candidate_pool
+
+    provider = get_embedding_provider(db)
+    model = get_embedding_model(db)
+    dimension = get_embedding_dimension(db)
+    api_key = get_embedding_api_key(db)
+    if not api_key:
+        raise ValueError("未配置 Embedding API Key（系统设置 → API 配置 → embedding_*）")
+    model_key = build_model_key(provider, model, dimension)
+
+    query_text = embedding_service.build_query_text(interest_query)
+    result = embed(
+        EmbeddingRequest(
+            provider=provider, model=model, texts=[query_text], task_type=TASK_QUERY
+        ),
+        api_key,
+    )
+    query_vec = embedding_service.normalize_vector(
+        np.asarray(result.vectors[0], dtype=np.float32)
+    )
+
+    period_end = datetime.now(timezone.utc)
+    period_start = period_end - timedelta(days=period_days)
+    pool = fetch_candidate_pool(db, topic, period_start, period_end)
+    indexed_count = sum(
+        1 for it in pool if embedding_service.get_item_vector(db, it.id) is not None
+    )
+
+    retrieved, missing = embedding_service.rank_with_query(
+        db,
+        topic,
+        pool,
+        query_vec,
+        threshold=similarity_threshold,
+        limit=limit,
+    )
+    return {
+        "indexed_count": indexed_count,
+        "missing_embedding_count": missing,
+        "matched_count": len(retrieved),
+        "model_key": model_key,
+        "items": [
+            {
+                "item": {
+                    "id": r.item.id,
+                    "title": r.item.title,
+                    "source_id": r.item.source_id,
+                    "published_at": r.item.published_at,
+                    "last_crawl_time": r.item.last_crawl_time,
+                },
+                "semantic_score": r.semantic_score,
+                "hot_score": r.hot_score,
+                "final_score": r.final_score,
+            }
+            for r in retrieved[:limit]
+        ],
+    }

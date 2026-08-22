@@ -67,7 +67,9 @@ class GitHubAdapter(HotSourceAdapter):
                 )
             )
         if not entries:
-            raise HotSourceAdapterError("github trending HTML 未解析出任何条目")
+            raise HotSourceAdapterError(
+                "github trending HTML 未解析出任何条目", kind="parse_error"
+            )
         return entries
 
     def _fetch_search_api(self) -> list[RawEntry]:

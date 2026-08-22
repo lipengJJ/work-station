@@ -132,7 +132,7 @@ onMounted(fetchGroups);
   <Modal v-model:open="open" title="分组管理" :footer="null" width="560px">
     <div class="mb-3 flex justify-end">
       <button
-        class="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500"
+        class="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary"
         @click="openCreate"
       >
         <Plus class="size-3.5" />
@@ -161,13 +161,13 @@ onMounted(fetchGroups);
           </div>
         </div>
         <button
-          class="rounded px-2 py-1 text-[11px] text-[hsl(var(--muted-foreground))] hover:text-indigo-400"
+          class="rounded px-2 py-1 text-[11px] text-[hsl(var(--muted-foreground))] hover:text-primary"
           @click="openEdit(group)"
         >
           编辑
         </button>
         <button
-          class="rounded px-2 py-1 text-[11px] text-[hsl(var(--muted-foreground))] hover:text-rose-400 disabled:opacity-40"
+          class="rounded px-2 py-1 text-[11px] text-[hsl(var(--muted-foreground))] hover:text-destructive disabled:opacity-40"
           :disabled="group.is_builtin"
           :title="group.is_builtin ? '内置分组不允许删除' : ''"
           @click="removeGroup(group)"
@@ -208,7 +208,7 @@ onMounted(fetchGroups);
           <button class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs" @click="createOpen = false">取消</button>
           <button
             :disabled="createSaving"
-            class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+            class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50"
             @click="submitCreate"
           >
             创建
@@ -245,7 +245,7 @@ onMounted(fetchGroups);
           <button class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs" @click="editModalOpen = false">取消</button>
           <button
             :disabled="editSaving"
-            class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+            class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50"
             @click="submitEdit"
           >
             保存

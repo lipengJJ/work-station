@@ -65,7 +65,39 @@ class HotSource(Base):
     # success / failed / ""
     last_status: Mapped[str] = mapped_column(String(16), default="")
     last_error: Mapped[str] = mapped_column(Text, default="")
+
+    last_error_kind: Mapped[str] = mapped_column(String(24), default="")
+    """失败类型，决定这次失败算不算「源坏了」。空 = 没失败过 / 老库未分类。
+
+      瞬时类（transient）—— 本机网络或上游抖动，不该判定源失效：
+        dns_error         DNS 解析失败（socket.gaierror / NameResolutionError）
+        connect_timeout   TCP 连接超时
+        read_timeout      读取超时
+        connection_error  连接被拒 / 重置
+        upstream_5xx      上游返回 5xx
+        upstream_down     同 host 本批次已熔断被跳过（见 crawl_service）
+
+      永久类（permanent）—— 源本身有问题，应提示用户删除或改地址：
+        http_404 / http_410   feed 地址已失效
+        parse_error           返回内容不是合法 RSS/Atom（多半是 HTML 错误页）
+        empty_feed            能解析但 0 条目
+        domain_unsafe         域名安全校验未通过
+
+      需干预类（blocked）—— 源活着但拒绝我们：
+        http_403          被拒（多半要真实 UA 或代理）
+        http_429          限流（该降频）
+    """
+
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    """连续失败次数，不分类型。只用于 UI 展示「失败（连续 N 次）」。"""
+
+    transient_failures: Mapped[int] = mapped_column(Integer, default=0)
+    """连续瞬时失败次数。只记录、不参与失效判定——DNS 抖动和上游挂掉
+    不是这个源的错，累加它去置灰源会造成大面积误杀且无法自愈。"""
+
+    permanent_failures: Mapped[int] = mapped_column(Integer, default=0)
+    """连续永久/需干预失败次数。失效判定只看这个（topic_service.STALE_FAILURE_THRESHOLD）。"""
+
     fail_count: Mapped[int] = mapped_column(Integer, default=0)
     last_success_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True

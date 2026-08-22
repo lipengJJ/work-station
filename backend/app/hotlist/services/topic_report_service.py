@@ -33,11 +33,12 @@ from app.common.services.skill_runtime.loader import SkillRuntimeError
 from app.common.utils.text import strip_html, truncate
 from app.hotlist.models import (
     HotItem,
+    HotReportCandidate,
     HotTopic,
     HotTopicReport,
     HotTopicSource,
 )
-from app.hotlist.services import fulltext_service, keyword_rules
+from app.hotlist.services import embedding_service, fulltext_service
 from app.hotlist.services.topic_service import list_topic_sources
 
 FULLTEXT_WORKERS = 5
@@ -157,24 +158,25 @@ def _topic_source_ids(db: Session, topic: HotTopic) -> set[str]:
     }
 
 
-def fetch_candidates(
+def fetch_candidate_pool(
     db: Session,
     topic: HotTopic,
     period_start: datetime,
     period_end: datetime,
-    limit: int | None = None,
 ) -> list[HotItem]:
-    """本期候选条目：主题启用的源 + 本期内活跃（period_start <= last_crawl_time < period_end）。
+    """结构化候选池：主题启用源 + 本期内活跃（period_start <= last_crawl_time < period_end）。
 
-    先按 weight 取 (limit or max_items) * 3 条，再用主题自己的关键词规则过滤
-    （word_groups 为空 = 不过滤，保持"只勾源不配词也能出报告"），最后截断到 max_items 条。
-    匹配文本用 title + summary，与 crawl_service 的口径保持一致。
+    候选过滤只包含结构化条件（源、周期、文章状态），不再做任何关键词匹配——
+    主题相关性只有「语义检索」一个实现（见 HOTLIST_SEMANTIC_RETRIEVAL_IMPLEMENTATION.md）。
+
+    保护上限 `min(max(max_items*10, 1000), 5000)` 只用于 SQLite 内存安全，不是业务精排；
+    不能先按 weight 只取 max_items*3——那会在语义计算之前丢掉低热度但高度相关的文章。
     """
     source_ids = _topic_source_ids(db, topic)
     if not source_ids:
         return []
-    take = (limit or topic.max_items or 500) * 3
-    items = (
+    cap = min(max((topic.max_items or 500) * 10, 1000), 5000)
+    return (
         db.query(HotItem)
         .filter(
             HotItem.source_id.in_(source_ids),
@@ -182,38 +184,78 @@ def fetch_candidates(
             HotItem.last_crawl_time < period_end,
         )
         .order_by(HotItem.weight.desc(), HotItem.id.desc())
-        .limit(take)
+        .limit(cap)
         .all()
     )
 
-    word_groups, _filter_words, global_filters = keyword_rules.load_rules(
-        db, topic_id=topic.id
+
+def _save_retrieval_snapshot(
+    db: Session,
+    report: HotTopicReport,
+    topic: HotTopic,
+    retrieved: list[embedding_service.RetrievedCandidate],
+) -> None:
+    """保存本期语义召回快照（hot_report_candidates）。
+
+    解决三个问题：解释某篇文章为什么入选；模型或需求变化后仍能复现历史报告；
+    为后续阈值调优和人工反馈提供数据。
+    """
+    from app.common.services.embedding_config import (
+        get_embedding_dimension,
+        get_embedding_model,
+        get_embedding_provider,
     )
-    if word_groups:
-        items = [
-            it
-            for it in items
-            if keyword_rules.matches_word_groups(
-                f"{it.title} {it.summary or ''}",
-                word_groups,
-                _filter_words,
-                global_filters,
+    from app.common.services.embedding_gateway.service import build_model_key
+    from app.hotlist.services.embedding_service import (
+        QUERY_PREPROCESS_VERSION,
+        build_query_text,
+        content_hash,
+    )
+
+    provider = get_embedding_provider(db)
+    model = get_embedding_model(db)
+    dimension = get_embedding_dimension(db)
+    model_key = build_model_key(provider, model, dimension)
+    query_hash = content_hash(
+        QUERY_PREPROCESS_VERSION, build_query_text(topic.interest_query)
+    )
+    for rank, r in enumerate(retrieved, 1):
+        db.add(
+            HotReportCandidate(
+                report_id=report.id,
+                item_id=r.item.id,
+                semantic_score=r.semantic_score,
+                hot_score=r.hot_score,
+                freshness_score=r.freshness_score,
+                final_score=r.final_score,
+                selected=False,
+                rank_no=rank,
+                model_key=model_key,
+                query_hash=query_hash,
             )
-        ]
-    return items[: limit or topic.max_items or 500]
+        )
+    db.commit()
 
 
-def _format_candidate(item: HotItem, idx: int, source_name: str = "") -> str:
-    """L0 全貌输入行：#ID | 标题 | 来源 | 时间。"""
+def _format_candidate(
+    item: HotItem,
+    idx: int,
+    source_name: str = "",
+    semantic_score: float | None = None,
+) -> str:
+    """L0 全貌输入行：#ID | 标题 | 来源 | 日期 | 语义相关度\n摘要：前 240 字。"""
     time_str = (
         item.published_at.strftime("%Y-%m-%d")
         if item.published_at
         else item.stat_date
     )
-    return (
-        f"#{idx} | {item.title} | {source_name or item.source_id}"
-        f" | {time_str}"
-    )
+    line = f"#{idx} | {item.title} | {source_name or item.source_id} | {time_str}"
+    if semantic_score is not None:
+        line += f" | 语义相关度 {semantic_score:.2f}"
+    summary = strip_html(item.summary or "")[:240].strip()
+    if summary:
+        line += f"\n摘要：{summary}"
+    return line
 
 
 # ------------------------------------------------------------ 全文 ----
@@ -328,12 +370,17 @@ def _run_two_stage(
 def _run_funnel(
     db: Session, topic: HotTopic, candidates: list[HotItem], provider: str,
     api_key: str, model: str, source_names: dict[str, str],
-    stats: dict,
+    stats: dict, semantic_scores: dict[int, float] | None = None,
 ) -> tuple[str, dict]:
     """funnel（默认）：L0 全貌筛选 → L1 分组小结 → L2 全文放大 + 成稿。"""
     # ---- L0：全貌筛选（AI 挑 shortlist_size 条 + 顺带给分组标签）----
     all_lines = [
-        _format_candidate(item, idx, source_names.get(item.source_id))
+        _format_candidate(
+            item,
+            idx,
+            source_names.get(item.source_id),
+            semantic_scores.get(item.id) if semantic_scores else None,
+        )
         for idx, item in enumerate(candidates, 1)
     ]
     l0_system = _MIDDLE_SYSTEM
@@ -746,16 +793,36 @@ def generate_report(
         raise ValueError("未配置 AI 模型 Key，请先在「系统设置 → API 配置」中配置")
 
     period_key, period_start, period_end = compute_period(topic, period_key)
-    limit = max_items or topic.max_items or 500
-    candidates = fetch_candidates(db, topic, period_start, period_end, limit)
-    if not candidates:
-        # 区分「无源/无数据」与「关键词过滤后为空」
-        word_groups, _filter_words, _global_filters = keyword_rules.load_rules(
-            db, topic_id=topic.id
+
+    # ---- 语义检索：需求非空 → 主题向量 → 语义召回 ----
+    if not (topic.interest_query or "").strip():
+        raise ValueError("请先在主题「分析配置」填写关注需求，再生成报告")
+
+    if not embedding_service.ensure_topic_embedding(db, topic):
+        raise ValueError(
+            "主题语义向量生成失败：请检查「系统设置 → API 配置」的 embedding_* 配置"
         )
-        if word_groups:
-            raise ValueError(f"本期（{period_key}）没有符合关键词规则的条目（关键词可能过严）")
+
+    pool = fetch_candidate_pool(db, topic, period_start, period_end)
+    if not pool:
         raise ValueError(f"本期（{period_key}）没有候选条目：请确认主题下启用了源且已抓取到数据")
+
+    retrieved, missing_count = embedding_service.retrieve_semantic_candidates(
+        db, topic, pool
+    )
+    if not retrieved:
+        if missing_count > 0 and missing_count == len(pool):
+            raise ValueError(
+                f"文章语义索引尚未完成（{missing_count} 篇缺向量），请稍后再试或等待补偿任务"
+            )
+        raise ValueError(
+            f"本期（{period_key}）没有语义相关条目：可调低相似度阈值或扩大检索范围"
+        )
+
+    # 召回结果按 final_score 降序传给 Funnel；分数另存快照
+    candidates = [r.item for r in retrieved]
+    semantic_scores = {r.item.id: r.semantic_score for r in retrieved}
+    retrieval_result = retrieved
 
     source_names = {s.id: s.name for s in list_topic_sources(db, topic_id)}
 
@@ -792,6 +859,9 @@ def generate_report(
     db.commit()
     db.refresh(report)
 
+    # 保存本期语义召回快照（解释入选原因 / 复现历史 / 阈值调优）
+    _save_retrieval_snapshot(db, report, topic, retrieval_result)
+
     try:
         if strategy == "simple":
             content_md, meta = _run_simple(
@@ -825,6 +895,7 @@ def generate_report(
                 model,
                 source_names,
                 stats,
+                semantic_scores,
             )
 
         highlights, content_body = _extract_highlights(content_md)

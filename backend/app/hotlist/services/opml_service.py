@@ -141,7 +141,11 @@ def import_opml(
                 adapter_params=json.dumps(
                     {"url": normalized}, ensure_ascii=False
                 ),
-                expected_domain=_host_of(normalized),
+                # expected_domain 留空 = 不做域名校验。域名校验的本意是防公共聚合
+                # 接口（NewsNow 实例）被篡改后返回钓鱼链接；而 OPML 订阅的 RSS 里，
+                # 条目链接指向 feed 域名之外是完全正常的（转发型 feed 如
+                # api.xgo.ing 的条目就指向 x.com），按 feed 域名校验会整源误杀。
+                expected_domain="",
                 decay_half_life_hours=RSS_DECAY_HALF_LIFE_HOURS,
                 cron_expr=RSS_FETCH_CRON,
                 enabled=True,

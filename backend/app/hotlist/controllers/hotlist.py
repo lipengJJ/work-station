@@ -18,10 +18,10 @@ from app.core.database import SessionLocal, get_db
 from app.core.deps import get_current_user
 from app.hotlist.models import (
     HotItem,
-    HotKeywordRule,
     HotRankHistory,
-    HotRuleHit,
+    HotSemanticHit,
     HotSource,
+    HotTopic,
 )
 from app.hotlist.schemas.item import (
     ItemDetailOut,
@@ -29,7 +29,7 @@ from app.hotlist.schemas.item import (
     ItemPage,
     RankPointOut,
 )
-from app.hotlist.services import crawl_service
+from app.hotlist.services import crawl_service, source_service
 
 router = APIRouter(prefix="/api/hotlist", tags=["hotlist"])
 
@@ -42,26 +42,26 @@ REFRESH_COOLDOWN_SECONDS = 600
 
 
 def _attach_hit_rules(db: Session, items_out: list[ItemOut]) -> None:
-    """批量回填每条条目命中的规则显示名（一次 join 查询，避免逐条查询 N+1）。"""
+    """批量回填每条条目命中的主题显示名（一次 join 查询，避免逐条查询 N+1）。"""
     if not items_out:
         return
     item_ids = [it.id for it in items_out]
     rows = (
-        db.query(HotRuleHit.item_id, HotKeywordRule.display_name)
-        .join(HotKeywordRule, HotKeywordRule.id == HotRuleHit.rule_id)
-        .filter(HotRuleHit.item_id.in_(item_ids))
+        db.query(HotSemanticHit.item_id, HotTopic.name)
+        .join(HotTopic, HotTopic.id == HotSemanticHit.topic_id)
+        .filter(HotSemanticHit.item_id.in_(item_ids))
         .all()
     )
     names_by_item: dict[int, list[str]] = {}
-    for item_id, display_name in rows:
-        names_by_item.setdefault(item_id, []).append(display_name or "未命名规则")
+    for item_id, name in rows:
+        names_by_item.setdefault(item_id, []).append(name or "未命名主题")
     for it in items_out:
         it.hit_rules = names_by_item.get(it.id, [])
 
 
 @router.get("/items")
 def list_items(
-    source_id: str = Query("", max_length=64),
+    group: str = Query("", max_length=64, description="分组过滤：空=全部；'ungrouped'=未分组；其余为分组 id"),
     source_kind: str = Query("", max_length=16),
     stat_date: str = Query("", max_length=10),
     sort: str = Query("weight", max_length=8),
@@ -75,8 +75,16 @@ def list_items(
         raise HTTPException(400, f"未知排序: {sort}（可选：weight/rank/time）")
 
     q = db.query(HotItem)
-    if source_id:
-        q = q.filter(HotItem.source_id == source_id)
+    if group:
+        try:
+            group_source_ids = source_service.resolve_group_source_ids(db, group)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if group_source_ids:
+            q = q.filter(HotItem.source_id.in_(group_source_ids))
+        else:
+            # 分组存在但一个源都没有，直接返回空结果
+            q = q.filter(HotItem.id == -1)
     if source_kind:
         source_ids = [
             row[0]
@@ -90,12 +98,10 @@ def list_items(
     if stat_date:
         q = q.filter(HotItem.stat_date == stat_date)
     if hit_only:
-        # 排除 rule_id=0 的「无规则主题全部命中」行——那不代表关键词命中，不应算进 hit_only
+        # 只保留有语义命中记录（HotSemanticHit）的条目
         hit_item_ids = [
             row[0]
-            for row in db.query(HotRuleHit.item_id.distinct())
-            .filter(HotRuleHit.rule_id != 0)
-            .all()
+            for row in db.query(HotSemanticHit.item_id.distinct()).all()
         ]
         q = q.filter(HotItem.id.in_(hit_item_ids))
 

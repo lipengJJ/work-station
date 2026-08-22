@@ -370,6 +370,25 @@ def list_sources(db: Session, group_id: int | None = None) -> list[HotSource]:
     return q.order_by(HotSource.sort_order.asc(), HotSource.id.asc()).all()
 
 
+def resolve_group_source_ids(db: Session, group: str) -> list[str] | None:
+    """把「分组过滤」字符串解析成源 id 列表（榜单/摘要按分组筛选用）。
+
+    空字符串 = 不筛（返回 None）；'ungrouped' = 未分组源；其余解析为分组 id。
+    解析失败抛 ValueError，由调用方转成 400。
+    """
+    if not group:
+        return None
+    if group == "ungrouped":
+        q = db.query(HotSource.id).filter(HotSource.group_id.is_(None))
+    else:
+        try:
+            group_id = int(group)
+        except ValueError as exc:
+            raise ValueError(f"非法分组: {group}") from exc
+        q = db.query(HotSource.id).filter(HotSource.group_id == group_id)
+    return [row[0] for row in q.all()]
+
+
 def get_source(db: Session, source_id: str) -> HotSource | None:
     return db.get(HotSource, source_id)
 

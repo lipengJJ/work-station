@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 # ---------------------------------------------------------------- 主题 ----
 
@@ -25,6 +26,13 @@ class TopicIn(BaseModel):
     template_key: str | None = None
     extra_question: str = ""
 
+    # 语义检索配置（替代旧关键词规则）
+    interest_query: str = Field("", max_length=4000)
+    """自然语言关注需求，例如「我想看 AI 工具链相关的新闻或者知识」。"""
+    retrieval_mode: Literal["semantic"] = "semantic"
+    similarity_threshold: float = Field(0.35, ge=-1.0, le=1.0)
+    retrieval_size: int = Field(100, ge=10, le=500)
+
     digest_strategy: str = "funnel"
     digest_period: str = "weekly"
     digest_cron: str = "0 8 * * 1"
@@ -44,7 +52,7 @@ class TopicIn(BaseModel):
     report_notify_time_start: str | None = None
     report_notify_time_end: str | None = None
 
-    # 实时命中推送（自 hot_keyword_rules 迁移）
+    # 实时命中推送（语义检索命中）
     hit_notify_enabled: bool = False
     hit_notify_channel_ids: list[int] = Field(default_factory=list)
     hit_notify_time_start: str | None = None
@@ -128,6 +136,25 @@ class TopicOut(TopicIn):
     enabled_source_count: int = 0
     """本主题启用中的源数（controller 回填，规模护栏展示用）。"""
 
+    @field_validator(
+        "interest_query",
+        "retrieval_mode",
+        "similarity_threshold",
+        "retrieval_size",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_semantic_none(cls, v: object, info: ValidationInfo) -> object:
+        """老库迁移补列后这四列是 NULL：出参归一到语义默认值，避免校验炸掉列表接口。"""
+        if v is None:
+            return {
+                "interest_query": "",
+                "retrieval_mode": "semantic",
+                "similarity_threshold": 0.35,
+                "retrieval_size": 100,
+            }[info.field_name]
+        return v
+
 
 class TopicUpdateIn(BaseModel):
     """全字段可选，覆盖式保存（未传字段不修改）。"""
@@ -139,6 +166,10 @@ class TopicUpdateIn(BaseModel):
     skill_key: str | None = None
     template_key: str | None = None
     extra_question: str | None = None
+    interest_query: str | None = Field(None, max_length=4000)
+    retrieval_mode: Literal["semantic"] | None = None
+    similarity_threshold: float | None = Field(None, ge=-1.0, le=1.0)
+    retrieval_size: int | None = Field(None, ge=10, le=500)
     digest_strategy: str | None = None
     digest_period: str | None = None
     digest_cron: str | None = None
@@ -178,6 +209,9 @@ class TopicSourceOut(BaseModel):
     last_status: str = ""
     last_error: str = ""
     consecutive_failures: int = 0
+    last_error_kind: str = ""
+    transient_failures: int = 0
+    permanent_failures: int = 0
     fail_count: int = 0
     last_success_at: datetime | None = None
     total_fetched: int = 0
@@ -206,3 +240,29 @@ class OpmlImportResult(BaseModel):
     skipped: int = 0                                   # 跳过（重复或 xmlUrl 非法）
     source_ids: list[str] = Field(default_factory=list)  # 新建+复用的全部源 id
     detail: str = ""
+
+
+# ---------------------------------------------------------------- 语义检索预览 ----
+
+class SemanticPreviewIn(BaseModel):
+    """语义预览请求：允许临时覆盖尚未保存的配置。"""
+
+    interest_query: str = Field(..., min_length=1, max_length=4000)
+    period_days: int = Field(7, ge=1, le=30)
+    similarity_threshold: float | None = Field(None, ge=-1.0, le=1.0)
+    limit: int = Field(20, ge=1, le=50)
+
+
+class SemanticPreviewItemOut(BaseModel):
+    item: dict
+    semantic_score: float
+    hot_score: float
+    final_score: float
+
+
+class SemanticPreviewOut(BaseModel):
+    indexed_count: int
+    missing_embedding_count: int
+    matched_count: int
+    model_key: str
+    items: list[SemanticPreviewItemOut] = Field(default_factory=list)

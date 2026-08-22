@@ -19,6 +19,8 @@ from app.hotlist.models import HotTopic
 from app.hotlist.schemas.topic import (
     ImportOpmlIn,
     OpmlImportResult,
+    SemanticPreviewIn,
+    SemanticPreviewOut,
     TopicIn,
     TopicOut,
     TopicSourceBatchIn,
@@ -198,3 +200,28 @@ def _ensure_topic(db: Session, topic_id: int) -> HotTopic:
     if topic is None:
         raise HTTPException(404, "主题不存在")
     return topic
+
+
+@router.post("/{topic_id}/semantic-preview", response_model=SemanticPreviewOut)
+def semantic_preview(
+    topic_id: int,
+    payload: SemanticPreviewIn,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+) -> SemanticPreviewOut:
+    """语义检索预览：用临时关注需求生成查询向量并召回近 N 天候选（不落库）。"""
+    topic = topic_service.get_topic(db, topic_id)
+    if topic is None:
+        raise HTTPException(404, "主题不存在")
+    try:
+        result = topic_service.preview_semantic_retrieval(
+            db,
+            topic,
+            payload.interest_query,
+            period_days=payload.period_days,
+            similarity_threshold=payload.similarity_threshold,
+            limit=payload.limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return SemanticPreviewOut(**result)

@@ -1,11 +1,12 @@
 <script lang="ts" setup>
 import type { ChatApi } from '#/api/core/chat';
 import type { NotifyApi } from '#/api/core/notify';
+import type { SystemApi } from '#/api/core/system';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
 import { Button, Drawer, Dropdown, Form, FormItem, Input, InputNumber, message, Modal, Select, Switch } from 'ant-design-vue';
-import { Bell, Boxes, KeyRound, MoreHorizontal, Plus, Sparkles } from 'lucide-vue-next';
+import { Bell, Boxes, KeyRound, Layers, MoreHorizontal, Plus, Sparkles } from 'lucide-vue-next';
 
 import { getChatConfigApi, setChatConfigApi } from '#/api/core/chat';
 import {
@@ -26,18 +27,68 @@ const modelModalOpen = ref(false);
 const modelForm = reactive({ provider: 'gemini', api_key: '', model: '', thinking_enabled: false });
 const modelSaving = ref(false);
 
-// 通用配置（xhs_cookie / zhipu）
-const configs = ref<{ name: string; value: string; updated_at: null | string }[]>([]);
+// 通用配置（xhs_cookie / zhipu / embedding_*）
+const configs = ref<SystemApi.ApiConfig[]>([]);
 function configByName(name: string) {
   return configs.value.find((c) => c.name === name);
 }
 const xhsConfigured = computed(() => !!configByName('xhs_cookie')?.value);
 const zhipuConfigured = computed(() => !!configByName('zhipu_api_key')?.value);
 
+// ============================================================ 语义检索模型 ----
+// 向量模型配置（embedding_*）。API Key 留空时后端自动复用 AI 模型的 gemini_api_key。
+const embeddingConfigured = computed(
+  () =>
+    !!configByName('embedding_api_key')?.value || !!configByName('gemini_api_key')?.value,
+);
+const embeddingModalOpen = ref(false);
+const embeddingSaving = ref(false);
+const embeddingForm = reactive({
+  provider: 'gemini',
+  api_key: '',
+  model: '',
+  dimension: 768,
+});
+
+function openEmbeddingModal() {
+  embeddingForm.provider = configByName('embedding_provider')?.value || 'gemini';
+  embeddingForm.model = configByName('embedding_model')?.value || '';
+  embeddingForm.dimension = Number(configByName('embedding_dimension')?.value) || 768;
+  embeddingForm.api_key = ''; // 不回显 key
+  embeddingModalOpen.value = true;
+}
+
+async function submitEmbedding() {
+  embeddingSaving.value = true;
+  try {
+    const { upsertApiConfigApi, deleteApiConfigApi } = await import('#/api/core/system');
+    const idByName = Object.fromEntries(configs.value.map((c) => [c.name, c.id]));
+    // 空值 = 恢复默认（删除已保存的配置，让后端走内置默认 / 复用 Gemini Key）
+    const patch = async (name: string, value: string, description?: string) => {
+      if (value.trim()) {
+        await upsertApiConfigApi({ name, value: value.trim(), description });
+      } else if (idByName[name] !== undefined) {
+        await deleteApiConfigApi(idByName[name]);
+      }
+    };
+    await patch('embedding_provider', embeddingForm.provider, '向量模型厂商（gemini / openai_compatible）');
+    await patch('embedding_api_key', embeddingForm.api_key, '向量模型 API Key（留空复用 AI 模型的 Gemini Key）');
+    await patch('embedding_model', embeddingForm.model, '向量模型名（如 gemini-embedding-001）');
+    await patch('embedding_dimension', String(embeddingForm.dimension || ''), '向量维度（如 768）');
+    message.success('已保存');
+    embeddingModalOpen.value = false;
+    await fetchConfigs();
+  } catch (e: any) {
+    message.error(`保存失败：${e.message}`);
+  } finally {
+    embeddingSaving.value = false;
+  }
+}
+
 async function fetchConfigs() {
   try {
     const { listApiConfigsApi } = await import('#/api/core/system');
-    configs.value = (await listApiConfigsApi()) as { name: string; value: string; updated_at: null | string }[];
+    configs.value = await listApiConfigsApi();
   } catch {
     /* ignore */
   }
@@ -344,6 +395,22 @@ onMounted(() => {
             </div>
           </div>
 
+          <!-- 语义检索模型 -->
+          <div class="ss-row">
+            <span class="ss-dot" :class="embeddingConfigured ? 'ok' : 'no'" />
+            <span class="ss-icon ss-icon--embedding"><Layers class="size-5" /></span>
+            <div class="ss-main">
+              <div class="ss-name-line">
+                <span class="ss-name">语义检索模型</span>
+                <span v-if="!embeddingConfigured" class="ss-pill">未配置</span>
+              </div>
+              <p class="ss-desc">主题订阅语义检索用的向量模型；Key 留空自动复用 AI 模型的 Gemini Key</p>
+            </div>
+            <div class="ss-actions">
+              <Button size="small" class="ss-btn ss-update-btn" :auto-insert-space-in-button="false" @click="openEmbeddingModal">更新</Button>
+            </div>
+          </div>
+
           <!-- 小红书 token -->
           <div class="ss-row">
             <span class="ss-dot" :class="xhsConfigured ? 'ok' : 'no'" />
@@ -474,6 +541,39 @@ onMounted(() => {
         <div class="flex justify-end gap-2">
           <Button @click="modelModalOpen = false">取消</Button>
           <Button type="primary" :loading="modelSaving" @click="submitModelConfig">保存</Button>
+        </div>
+      </Form>
+    </Modal>
+
+    <!-- ============================ 语义检索模型配置弹窗 ============================ -->
+    <Modal v-model:open="embeddingModalOpen" title="语义检索模型配置" :footer="null" width="480px">
+      <div class="ss-modal-desc">主题订阅的语义召回向量。API Key 留空则自动复用「AI 模型」的 Gemini Key。</div>
+      <Form layout="vertical">
+        <FormItem label="厂商">
+          <Select
+            v-model:value="embeddingForm.provider"
+            style="width: 100%"
+            :options="[
+              { label: 'Gemini（Google）', value: 'gemini' },
+              { label: 'OpenAI 兼容（/embeddings）', value: 'openai_compatible' },
+            ]"
+          />
+        </FormItem>
+        <FormItem label="API Key">
+          <Input.Password
+            v-model:value="embeddingForm.api_key"
+            placeholder="留空则复用 AI 模型的 Gemini Key"
+          />
+        </FormItem>
+        <FormItem label="模型">
+          <Input v-model:value="embeddingForm.model" placeholder="留空则用默认 gemini-embedding-001" />
+        </FormItem>
+        <FormItem label="向量维度">
+          <InputNumber v-model:value="embeddingForm.dimension" class="w-full" :min="1" :max="4096" placeholder="留空则用默认 768" />
+        </FormItem>
+        <div class="flex justify-end gap-2">
+          <Button @click="embeddingModalOpen = false">取消</Button>
+          <Button type="primary" :loading="embeddingSaving" @click="submitEmbedding">保存</Button>
         </div>
       </Form>
     </Modal>
@@ -668,6 +768,9 @@ onMounted(() => {
 }
 .ss-icon--ai {
   background: color-mix(in srgb, #8b5cf6 85%, #000);
+}
+.ss-icon--embedding {
+  background: color-mix(in srgb, #14b8a6 85%, #000);
 }
 .ss-icon--xhs {
   background: #ff2442;
