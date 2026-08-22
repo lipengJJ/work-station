@@ -57,3 +57,7 @@ frontend/**/.env
 /data/
 /storage/
 backend/config.json
+
+# 临时归档与本地工具中间产物（understand 等）
+_to_delete/
+backend/.ua/
