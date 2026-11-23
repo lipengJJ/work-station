@@ -31,7 +31,8 @@ class HotItemEmbedding(Base):
     preprocess_version: Mapped[str] = mapped_column(String(32), default="item-v1")
     dimension: Mapped[int] = mapped_column(Integer)
     content_hash: Mapped[str] = mapped_column(String(64))
-    vector: Mapped[bytes] = mapped_column(LargeBinary)
+    vector: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    """嵌入成功的向量；status=failed 时为 NULL。"""
     status: Mapped[str] = mapped_column(String(16), default="success")
     error: Mapped[str] = mapped_column(Text, default="")
     retry_count: Mapped[int] = mapped_column(Integer, default=0)

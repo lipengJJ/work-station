@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # 可选：第三方夸克资源搜索 API 地址（GET {url}?keyword=&page=&page_size=），
     # 配置了资源搜索模块会优先使用它，否则用内置搜索引擎渠道
     quark_search_api: str = ""
+    # 本机 RSSHub 实例地址（见 ../rsshub/docker-compose.yml），热点聚合的路由目录页用它
+    # 拉取 /api/namespace 展示可订阅的站点路由
+    rsshub_base_url: str = "http://localhost:1200"
 
 
 _settings: Settings | None = None

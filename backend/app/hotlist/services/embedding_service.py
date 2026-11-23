@@ -120,7 +120,13 @@ def _call_embed(db: Session, texts: list[str], task_type: str) -> list[list[floa
     if not api_key:
         raise EmbeddingGatewayError("Embedding 未配置 API Key")
     result = embed(
-        EmbeddingRequest(provider=provider, model=model, texts=texts, task_type=task_type),
+        EmbeddingRequest(
+            provider=provider,
+            model=model,
+            texts=texts,
+            task_type=task_type,
+            dimension=dimension,
+        ),
         api_key,
     )
     if result.dimension != dimension:
@@ -185,6 +191,32 @@ def _upsert_topic_embedding(
 # ---------------------------------------------------------------- 补算 ----
 
 
+def get_embedding_progress(
+    db: Session, source_ids: list[str] | None = None
+) -> dict:
+    """指定源范围的文章向量索引进度：{total, indexed, pending, failed}。
+
+    controller 的 /embedding-status 接口与手动补算的进度日志共用这份统计，
+    避免同一套 total/indexed/pending 查询逻辑散落在两处、改一处漏一处。
+    source_ids=None 表示全库；空列表表示明确的空范围。
+    """
+    item_query = db.query(HotItem)
+    embedding_query = db.query(HotItemEmbedding).join(
+        HotItem, HotItem.id == HotItemEmbedding.item_id
+    )
+    if source_ids is not None:
+        if not source_ids:
+            return {"total": 0, "indexed": 0, "pending": 0, "failed": 0}
+        item_query = item_query.filter(HotItem.source_id.in_(source_ids))
+        embedding_query = embedding_query.filter(HotItem.source_id.in_(source_ids))
+
+    total = item_query.count()
+    indexed = embedding_query.filter(HotItemEmbedding.status == "success").count()
+    failed = embedding_query.filter(HotItemEmbedding.status == "failed").count()
+    pending = max(total - indexed - failed, 0)
+    return {"total": total, "indexed": indexed, "pending": pending, "failed": failed}
+
+
 def ensure_item_embeddings(
     db: Session, items: list[HotItem], best_effort: bool = True
 ) -> dict:
@@ -196,6 +228,7 @@ def ensure_item_embeddings(
     if not items:
         return stat
     if not get_embedding_api_key(db):
+        logger.warning(f"文章向量补算跳过：Embedding 未配置 API Key（{len(items)} 篇待处理）")
         stat["missing_config"] = len(items)
         return stat
     provider, model, dimension = _current_model_key(db)
@@ -215,12 +248,24 @@ def ensure_item_embeddings(
                 continue
         pending.append((item, text))
 
+    logger.info(
+        f"文章向量补算：{len(items)} 篇输入，{len(pending)} 篇待调用模型，"
+        f"{stat['skipped']} 篇已跳过（model={model_key}）"
+    )
+    if not pending:
+        return stat
+
+    total_batches = math.ceil(len(pending) / EMBED_BATCH_SIZE)
     for i in range(0, len(pending), EMBED_BATCH_SIZE):
         batch = pending[i : i + EMBED_BATCH_SIZE]
+        batch_no = i // EMBED_BATCH_SIZE + 1
         texts = [t for _, t in batch]
         try:
             vectors = _call_embed(db, texts, TASK_DOCUMENT)
         except EmbeddingGatewayError as exc:
+            logger.warning(
+                f"文章向量补算第 {batch_no}/{total_batches} 批失败（{len(batch)} 篇）: {exc}"
+            )
             for item, _ in batch:
                 _upsert_item_embedding(
                     db, item.id, model_key, "", dimension, "failed", str(exc)[:500]
@@ -242,7 +287,11 @@ def ensure_item_embeddings(
                 vector=encode_vector(normalize_vector(np.asarray(vec, dtype=np.float32))),
             )
             stat["generated"] += 1
+        logger.debug(
+            f"文章向量补算第 {batch_no}/{total_batches} 批完成（{len(batch)} 篇成功）"
+        )
     db.commit()
+    logger.info(f"文章向量补算结束: {stat}")
     return stat
 
 
@@ -310,6 +359,10 @@ def _freshness(item: HotItem) -> float:
     ts = item.published_at or item.last_crawl_time
     if ts is None:
         return 0.0
+    # SQLite 的 DateTime 列不保留 tzinfo，读回来是 naive；写入时一律用 UTC（见
+    # crawl_service.py 的 datetime.now(timezone.utc)），按 UTC 补回 tzinfo 才能减法。
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
     age_hours = max(0.0, (datetime.now(timezone.utc) - ts).total_seconds() / 3600)
     return math.exp(-age_hours / FRESHNESS_HALF_LIFE_HOURS)
 

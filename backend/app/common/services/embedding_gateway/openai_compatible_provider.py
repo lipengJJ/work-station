@@ -16,6 +16,11 @@ from app.common.services.embedding_gateway.base import (
 OPENAI_BATCH_LIMIT = 32
 OPENAI_TIMEOUT = 60
 
+# 支持输出降维（dimensions 参数）的模型前缀：OpenAI text-embedding-3 系列 +
+# 智谱 embedding-3（256/512/1024/2048 可选，默认 2048）。旧模型（ada-002、
+# embedding-2 等固定维度）不支持，传了会被厂商拒绝，不能一刀切全传。
+_DIMENSION_CONFIGURABLE_PREFIXES = ("text-embedding-3", "embedding-3")
+
 
 def make_openai_compatible_embed(base_url: str):
     """返回一个绑定 base_url 的 embedding handler。"""
@@ -26,11 +31,14 @@ def make_openai_compatible_embed(base_url: str):
         vectors: list[list[float]] = []
         for i in range(0, len(request.texts), OPENAI_BATCH_LIMIT):
             batch = request.texts[i : i + OPENAI_BATCH_LIMIT]
+            body: dict = {"model": request.model, "input": batch}
+            if request.dimension and request.model.startswith(_DIMENSION_CONFIGURABLE_PREFIXES):
+                body["dimensions"] = request.dimension
             try:
                 resp = requests.post(
                     f"{base_url}/embeddings",
                     headers={"Authorization": f"Bearer {api_key}"},
-                    json={"model": request.model, "input": batch},
+                    json=body,
                     timeout=OPENAI_TIMEOUT,
                 )
             except requests.RequestException as exc:

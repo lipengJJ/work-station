@@ -15,13 +15,19 @@ engine = create_engine(settings.database_url, connect_args=_connect_args)
 
 if settings.database_url.startswith("sqlite"):
     # SQLite 默认关闭外键约束；语义检索的向量表/命中表/召回快照表依赖 ON DELETE CASCADE，
-    # 必须统一开启（SQLAlchemy 不会自动开启）
+    # 必须统一开启（SQLAlchemy 不会自动开启）。
+    # 另外几个业务场景会有多个线程各自开独立连接并发写同一个 SQLite 文件（如主题报告
+    # L2 全文抓取的 ThreadPoolExecutor），默认 rollback journal 模式下同一时刻只允许
+    # 一个写者，容易在竞争下报 "database is locked"；开 WAL 让一个写者和多个读者可以
+    # 并发进行，busy_timeout 兜底真正撞上写写竞争时等待重试而不是立刻报错。
     from sqlalchemy import event
 
     @event.listens_for(engine, "connect")
     def _enable_sqlite_foreign_keys(dbapi_conn, _record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -329,6 +335,174 @@ def _ensure_hotlist_semantic_schema() -> None:
         logger.exception("补充 hotlist 语义检索列失败")
 
 
+def _ensure_hotlist_topic_setup_schema() -> None:
+    """hot_topics 补 setup_done 列（幂等，老库兼容，默认 1）。
+
+    创建向导拆成三步后，用它区分「草稿（向导没走完）」和「配好了手动停用」——
+    两者都是 enabled=False，不加这列就分不开。老库既有主题一律按默认值 1
+    视为已配置完成，不会被误判成草稿。
+    """
+    try:
+        from sqlalchemy import inspect, text
+
+        inspector = inspect(engine)
+        if "hot_topics" not in inspector.get_table_names():
+            return
+        cols = {c["name"] for c in inspector.get_columns("hot_topics")}
+        if "setup_done" in cols:
+            return
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE hot_topics ADD COLUMN setup_done BOOLEAN DEFAULT 1"
+                )
+            )
+        logger.warning("hot_topics 表已补充 setup_done 列（默认 1）")
+    except Exception:
+        logger.exception("补充 hot_topics setup_done 列失败")
+
+
+def _ensure_hotlist_embedding_nullable() -> None:
+    """两向量表 vector 列从 NOT NULL 改 nullable（SQLite 无 ALTER COLUMN：DROP 后由
+    create_all 重建，init_db 里紧随其后会再跑一次 create_all）。
+
+    原 NOT NULL 约束导致嵌入失败（status='failed'）时写 NULL 记录错误被拒
+    （IntegrityError: NOT NULL constraint failed: hot_topic_embeddings.vector）。
+    当前表内没有成功数据（此前维度不匹配从未写入成功），直接重建无损失；
+    若将来表内有数据需要保留，应改为「建新表 + INSERT SELECT + 换名」流程。
+    """
+    try:
+        from sqlalchemy import inspect, text
+
+        inspector = inspect(engine)
+        names = set(inspector.get_table_names())
+        rebuilt = []
+        for table, vec_col in (
+            ("hot_topic_embeddings", "vector"),
+            ("hot_item_embeddings", "vector"),
+        ):
+            if table not in names:
+                continue
+            cols = {c["name"]: c for c in inspector.get_columns(table)}
+            if cols.get(vec_col) and not cols[vec_col]["nullable"]:
+                with engine.begin() as conn:
+                    conn.execute(text(f"DROP TABLE {table}"))
+                rebuilt.append(table)
+        if rebuilt:
+            logger.warning(
+                f"向量表已重建（vector 列改 nullable）: {', '.join(rebuilt)}"
+            )
+    except Exception:
+        logger.exception("重建向量表 vector 可空失败")
+
+
+def _ensure_hotlist_source_group_crawl_schema() -> None:
+    """hot_source_groups 补 crawl_enabled 列（幂等，老库兼容）。
+
+    存量分组（迁移这一刻已存在的）一律种成 True——它们当下就在自动抓取，
+    不能因为加了这个开关就让正在跑的抓取静默停掉；新建分组走模型默认值 False。
+    """
+    try:
+        from sqlalchemy import inspect, text
+
+        inspector = inspect(engine)
+        if "hot_source_groups" not in inspector.get_table_names():
+            return
+        cols = {c["name"] for c in inspector.get_columns("hot_source_groups")}
+        if "crawl_enabled" in cols:
+            return
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE hot_source_groups ADD COLUMN crawl_enabled BOOLEAN DEFAULT 0"
+                )
+            )
+            conn.execute(text("UPDATE hot_source_groups SET crawl_enabled = 1"))
+        logger.warning(
+            "hot_source_groups 表已补充 crawl_enabled 列，存量分组默认开启资讯爬取"
+        )
+    except Exception:
+        logger.exception("补充 hot_source_groups crawl_enabled 列失败")
+
+
+def _ensure_hotlist_source_kind_dropped() -> None:
+    """hot_sources 表去掉 source_kind 列（幂等，老库兼容）。
+
+    分组织归属已经统一走 group_id（hot_source_groups），source_kind 这套
+    「中文热榜/技术源」独立分类标签和分组是同一个用途的两套并行机制，前端
+    「类型：全部/中文热榜/技术源」筛选跟分组筛选完全重复，下掉其中一套。
+    需要 SQLite 3.35+（DROP COLUMN），本机/生产都已满足。
+    """
+    try:
+        from sqlalchemy import inspect, text
+
+        inspector = inspect(engine)
+        if "hot_sources" not in inspector.get_table_names():
+            return
+        cols = {c["name"] for c in inspector.get_columns("hot_sources")}
+        if "source_kind" not in cols:
+            return
+        with engine.begin() as conn:
+            # 列原来带 index=True，DROP COLUMN 前必须先手动摘掉索引，否则 SQLite
+            # 报 "error in index ... after drop column"（索引不会跟着列自动清）。
+            conn.execute(text("DROP INDEX IF EXISTS ix_hot_sources_source_kind"))
+            conn.execute(text("ALTER TABLE hot_sources DROP COLUMN source_kind"))
+        logger.warning("hot_sources 表已去掉 source_kind 列（并入 group_id 分组）")
+    except Exception:
+        logger.exception("去掉 hot_sources source_kind 列失败")
+
+
+def _ensure_hotlist_source_interval_schema() -> None:
+    """hot_sources 的 cron_expr（cron 表达式）换成 interval_hours（抓取间隔小时数）（幂等，老库兼容）。
+
+    cron 定点触发在休眠/重启频繁的机器上一碰到 misfire 容忍窗口就被跳过、且用户
+    还得会填 cron 表达式；换成 IntervalTrigger 后不需要用户理解 cron 语法，调度器
+    自己按「距上次触发过了多久」判断，不依赖命中某个精确时间点（见 scheduler_jobs）。
+    老库里 cron_expr 的值尽量解析出等价的小时数迁过去，解析不出的退回默认 4 小时
+    （对齐 opml_service.RSS_FETCH_INTERVAL_HOURS，多数源原本就是这个频率）。
+    """
+    import re
+
+    try:
+        from sqlalchemy import inspect, text
+
+        inspector = inspect(engine)
+        if "hot_sources" not in inspector.get_table_names():
+            return
+        cols = {c["name"] for c in inspector.get_columns("hot_sources")}
+        if "cron_expr" not in cols:
+            return  # 已经迁过了
+
+        if "interval_hours" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE hot_sources ADD COLUMN interval_hours REAL DEFAULT 0.5")
+                )
+
+        with engine.begin() as conn:
+            rows = conn.execute(text("SELECT id, cron_expr FROM hot_sources")).fetchall()
+            for row_id, cron_expr in rows:
+                hours = 4.0
+                expr = (cron_expr or "").strip()
+                m = re.match(r"^\*/(\d+) \* \* \* \*$", expr)
+                if m:
+                    hours = int(m.group(1)) / 60
+                else:
+                    m = re.match(r"^0 \*/(\d+) \* \* \*$", expr)
+                    if m:
+                        hours = float(int(m.group(1)))
+                conn.execute(
+                    text("UPDATE hot_sources SET interval_hours = :hours WHERE id = :id"),
+                    {"hours": hours, "id": row_id},
+                )
+            # 索引不会跟着列自动清，DROP COLUMN 前先摘掉（同 _ensure_hotlist_source_kind_dropped）
+            conn.execute(text("DROP INDEX IF EXISTS ix_hot_sources_cron_expr"))
+            conn.execute(text("ALTER TABLE hot_sources DROP COLUMN cron_expr"))
+        logger.warning(f"hot_sources 表已将 cron_expr 迁移为 interval_hours（{len(rows)} 行）")
+    except Exception:
+        logger.exception("迁移 hot_sources cron_expr → interval_hours 失败")
+
+
 def init_db() -> None:
     # noqa: F401  各域的 models 子包只是被 import 一下确保类注册到 Base.metadata 上，
     # 不在这里直接用——按域拆分后模型定义各自归属 common/stock/xhs，不再有一个统一的
@@ -350,4 +524,15 @@ def init_db() -> None:
     _ensure_hotlist_source_health_schema()
     # hotlist 语义检索：hot_topics 兴趣查询四列（老库幂等迁移）
     _ensure_hotlist_semantic_schema()
+    # hotlist 创建向导：hot_topics 补 setup_done 列（老库幂等迁移）
+    _ensure_hotlist_topic_setup_schema()
+    # hotlist 语义检索：向量表 vector 列改 nullable（可能 DROP 表，之后需重建）
+    _ensure_hotlist_embedding_nullable()
+    # hotlist 分组资讯爬取开关：hot_source_groups 补 crawl_enabled 列（老库幂等迁移）
+    _ensure_hotlist_source_group_crawl_schema()
+    # hotlist 源类型标签下线：hot_sources 去掉 source_kind 列（并入 group_id 分组）
+    _ensure_hotlist_source_kind_dropped()
+    # hotlist 抓取调度简化：hot_sources cron_expr → interval_hours（老库幂等迁移）
+    _ensure_hotlist_source_interval_schema()
+    Base.metadata.create_all(bind=engine)
     _fix_opml_expected_domain()

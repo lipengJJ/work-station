@@ -1,7 +1,7 @@
 """OPML 导入：解析 → normalize_url 去重 → 复用/新建源 →（可选）建分组/主题关联。
 
 刻意不预置任何仓库的文件清单——硬编码文件名等于埋一个必然失效的依赖。
-RSS 源默认 4 小时抓一次（cron_expr="0 */4 * * *"），不要跟中文热榜一样 30 分钟。
+RSS 源默认 4 小时抓一次（interval_hours=4.0），不要跟中文热榜一样 30 分钟。
 拉取远端 OPML（fetch_opml）的动作移到 controller：controller 收到 url 先拉文本再传 content。
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ from app.common.utils.url import normalize_url
 from app.hotlist.models import HotSource, HotTopicSource
 from app.hotlist.schemas.topic import OpmlImportResult
 
-RSS_FETCH_CRON = "0 */4 * * *"
+RSS_FETCH_INTERVAL_HOURS = 4.0
 RSS_DECAY_HALF_LIFE_HOURS = 24.0
 OPML_HTTP_TIMEOUT = 15
 
@@ -104,7 +104,9 @@ def import_opml(
     """导入 OPML 文本。返回新增/复用/跳过统计 + 全部源 id（source_ids）。
 
     - content = OPML 文本（拉取 URL 的动作在 controller 完成）
-    - group_id 给定时：**新建**的源写入该分组（复用的源不挪动，避免覆盖用户手动归组）
+    - group_id 给定时：新建的源写入该分组；复用的源只在当前**未分组**时才挪进去
+      （已经在别的分组里 = 用户手动归过组，不覆盖；未分组 = 从没组织过，导入时
+      选了分组就该按选的来，不然用户选了分组、源却原地不动，一头雾水）
     - topic_id 给定时：为每个源建 HotTopicSource(enabled=False)；两者可同时给、可都空
     - imported_from：关联来源标记（如 "opml:paste" / "opml:{filename}"），默认 ""
     """
@@ -115,6 +117,39 @@ def import_opml(
     if not entries:
         raise ValueError("OPML 中没有任何带 xmlUrl 的订阅项")
 
+    return _import_entries(db, entries, group_id, topic_id, imported_from)
+
+
+def import_feed_urls(
+    db: Session,
+    urls: list[str],
+    group_id: int | None = None,
+    topic_id: int | None = None,
+    imported_from: str = "",
+) -> OpmlImportResult:
+    """直接按 RSS/Atom 订阅地址列表导入（一行一个），不要求是 OPML 文档。
+
+    「或填写 OPML 的 URL」这个输入框实际大多数时候被当成"粘贴一个 RSS 地址"用——
+    真正的 OPML 是给一堆 outline 打包的聚合文档，用户手头常有的其实是散的 feed
+    地址。与其要求先套一层 OPML 外壳，不如直接支持粘贴多行地址，每行当一个源，
+    复用与 import_opml 完全相同的去重/建源/关联逻辑（parse_opml 解析出的 entries
+    结构本来就是 {title, xml_url, html_url}，这里跳过解析直接构造）。
+    """
+    cleaned = [u.strip() for u in urls if u.strip()]
+    if not cleaned:
+        raise ValueError("请至少填写一个 RSS 订阅地址")
+    entries = [{"title": "", "xml_url": u, "html_url": ""} for u in cleaned]
+    return _import_entries(db, entries, group_id, topic_id, imported_from)
+
+
+def _import_entries(
+    db: Session,
+    entries: list[dict],
+    group_id: int | None,
+    topic_id: int | None,
+    imported_from: str,
+) -> OpmlImportResult:
+    """entries → 新建/复用源 + 可选分组/主题关联，OPML 解析结果与直填地址列表共用。"""
     result = OpmlImportResult()
     seen_urls: set[str] = set()
     now = datetime.now(timezone.utc)
@@ -135,8 +170,8 @@ def import_opml(
             source_id = _unique_source_id(db, normalized)
             existing = HotSource(
                 id=source_id,
-                name=entry["title"] or source_id,
-                source_kind="tech",
+                # 直填地址列表没有 title，退化用域名（比一串 rss-xxx-哈希 id 更好认）
+                name=entry["title"] or _host_of(normalized) or source_id,
                 adapter="rss",
                 adapter_params=json.dumps(
                     {"url": normalized}, ensure_ascii=False
@@ -147,7 +182,7 @@ def import_opml(
                 # api.xgo.ing 的条目就指向 x.com），按 feed 域名校验会整源误杀。
                 expected_domain="",
                 decay_half_life_hours=RSS_DECAY_HALF_LIFE_HOURS,
-                cron_expr=RSS_FETCH_CRON,
+                interval_hours=RSS_FETCH_INTERVAL_HOURS,
                 enabled=True,
                 group_id=group_id,  # 新建的源写入分组
                 created_at=now,
@@ -157,6 +192,8 @@ def import_opml(
             db.flush()
             result.created.append(existing.id)
         else:
+            if group_id is not None and existing.group_id is None:
+                existing.group_id = group_id
             result.reused.append(existing.id)
         result.source_ids.append(existing.id)
 

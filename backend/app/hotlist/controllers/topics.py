@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.hotlist.models import HotTopic
+from app.hotlist.models import HotSource, HotTopic
 from app.hotlist.schemas.topic import (
     ImportOpmlIn,
     OpmlImportResult,
@@ -27,7 +27,12 @@ from app.hotlist.schemas.topic import (
     TopicSourceOut,
     TopicUpdateIn,
 )
-from app.hotlist.services import opml_service, topic_service
+from app.hotlist.services import (
+    opml_service,
+    scheduler_jobs,
+    topic_service,
+    topic_source_service,
+)
 
 router = APIRouter(prefix="/api/hotlist/topics", tags=["hotlist-topics"])
 
@@ -43,7 +48,7 @@ def list_topics(
     out = []
     for topic in topics:
         item = TopicOut.model_validate(topic)
-        item.enabled_source_count = topic_service.source_count_for_topic(
+        item.enabled_source_count = topic_source_service.source_count_for_topic(
             db, topic.id
         )
         out.append(item)
@@ -71,7 +76,7 @@ def get_topic(
     if topic is None:
         raise HTTPException(404, "主题不存在")
     out = TopicOut.model_validate(topic)
-    out.enabled_source_count = topic_service.source_count_for_topic(
+    out.enabled_source_count = topic_source_service.source_count_for_topic(
         db, topic_id
     )
     return out
@@ -89,7 +94,7 @@ def update_topic(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     out = TopicOut.model_validate(topic)
-    out.enabled_source_count = topic_service.source_count_for_topic(
+    out.enabled_source_count = topic_source_service.source_count_for_topic(
         db, topic_id
     )
     return out
@@ -113,7 +118,7 @@ def list_sources(
     topic_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)
 ) -> list[TopicSourceOut]:
     _ensure_topic(db, topic_id)
-    return topic_service.list_topic_sources(db, topic_id)
+    return topic_source_service.list_topic_sources(db, topic_id)
 
 
 @router.put("/{topic_id}/sources")
@@ -125,12 +130,12 @@ def batch_sources(
 ) -> dict:
     _ensure_topic(db, topic_id)
     try:
-        changed = topic_service.batch_set_sources(
+        changed = topic_source_service.batch_set_sources(
             db, topic_id, data.mode, data.source_ids
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    enabled = topic_service.source_count_for_topic(db, topic_id)
+    enabled = topic_source_service.source_count_for_topic(db, topic_id)
     if enabled > MAX_ENABLED_SOURCES_WARN:
         logger.warning(
             f"主题 {topic_id} 启用源数达 {enabled}，超过规模护栏 {MAX_ENABLED_SOURCES_WARN}"
@@ -147,27 +152,43 @@ def import_opml(
 ) -> OpmlImportResult:
     _ensure_topic(db, topic_id)
     try:
-        content = data.opml_text
-        if not (content or "").strip() and data.opml_url:
-            content = opml_service.fetch_opml(data.opml_url)
-        if not (content or "").strip():
-            raise ValueError("请提供 OPML 文本或 URL")
-        filename = (
-            data.opml_url.rstrip("/").split("/")[-1][:100]
-            if data.opml_url
-            else ""
-        )
-        imported_from = f"opml:{filename}" if filename else "opml:paste"
         # topic 场景：只关联主题（group_id=None），源不额外归组
-        result = opml_service.import_opml(
-            db,
-            content,
-            group_id=None,
-            topic_id=topic_id,
-            imported_from=imported_from,
-        )
+        if data.feed_urls:
+            result = opml_service.import_feed_urls(
+                db,
+                data.feed_urls,
+                group_id=None,
+                topic_id=topic_id,
+                imported_from="manual",
+            )
+        else:
+            content = data.opml_text
+            if not (content or "").strip() and data.opml_url:
+                content = opml_service.fetch_opml(data.opml_url)
+            if not (content or "").strip():
+                raise ValueError("请提供 OPML 文本、URL 或 RSS 订阅地址")
+            filename = (
+                data.opml_url.rstrip("/").split("/")[-1][:100]
+                if data.opml_url
+                else ""
+            )
+            imported_from = f"opml:{filename}" if filename else "opml:paste"
+            result = opml_service.import_opml(
+                db,
+                content,
+                group_id=None,
+                topic_id=topic_id,
+                imported_from=imported_from,
+            )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    # 新建的源默认 enabled=True，但只有 register_job 才能让它进当前正在跑的
+    # 调度器；不补这一下，新源要等下次进程重启才会真的开始抓。
+    if result.source_ids:
+        for source in (
+            db.query(HotSource).filter(HotSource.id.in_(result.source_ids)).all()
+        ):
+            scheduler_jobs.register_job(source)
     return result
 
 
@@ -176,7 +197,7 @@ def disable_stale(
     topic_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)
 ) -> dict:
     _ensure_topic(db, topic_id)
-    changed = topic_service.disable_stale_sources(db, topic_id)
+    changed = topic_source_service.disable_stale_sources(db, topic_id)
     return {"ok": True, "disabled": changed}
 
 
@@ -189,7 +210,7 @@ def detach_source(
 ) -> dict:
     _ensure_topic(db, topic_id)
     try:
-        topic_service.detach_source(db, topic_id, source_id)
+        topic_source_service.detach_source(db, topic_id, source_id)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
     return {"ok": True}

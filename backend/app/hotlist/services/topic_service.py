@@ -1,11 +1,7 @@
-"""主题 CRUD + 源关联 + 待抓源解析（Phase 5）。
+"""主题 CRUD + slug 生成 + 语义检索预览（Phase 5）。
 
 - slug：创建时按 name 生成候选值但允许改；生成后不允许修改（已发布报告路径断链）。
-- 批量开关：全开 / 全关 / 指定集合。
-- 待抓源解析：源自身未被熔断 且 被至少一个启用中的主题启用（§2.2 的 JOIN SQL）。
-  兼容处理：不存在任何启用主题时退化为抓全部 enabled 源（老用户没有主题概念，
-  不能因为没建主题就让既有抓取全部停掉）。
-- 失效源置灰：连续失败 >=5 的关联源在列表里标记，提供一键批量关闭。
+- 源关联 / 失效源置灰归 topic_source_service；待抓源解析归 crawl_service。
 """
 from __future__ import annotations
 
@@ -16,20 +12,14 @@ import secrets
 from typing import Optional
 
 import numpy as np
-from loguru import logger
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.hotlist.models import (
-    HotItem,
-    HotSource,
     HotTopic,
     HotTopicEmbedding,
     HotTopicSource,
 )
-from app.hotlist.schemas.topic import TopicIn, TopicSourceOut, TopicUpdateIn
-
-STALE_FAILURE_THRESHOLD = 5  # 连续「永久类」失败 >=5 才置灰，见 list_stale_source_ids
+from app.hotlist.schemas.topic import TopicIn, TopicUpdateIn
 
 _SLUG_RE = re.compile(r"[^a-z0-9-]+")
 
@@ -69,6 +59,7 @@ def create_topic(db: Session, data: TopicIn) -> HotTopic:
         description=data.description,
         enabled=data.enabled,
         sort_order=data.sort_order,
+        setup_done=data.setup_done,
         skill_key=data.skill_key,
         template_key=data.template_key,
         extra_question=data.extra_question,
@@ -181,284 +172,6 @@ def list_topics(db: Session) -> list[HotTopic]:
     )
 
 
-# ------------------------------------------------------------ 源关联 ----
-
-def attach_source(
-    db: Session, topic_id: int, source_id: str, enabled: bool = False,
-    imported_from: str = "manual",
-) -> HotTopicSource:
-    """建关联（已存在则更新启用状态）。返回关联行。"""
-    link = (
-        db.query(HotTopicSource)
-        .filter(
-            HotTopicSource.topic_id == topic_id,
-            HotTopicSource.source_id == source_id,
-        )
-        .first()
-    )
-    if link is None:
-        link = HotTopicSource(
-            topic_id=topic_id,
-            source_id=source_id,
-            enabled=enabled,
-            imported_from=imported_from,
-        )
-        db.add(link)
-    else:
-        link.enabled = enabled
-        link.imported_from = imported_from
-    db.commit()
-    db.refresh(link)
-    return link
-
-
-def detach_source(db: Session, topic_id: int, source_id: str) -> None:
-    link = (
-        db.query(HotTopicSource)
-        .filter(
-            HotTopicSource.topic_id == topic_id,
-            HotTopicSource.source_id == source_id,
-        )
-        .first()
-    )
-    if link is None:
-        raise ValueError("该源不在主题中")
-    db.delete(link)
-    db.commit()
-
-
-def batch_set_sources(
-    db: Session, topic_id: int, mode: str, source_ids: list[str] | None = None
-) -> int:
-    """批量开关：all_on / all_off / set（source_ids 集合，其余全关）。返回改动条数。
-
-    set 语义：集合内的源启用、集合外的关闭；**缺失的关联行自动补建**（建主题后直接
-    PUT mode=set 挂源，不再需要先 attach_source；补建行 imported_from='manual'）。
-    脏数据防御：wanted 里不存在的源 id 跳过并记 warning，不炸。
-    """
-    links = (
-        db.query(HotTopicSource)
-        .filter(HotTopicSource.topic_id == topic_id)
-        .all()
-    )
-    link_by_source = {link.source_id: link for link in links}
-    changed = 0
-    if mode == "all_on":
-        for link in links:
-            if not link.enabled:
-                link.enabled = True
-                changed += 1
-    elif mode == "all_off":
-        for link in links:
-            if link.enabled:
-                link.enabled = False
-                changed += 1
-    elif mode == "set":
-        wanted = set(source_ids or [])
-        # 补建缺失的关联行（只补 hot_sources 里真实存在的源）
-        existing_ids = {
-            row[0]
-            for row in db.query(HotSource.id)
-            .filter(HotSource.id.in_(wanted))
-            .all()
-        }
-        for source_id in wanted:
-            if source_id not in existing_ids:
-                logger.warning(
-                    f"hotlist 主题 {topic_id} 批量 set 跳过不存在的源: {source_id}"
-                )
-                continue
-            if source_id not in link_by_source:
-                db.add(
-                    HotTopicSource(
-                        topic_id=topic_id,
-                        source_id=source_id,
-                        enabled=True,
-                        imported_from="manual",
-                    )
-                )
-                changed += 1
-        # 已存在的链接：集合内启用、集合外关闭
-        for link in links:
-            target = link.source_id in wanted
-            if link.enabled != target:
-                link.enabled = target
-                changed += 1
-    else:
-        raise ValueError(f"未知批量模式: {mode}（可选：all_on/all_off/set）")
-    db.commit()
-    return changed
-
-
-def list_topic_sources(db: Session, topic_id: int) -> list[TopicSourceOut]:
-    """主题下的源列表：源信息 + 关联状态 + 健康状态 + 近 7 天贡献命中数。
-
-    近 7 天贡献数：按 HotItem.first_crawl_time >= 7 天前统计每个源的条目数
-    （第一次出现在本主题候选范围内即算贡献，不依赖规则命中）。
-    """
-    links = (
-        db.query(HotTopicSource)
-        .filter(HotTopicSource.topic_id == topic_id)
-        .order_by(HotTopicSource.added_at.asc())
-        .all()
-    )
-    if not links:
-        return []
-    source_ids = [link.source_id for link in links]
-    sources = db.query(HotSource).filter(HotSource.id.in_(source_ids)).all()
-    source_map = {s.id: s for s in sources}
-
-    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-    counts: dict[str, int] = {}
-    rows = (
-        db.query(HotItem.source_id, func.count(HotItem.id))
-        .filter(
-            HotItem.source_id.in_(source_ids),
-            HotItem.first_crawl_time >= cutoff,
-        )
-        .group_by(HotItem.source_id)
-        .all()
-    )
-    counts = dict(rows)
-
-    out: list[TopicSourceOut] = []
-    for link in links:
-        source = source_map.get(link.source_id)
-        if source is None:
-            continue
-        out.append(
-            TopicSourceOut(
-                id=source.id,
-                name=source.name,
-                source_kind=source.source_kind,
-                adapter=source.adapter,
-                cron_expr=source.cron_expr,
-                enabled=source.enabled,
-                last_status=source.last_status,
-                last_error=source.last_error,
-                consecutive_failures=source.consecutive_failures,
-                last_error_kind=source.last_error_kind,
-                transient_failures=source.transient_failures,
-                permanent_failures=source.permanent_failures,
-                fail_count=source.fail_count,
-                last_success_at=source.last_success_at,
-                total_fetched=source.total_fetched,
-                topic_enabled=link.enabled,
-                imported_from=link.imported_from,
-                hit_count_7d=counts.get(source.id, 0),
-            )
-        )
-    return out
-
-
-def list_stale_source_ids(db: Session, topic_id: int) -> list[str]:
-    """主题下真正失效的源 id（供前端置灰 + 一键关闭）。
-
-    判定只看 permanent_failures（404 / 解析失败 / 空 feed / 被拒），**不看**
-    transient_failures（DNS 抖动、连接超时、上游 5xx、上游熔断）。
-    否则一次本机断网或一个第三方上游挂掉，就能把几十个完全健康的源标成失效，
-    用户点一下「一键关闭」就全关了，而且关掉之后不再抓取、无法自愈。
-    """
-    links = (
-        db.query(HotTopicSource)
-        .filter(
-            HotTopicSource.topic_id == topic_id,
-            HotTopicSource.enabled.is_(True),
-        )
-        .all()
-    )
-    if not links:
-        return []
-    source_ids = [link.source_id for link in links]
-    stale = [
-        row[0]
-        for row in db.query(HotSource.id)
-        .filter(
-            HotSource.id.in_(source_ids),
-            HotSource.permanent_failures >= STALE_FAILURE_THRESHOLD,
-        )
-        .all()
-    ]
-    return stale
-
-
-def disable_stale_sources(db: Session, topic_id: int) -> int:
-    """一键关闭主题下所有失效源（永久类失败 >=5 且本主题启用中）。返回关闭条数。
-
-    只由用户显式点击触发，不会自动执行——自动关闭一旦误判就无法自愈。
-    """
-    stale = list_stale_source_ids(db, topic_id)
-    if not stale:
-        return 0
-    changed = batch_set_sources(db, topic_id, "set", [
-        link.source_id
-        for link in db.query(HotTopicSource)
-        .filter(
-            HotTopicSource.topic_id == topic_id,
-            HotTopicSource.enabled.is_(True),
-        )
-        .all()
-        if link.source_id not in stale
-    ])
-    return changed
-
-
-# ------------------------------------------------------------ 待抓源解析 ----
-
-def enabled_topic_exists(db: Session) -> bool:
-    return (
-        db.query(HotTopic.id)
-        .filter(HotTopic.enabled.is_(True))
-        .limit(1)
-        .first()
-    ) is not None
-
-
-def pending_sources(db: Session) -> list[HotSource]:
-    """待抓源：源自身 enabled 且被至少一个启用中的主题启用。
-
-    兼容：没有任何启用主题时退化为全部 enabled 源（Phase 5 之前的行为）。
-    """
-    base = db.query(HotSource).filter(HotSource.enabled.is_(True))
-    if not enabled_topic_exists(db):
-        return base.order_by(HotSource.sort_order.asc()).all()
-
-    topic_ids = [
-        row[0]
-        for row in db.query(HotTopic.id)
-        .filter(HotTopic.enabled.is_(True))
-        .all()
-    ]
-    used_source_ids = {
-        row[0]
-        for row in db.query(HotTopicSource.source_id)
-        .filter(
-            HotTopicSource.topic_id.in_(topic_ids),
-            HotTopicSource.enabled.is_(True),
-        )
-        .all()
-    }
-    if not used_source_ids:
-        return []
-    return (
-        base.filter(HotSource.id.in_(used_source_ids))
-        .order_by(HotSource.sort_order.asc())
-        .all()
-    )
-
-
-def source_count_for_topic(db: Session, topic_id: int) -> int:
-    """主题启用的源数量（规模护栏：>100 前端警告）。"""
-    return (
-        db.query(HotTopicSource)
-        .filter(
-            HotTopicSource.topic_id == topic_id,
-            HotTopicSource.enabled.is_(True),
-        )
-        .count()
-    )
-
-
 def preview_semantic_retrieval(
     db: Session,
     topic: HotTopic,
@@ -494,7 +207,11 @@ def preview_semantic_retrieval(
     query_text = embedding_service.build_query_text(interest_query)
     result = embed(
         EmbeddingRequest(
-            provider=provider, model=model, texts=[query_text], task_type=TASK_QUERY
+            provider=provider,
+            model=model,
+            texts=[query_text],
+            task_type=TASK_QUERY,
+            dimension=dimension,
         ),
         api_key,
     )

@@ -4,6 +4,7 @@ from app.hotlist.models.hot_crawl_record import (
     HotCrawlRecord,
     HotCrawlSourceStatus,
 )
+from app.hotlist.models.hot_group_summary import HotGroupSummary
 from app.hotlist.models.hot_item import HotItem
 from app.hotlist.models.hot_item_content import HotItemContent
 from app.hotlist.models.hot_item_embedding import HotItemEmbedding
@@ -20,6 +21,7 @@ from app.hotlist.models.hot_topic_source import HotTopicSource
 __all__ = [
     "HotCrawlRecord",
     "HotCrawlSourceStatus",
+    "HotGroupSummary",
     "HotItem",
     "HotItemContent",
     "HotItemEmbedding",

@@ -3,6 +3,15 @@ Skill 文件系统访问的唯一入口：所有读文件/列目录都要经过�
 控制器或别的 service 自己拼 Path。第一阶段只有 builtin 一种来源（workbench/skills/
 下的目录），第二阶段加 ZIP 导入后 upload 来源会指向 storage/skills/<name>/<version>/，
 到时候在 BUILTIN_ROOT 旁边加一个 UPLOAD_ROOT，resolve_skill_root 按 source_type 分流即可。
+
+曾经有过"双根"设计（仓库根 + ~/.workbench/skills/ 外部根，给"用户自行导入的 Skill"
+留位置），2026-08-29 曾下掉：外部根当时被一批跟项目无关的公开 UI/设计类 Skill 包
+污染，扫描逻辑不区分来源全部注册进数据库，跟真正需要的 Skill 混在一起。
+后按用户要求恢复双根：项目自己的 Skill（如 topic-weekly-digest、gemini-travel-planner）
+留在仓库根 workbench/skills/ 随代码走；通用/第三方 Skill（如 archify、公开 UI 设计类）
+放公共目录 ~/.workbench/skills/（可用环境变量 WORKBENCH_SKILLS_DIR 覆盖）。
+两个根都按「目录内有 SKILL.md 且 frontmatter name 与目录名一致」的规则注册，
+同名去重（仓库根优先）。
 """
 from __future__ import annotations
 
@@ -15,11 +24,11 @@ from pathlib import Path
 # 上一级，即 workbench/；仓库自带的「内置 Skill」放这里（随代码走，如 gemini-travel-planner）。
 REPO_SKILLS_ROOT: Path = Path(__file__).resolve().parents[4] / "skills"
 
-# 用户自行导入/安装的 Skill 放仓库之外的独立目录，避免把上传内容写进 Git 工作区。
-# 位置可用环境变量 WORKBENCH_SKILLS_DIR 覆盖，默认 ~/.workbench/skills。
+# 公共目录（用户级）：通用/第三方 Skill 放这里，与仓库根并列扫描。
+# 默认 ~/.workbench/skills/，可用环境变量 WORKBENCH_SKILLS_DIR 覆盖。
 EXTERNAL_SKILLS_ROOT: Path = Path(
-    os.environ.get("WORKBENCH_SKILLS_DIR", "") or (Path.home() / ".workbench" / "skills")
-).expanduser()
+    os.environ.get("WORKBENCH_SKILLS_DIR") or Path.home() / ".workbench" / "skills"
+)
 
 # 兼容旧代码里引用 BUILTIN_ROOT 的地方（仅仓库根）。
 BUILTIN_ROOT: Path = REPO_SKILLS_ROOT
@@ -37,11 +46,8 @@ class SkillPathError(ValueError):
 
 
 def _all_skill_roots() -> list[Path]:
-    """扫描顺序：先仓库根、后外部根。同名 Skill 仓库根优先。"""
-    roots = [REPO_SKILLS_ROOT]
-    if EXTERNAL_SKILLS_ROOT != REPO_SKILLS_ROOT:
-        roots.append(EXTERNAL_SKILLS_ROOT)
-    return roots
+    """双根：仓库根（项目自带，随代码走）+ 公共目录（通用/第三方 Skill）。"""
+    return [REPO_SKILLS_ROOT, EXTERNAL_SKILLS_ROOT]
 
 
 def resolve_skill_root(source_type: str, storage_path: str) -> Path:
@@ -82,8 +88,8 @@ def _safe_join(root: Path, relative: str) -> Path:
 
 
 def list_builtin_skill_dirs() -> list[Path]:
-    """内置 Skill 的判定标准：仓库根（workbench/skills/）或外部根（~/.workbench/skills/）
-    下、直接子目录里有 SKILL.md 的都算；同名时仓库根优先，外部根去重。"""
+    """内置 Skill 的判定标准：仓库根（workbench/skills/）下、直接子目录里有
+    SKILL.md 的都算。"""
     result: list[Path] = []
     seen: set[str] = set()
     for root in _all_skill_roots():

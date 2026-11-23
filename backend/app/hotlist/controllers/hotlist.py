@@ -1,68 +1,51 @@
 """热点榜单：/api/hotlist/*（全部需要登录）。
 
-- GET  /items        分页列表（来源 / 源类型 / 日期筛选 + 权重/榜位/时间排序）
-- GET  /items/{id}   详情 + 榜位时间线
-- POST /crawl        手动触发（10 分钟限频 + daemon 线程异步执行，逻辑照搬旧
-                      ai_trending controllers/trending.py::manual_refresh）
+- GET  /items              分页列表（来源 / 源类型 / 日期筛选 / 关键词 + 权重/榜位/时间排序）
+- GET  /items/{id}         详情 + 榜位时间线
+- GET  /items/{id}/fulltext 全文（缓存优先，没有就现抓；跟主题报告 L2 共用同一份缓存）
+- GET  /embedding-status   文章语义向量索引进度（含手动补算是否在跑）
+- POST /embedding-backfill 手动触发存量语义索引补算（后台线程，进程内锁防重复）
+- POST /crawl              手动触发（10 分钟限频 + daemon 线程异步执行，逻辑照搬旧
+                            ai_trending controllers/trending.py::manual_refresh）
 """
 from __future__ import annotations
 
 import threading
-import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from app.common.utils.rate_limiter import RateLimiter
 from app.core.database import SessionLocal, get_db
 from app.core.deps import get_current_user
-from app.hotlist.models import (
-    HotItem,
-    HotRankHistory,
-    HotSemanticHit,
-    HotSource,
-    HotTopic,
-)
 from app.hotlist.schemas.item import (
+    EmbeddingStatusOut,
+    GroupSummaryOut,
     ItemDetailOut,
-    ItemOut,
+    ItemFulltextOut,
     ItemPage,
-    RankPointOut,
 )
-from app.hotlist.services import crawl_service, source_service
+from app.hotlist.services import (
+    crawl_service,
+    embedding_service,
+    fulltext_service,
+    group_summary_service,
+    item_service,
+    scheduler_jobs,
+    source_service,
+)
 
 router = APIRouter(prefix="/api/hotlist", tags=["hotlist"])
 
-VALID_SORTS = {"weight", "rank", "time"}
-
-# 手动刷新限频：进程内内存锁 + 时间戳（10 分钟 1 次；单进程部署成立）
-_REFRESH_LOCK = threading.Lock()
-_last_manual_refresh: float | None = None
-REFRESH_COOLDOWN_SECONDS = 600
-
-
-def _attach_hit_rules(db: Session, items_out: list[ItemOut]) -> None:
-    """批量回填每条条目命中的主题显示名（一次 join 查询，避免逐条查询 N+1）。"""
-    if not items_out:
-        return
-    item_ids = [it.id for it in items_out]
-    rows = (
-        db.query(HotSemanticHit.item_id, HotTopic.name)
-        .join(HotTopic, HotTopic.id == HotSemanticHit.topic_id)
-        .filter(HotSemanticHit.item_id.in_(item_ids))
-        .all()
-    )
-    names_by_item: dict[int, list[str]] = {}
-    for item_id, name in rows:
-        names_by_item.setdefault(item_id, []).append(name or "未命名主题")
-    for it in items_out:
-        it.hit_rules = names_by_item.get(it.id, [])
+# 手动刷新限频：10 分钟 1 次（单进程部署成立；见 common/utils/rate_limiter.py）
+_refresh_limiter = RateLimiter(cooldown_seconds=600)
 
 
 @router.get("/items")
 def list_items(
+    q: str = Query("", max_length=100, description="关键词：匹配标题 / 摘要 / 来源名称"),
     group: str = Query("", max_length=64, description="分组过滤：空=全部；'ungrouped'=未分组；其余为分组 id"),
-    source_kind: str = Query("", max_length=16),
     stat_date: str = Query("", max_length=10),
     sort: str = Query("weight", max_length=8),
     hit_only: bool = Query(False),
@@ -71,57 +54,47 @@ def list_items(
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ) -> ItemPage:
-    if sort not in VALID_SORTS:
-        raise HTTPException(400, f"未知排序: {sort}（可选：weight/rank/time）")
+    try:
+        return item_service.list_items(
+            db,
+            q=q,
+            group=group,
+            stat_date=stat_date,
+            sort=sort,
+            hit_only=hit_only,
+            page=page,
+            page_size=page_size,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
-    q = db.query(HotItem)
-    if group:
-        try:
-            group_source_ids = source_service.resolve_group_source_ids(db, group)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
-        if group_source_ids:
-            q = q.filter(HotItem.source_id.in_(group_source_ids))
-        else:
-            # 分组存在但一个源都没有，直接返回空结果
-            q = q.filter(HotItem.id == -1)
-    if source_kind:
-        source_ids = [
-            row[0]
-            for row in (
-                db.query(HotSource.id)
-                .filter(HotSource.source_kind == source_kind)
-                .all()
-            )
-        ]
-        q = q.filter(HotItem.source_id.in_(source_ids))
-    if stat_date:
-        q = q.filter(HotItem.stat_date == stat_date)
-    if hit_only:
-        # 只保留有语义命中记录（HotSemanticHit）的条目
-        hit_item_ids = [
-            row[0]
-            for row in db.query(HotSemanticHit.item_id.distinct()).all()
-        ]
-        q = q.filter(HotItem.id.in_(hit_item_ids))
 
-    if sort == "time":
-        q = q.order_by(HotItem.last_crawl_time.desc(), HotItem.id.desc())
-    elif sort == "rank":
-        q = q.order_by(HotItem.rank.asc(), HotItem.weight.desc())
-    else:
-        q = q.order_by(HotItem.weight.desc(), HotItem.id.desc())
+@router.post("/items/summary")
+def generate_group_summary(
+    group: str = Query("", max_length=64, description="分组过滤：空=全部；'ungrouped'=未分组；其余为分组 id"),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+) -> GroupSummaryOut:
+    """一键生成当前分组的 AI 总结（同步，非流式）：点一下等几秒直接拿结果。
 
-    total = q.count()
-    rows = q.offset((page - 1) * page_size).limit(page_size).all()
-    items_out = [ItemOut.model_validate(row) for row in rows]
-    _attach_hit_rules(db, items_out)
-    return ItemPage(
-        items=items_out,
-        total=total,
-        page=page,
-        page_size=page_size,
-    )
+    路由必须排在 GET /items/{item_id} 之前——否则 "/items/summary" 会被
+    {item_id} 这个路径参数先匹配掉（"summary" 当字符串解析成 int 直接 422）。
+    """
+    try:
+        return group_summary_service.generate_summary(db, group)
+    except group_summary_service.GroupSummaryError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/items/summary")
+def get_group_summary(
+    group: str = Query("", max_length=64),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+) -> GroupSummaryOut | None:
+    """取该分组最近一条成功的总结（刷新页面/切分组后回看上次结果用）。同上，必须排在
+    GET /items/{item_id} 之前。"""
+    return group_summary_service.get_latest_summary(db, group)
 
 
 @router.get("/items/{item_id}")
@@ -130,34 +103,99 @@ def get_item_detail(
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ) -> ItemDetailOut:
-    item = db.get(HotItem, item_id)
+    detail = item_service.get_item_detail(db, item_id)
+    if detail is None:
+        raise HTTPException(404, "条目不存在")
+    return detail
+
+
+@router.get("/items/{item_id}/fulltext")
+def get_item_fulltext(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+) -> ItemFulltextOut:
+    """按需查全文：先查 `HotItemContent` 缓存，没有就现抓一次（跟主题报告 L2
+    走的是同一个 `fulltext_service.fetch_fulltext`，同一份缓存）。抓取失败/被
+    robots 挡住时返回 status!=success，content 为空，前端退化展示摘要+原文外链。
+    """
+    item = item_service.get_item(db, item_id)
     if item is None:
         raise HTTPException(404, "条目不存在")
-    history = (
-        db.query(HotRankHistory)
-        .filter(HotRankHistory.item_id == item_id)
-        .order_by(HotRankHistory.crawl_time.asc())
-        .all()
+    row = fulltext_service.fetch_fulltext(item)
+    return ItemFulltextOut(
+        status=row.status,
+        content=row.content or "",
+        char_count=row.char_count,
+        error=row.error,
+        fetched_at=row.fetched_at,
     )
-    item_out = ItemOut.model_validate(item)
-    _attach_hit_rules(db, [item_out])
-    return ItemDetailOut(
-        item=item_out,
-        history=[RankPointOut.model_validate(row) for row in history],
+
+
+@router.get("/embedding-status")
+def get_embedding_status(
+    group: str = Query("", max_length=64),
+    source_ids: str = Query("", max_length=10_000),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+) -> EmbeddingStatusOut:
+    """文章语义向量索引进度：低频补偿任务每 30 分钟跑一批，供榜单页展示当前完成度。"""
+    explicit_source_ids = [value for value in source_ids.split(",") if value]
+    try:
+        scoped_source_ids = (
+            explicit_source_ids
+            if explicit_source_ids
+            else (
+                source_service.resolve_group_source_ids(db, group)
+                if group
+                else None
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    progress = embedding_service.get_embedding_progress(db, scoped_source_ids)
+    return EmbeddingStatusOut(
+        **progress,
+        running=scheduler_jobs.is_manual_backfill_running(),
     )
+
+
+@router.post("/embedding-backfill")
+def trigger_embedding_backfill(
+    group: str = Query("", max_length=64),
+    source_ids: str = Query("", max_length=10_000),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+) -> dict:
+    """手动触发存量语义索引补算：已处理成功的文章会被跳过，只补缺失/失败的。"""
+    explicit_source_ids = [value for value in source_ids.split(",") if value]
+    try:
+        scoped_source_ids = (
+            explicit_source_ids
+            if explicit_source_ids
+            else (
+                source_service.resolve_group_source_ids(db, group)
+                if group
+                else None
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if scoped_source_ids == []:
+        raise HTTPException(400, "当前分组没有数据源")
+    started = scheduler_jobs.start_manual_embedding_backfill(scoped_source_ids)
+    if not started:
+        raise HTTPException(429, "已有索引补算任务在执行，请稍后再试")
+    scope = "全部数据源" if scoped_source_ids is None else "当前分组"
+    return {"triggered": True, "message": f"已触发{scope}语义索引补算，后台执行中"}
 
 
 @router.post("/crawl")
 def manual_crawl(_=Depends(get_current_user)) -> dict:
     """手动触发全量抓取：10 分钟限频，daemon 线程异步执行，立即返回。"""
-    global _last_manual_refresh
-    now = time.time()
-    with _REFRESH_LOCK:
-        if _last_manual_refresh is not None:
-            remaining = REFRESH_COOLDOWN_SECONDS - (now - _last_manual_refresh)
-            if remaining > 0:
-                raise HTTPException(429, f"刷新过于频繁，请 {int(remaining) + 1} 秒后重试")
-        _last_manual_refresh = now
+    remaining = _refresh_limiter.check_and_mark()
+    if remaining > 0:
+        raise HTTPException(429, f"刷新过于频繁，请 {int(remaining) + 1} 秒后重试")
 
     def _worker() -> None:
         db = SessionLocal()

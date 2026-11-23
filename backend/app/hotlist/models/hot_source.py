@@ -13,13 +13,11 @@ from app.core.database import Base
 class HotSource(Base):
     """热点源字典 + 健康状态。
 
-    一行 = 一个可抓取的榜单。中文热榜（微博/知乎/抖音…）与技术源（HN/GitHub/arXiv…）
-    统一放这张表，靠 source_kind 区分；真正干活的抓取器由 adapter 字段指向
-    services/adapters 注册表里的实现，adapter_params 是该实现需要的参数。
-
-    这样设计的直接好处：一个 adapter 可以喂多行源——newsnow adapter 驱动全部中文热榜
-    （params={"platform": "weibo"}），rss adapter 驱动任意订阅源（params={"url": "..."}），
-    所以「新增一个 RSS 源」是前端点一下，不用写代码、不用重启。
+    一行 = 一个可抓取的 RSS/Atom 订阅源。分组织归属统一走 group_id（hot_source_groups，
+    1:N）——不再有独立的 source_kind 分类标签，两套分类并存纯属冗余，全下掉了。
+    真正干活的抓取器由 adapter 字段指向 services/adapters 注册表里的实现——目前
+    只注册了 rss 一种（见该模块说明），adapter_params 固定是 {"url": "..."}。
+    「新增一个源」是前端点一下填个 RSS 地址，不用写代码、不用重启。
 
     健康状态字段（last_* / consecutive_failures / fail_count）沿用原 ai_trending 的设计：
     源字典与健康状态本来就是 1:1，拆两张表只是徒增一次 join。
@@ -29,10 +27,6 @@ class HotSource(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(64), default="")
-    source_kind: Mapped[str] = mapped_column(
-        String(16), default="hotlist", index=True
-    )
-    """hotlist = 中文热榜；tech = 技术源。仅用于前端分组与筛选，不影响抓取逻辑。"""
 
     adapter: Mapped[str] = mapped_column(String(32), default="")
     adapter_params: Mapped[str] = mapped_column(Text, default="{}")  # JSON
@@ -45,8 +39,11 @@ class HotSource(Base):
     """权重时间衰减半衰期（小时）。0 = 不衰减（热榜靠 stat_date 按天分域，本来就没有陈旧问题）；
     24 = 论文/RSS；48 = HN/GitHub。一个公式覆盖两类源，见 services/ranking.py。"""
 
-    cron_expr: Mapped[str] = mapped_column(String(64), default="*/30 * * * *")
-    """5 段 cron。入库而不是写死常量，抓取频率可以在前端改，不用改代码重启。"""
+    interval_hours: Mapped[float] = mapped_column(Float, default=0.5)
+    """抓取间隔（小时）。入库而不是写死常量，抓取频率可以在前端改，不用改代码重启。
+    用 APScheduler IntervalTrigger（而不是 cron 定点）调度：不用用户填 cron 表达式，
+    且天然不依赖「精确命中某个时间点」——休眠/重启后醒来照样按间隔继续跑，不会被
+    misfire 判定跳过（见 scheduler_jobs.register_job）。"""
 
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
@@ -96,7 +93,7 @@ class HotSource(Base):
     不是这个源的错，累加它去置灰源会造成大面积误杀且无法自愈。"""
 
     permanent_failures: Mapped[int] = mapped_column(Integer, default=0)
-    """连续永久/需干预失败次数。失效判定只看这个（topic_service.STALE_FAILURE_THRESHOLD）。"""
+    """连续永久/需干预失败次数。失效判定只看这个（topic_source_service.STALE_FAILURE_THRESHOLD）。"""
 
     fail_count: Mapped[int] = mapped_column(Integer, default=0)
     last_success_at: Mapped[datetime | None] = mapped_column(

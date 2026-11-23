@@ -13,6 +13,7 @@ export namespace TopicsApi {
     description: string;
     enabled: boolean;
     sort_order: number;
+    setup_done: boolean;
     skill_key: string;
     template_key: null | string;
     extra_question: string;
@@ -55,6 +56,7 @@ export namespace TopicsApi {
     description?: string;
     enabled?: boolean;
     sort_order?: number;
+    setup_done?: boolean;
     skill_key?: string;
     template_key?: null | string;
     extra_question?: string;
@@ -90,13 +92,16 @@ export namespace TopicsApi {
   export interface TopicSource {
     id: string;
     name: string;
-    source_kind: string;
     adapter: string;
-    cron_expr: string;
+    interval_hours: number;
     enabled: boolean;
     last_status: '' | 'failed' | 'success';
     last_error: string;
     consecutive_failures: number;
+    last_error_kind: string;
+    last_error_label: string;
+    transient_failures: number;
+    permanent_failures: number;
     fail_count: number;
     last_success_at: null | string;
     total_fetched: number;
@@ -215,7 +220,10 @@ export async function batchSetTopicSourcesApi(
   );
 }
 
-export async function importOpmlApi(topicId: number, body: { opml_text?: string; opml_url?: string }) {
+export async function importOpmlApi(
+  topicId: number,
+  body: { feed_urls?: string[]; opml_text?: string; opml_url?: string },
+) {
   return requestClient.post<TopicsApi.OpmlImportResult>(`/hotlist/topics/${topicId}/sources/import-opml`, body);
 }
 

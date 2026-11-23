@@ -61,3 +61,8 @@ backend/config.json
 # 临时归档与本地工具中间产物（understand 等）
 _to_delete/
 backend/.ua/
+
+# RSSHub 本地部署的真实凭证（GitHub Token / 知乎 Cookie / Twitter Token / Telegram
+# API 等已填值），.env.example 是模板，可以提交
+rsshub/.env
+rsshub/.env.bak.*

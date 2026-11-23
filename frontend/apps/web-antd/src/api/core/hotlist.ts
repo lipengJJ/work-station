@@ -2,17 +2,15 @@ import { requestClient } from '#/api/request';
 
 // 热点聚合模块：/api/hotlist/* 的前端适配层。
 export namespace HotlistApi {
-  export type SourceKind = 'hotlist' | 'tech';
   export type SourceStatus = '' | 'failed' | 'success';
 
   export interface Source {
     id: string;
     name: string;
-    source_kind: SourceKind;
     adapter: string;
     expected_domain: string;
     decay_half_life_hours: number;
-    cron_expr: string;
+    interval_hours: number;
     enabled: boolean;
     sort_order: number;
     group_id: null | number;
@@ -40,6 +38,8 @@ export namespace HotlistApi {
     color: string;
     sort_order: number;
     is_builtin: boolean;
+    /** 是否让组内源不依赖主题订阅、常驻自动抓取。默认关闭。 */
+    crawl_enabled: boolean;
     source_count: number;
   }
 
@@ -48,6 +48,7 @@ export namespace HotlistApi {
     description?: string;
     color?: string;
     sort_order?: number;
+    crawl_enabled?: boolean;
   }
 
   export interface SourceBatchParams {
@@ -59,6 +60,8 @@ export namespace HotlistApi {
   export interface SourceImportOpmlParams {
     content?: string;
     opml_url?: string;
+    /** 直接给一批 RSS/Atom 订阅地址（一行一个，前端拆好传数组），优先于 content/opml_url */
+    feed_urls?: string[];
     group_id?: null | number;
   }
 
@@ -73,7 +76,7 @@ export namespace HotlistApi {
   export interface SourceUpdateParams {
     name?: string;
     enabled?: boolean;
-    cron_expr?: string;
+    interval_hours?: number;
     expected_domain?: string;
     decay_half_life_hours?: number;
     sort_order?: number;
@@ -84,10 +87,9 @@ export namespace HotlistApi {
     name: string;
     adapter: string;
     adapter_params: Record<string, unknown>;
-    source_kind?: SourceKind;
     expected_domain?: string;
     decay_half_life_hours?: number;
-    cron_expr?: string;
+    interval_hours?: number;
     enabled?: boolean;
     sort_order?: number;
   }
@@ -129,17 +131,40 @@ export namespace HotlistApi {
     history: RankPoint[];
   }
 
+  /** 条目全文（trafilatura 抽取的 Markdown，保留标题层级/图片/链接） */
+  export interface ItemFulltext {
+    /** success 有全文；skipped（robots 禁止/疑似付费墙）/failed（抓取失败/正文过短）content 为空 */
+    status: 'failed' | 'skipped' | 'success';
+    content: string;
+    char_count: number;
+    error: string;
+    fetched_at: null | string;
+  }
+
   export type SortField = 'rank' | 'time' | 'weight';
 
   export interface ListItemsParams {
+    /** 关键词：匹配标题 / 摘要 / 来源名称，后端全量搜索（非当前页过滤） */
+    q?: string;
     /** 分组过滤：空=全部；'ungrouped'=未分组；其余为分组 id */
     group?: string;
-    source_kind?: SourceKind | '';
     stat_date?: string;
     sort?: SortField;
     hit_only?: boolean;
     page?: number;
     page_size?: number;
+  }
+
+  /** 数据源分组 AI 总结：非对话，一键生成，固定指令。 */
+  export interface GroupSummary {
+    id: number;
+    group_filter: string;
+    status: 'failed' | 'running' | 'success';
+    content: string;
+    error: string;
+    item_count: number;
+    model: string;
+    created_at: string;
   }
 
   export interface CrawlResult {
@@ -165,28 +190,91 @@ export namespace HotlistApi {
     failed?: number;
   }
 
-  // -------------------------------------------------------------- 摘要 ----
-  export type DigestMode = 'current' | 'daily' | 'incremental';
-
-  export interface DigestGroup {
-    rule_id: null | number;
-    display_name: string;
-    items: Item[];
+  /** 文章语义向量索引进度：GET /embedding-status 的返回。 */
+  export interface EmbeddingStatus {
+    total: number;
+    indexed: number;
+    pending: number;
+    failed: number;
+    /** 是否有手动补算任务正在后台执行 */
+    running: boolean;
   }
 
-  export interface Digest {
-    mode: DigestMode;
-    stat_date: string;
-    total_items: number;
-    groups: DigestGroup[];
+  /** 手动触发存量语义索引补算：POST /embedding-backfill 的返回。 */
+  export interface EmbeddingBackfillResult {
+    triggered: boolean;
+    message: string;
   }
 
-  export interface DigestParams {
-    mode: DigestMode;
-    stat_date?: string;
-    /** 分组过滤：空=全部；'ungrouped'=未分组；其余为分组 id */
-    group?: string;
+  // ------------------------------------------------------------ RSSHub 路由目录 ----
+
+  /** 本机 RSSHub 支持的一条站点路由（来自 RSSHub 自身 /api/namespace 元数据） */
+  export interface RsshubRoute {
+    namespace: string;
+    namespace_name: string;
+    path: string;
+    /** 命名空间 + path 拼出的通用路由（含 :param 占位符） */
+    full_path: string;
+    name: string;
+    /** 带具体参数的示例路径，可直接拼服务地址订阅 */
+    example: string;
+    categories: string[];
+    maintainers: string[];
+    /** 该路由要跑起来还需要配置哪些环境变量（如 TWITTER_AUTH_TOKEN）；空 = 无需额外配置 */
+    require_config: string[];
   }
+
+  export interface RsshubRouteListParams {
+    /** 关键词：匹配站点名 / 路由名 / 路径 */
+    keyword?: string;
+    category?: string;
+    /** 只看该站点下的路由 */
+    namespace?: string;
+    page?: number;
+    page_size?: number;
+    /** 跳过后端缓存，强制重新拉取 */
+    refresh?: boolean;
+  }
+
+  export interface RsshubRouteListResult {
+    items: RsshubRoute[];
+    total: number;
+    page: number;
+    page_size: number;
+    /** 全量分类，不受当前筛选影响，渲染分类下拉用 */
+    categories: string[];
+    /** 目录缓存的抓取时间（epoch 秒） */
+    fetched_at: number;
+  }
+
+  /** 一个 RSSHub 站点（namespace），下面可能有多条路由 */
+  export interface RsshubNamespace {
+    namespace: string;
+    namespace_name: string;
+    url: string;
+    route_count: number;
+    /** 该站点下所有路由的分类并集 */
+    categories: string[];
+  }
+
+  export interface RsshubNamespaceListParams {
+    /** 关键词：匹配站点名 / 站点 key */
+    keyword?: string;
+    category?: string;
+    page?: number;
+    page_size?: number;
+    refresh?: boolean;
+  }
+
+  export interface RsshubNamespaceListResult {
+    items: RsshubNamespace[];
+    total: number;
+    page: number;
+    page_size: number;
+    categories: string[];
+    fetched_at: number;
+  }
+
 }
 
 /** 源列表 + 健康状态（可按分组筛选） */
@@ -229,8 +317,11 @@ export async function updateSourceGroupApi(groupId: number, body: Partial<Hotlis
 }
 
 /** 删除源分组（内置分组拒删；组内源自动移回未分组） */
+/** 删除分组：连组内源一起删，级联清掉这些源产出的全部新闻数据（不可逆）。 */
 export async function deleteSourceGroupApi(groupId: number) {
-  return requestClient.delete<{ ok: boolean }>(`/hotlist/source-groups/${groupId}`);
+  return requestClient.delete<{ deleted_items: number; deleted_sources: number; ok: boolean }>(
+    `/hotlist/source-groups/${groupId}`,
+  );
 }
 
 // -------------------------------------------------------------- 批量操作 ----
@@ -278,14 +369,66 @@ export async function getHotlistItemDetailApi(itemId: number) {
   return requestClient.get<HotlistApi.ItemDetail>(`/hotlist/items/${itemId}`);
 }
 
+/** 条目全文（缓存优先，没有就现抓一次；跟主题报告 L2 共用同一份缓存） */
+export async function getHotlistItemFulltextApi(itemId: number) {
+  return requestClient.get<HotlistApi.ItemFulltext>(`/hotlist/items/${itemId}/fulltext`);
+}
+
 /** 手动触发全量抓取（10 分钟限频 1 次，异步执行） */
 export async function triggerHotlistCrawlApi() {
   return requestClient.post<HotlistApi.CrawlResult>('/hotlist/crawl');
 }
 
-// -------------------------------------------------------------- 摘要 ----
+/** 一键生成当前分组的 AI 总结（同步，等几秒直接拿结果；group 同 listHotlistItemsApi 的分组过滤） */
+export async function generateGroupSummaryApi(group: string) {
+  return requestClient.post<HotlistApi.GroupSummary>('/hotlist/items/summary', undefined, {
+    params: { group: group || undefined },
+  });
+}
 
-/** 热点摘要（daily=当日全部 / incremental=只看新增 / current=当前榜单），按语义命中主题分组 */
-export async function getHotlistDigestApi(params: HotlistApi.DigestParams) {
-  return requestClient.get<HotlistApi.Digest>('/hotlist/digest', { params });
+/** 取该分组最近一条成功的总结（没有则返回 null） */
+export async function getGroupSummaryApi(group: string) {
+  return requestClient.get<HotlistApi.GroupSummary | null>('/hotlist/items/summary', {
+    params: { group: group || undefined },
+  });
+}
+
+/** 文章语义向量索引进度（低频补偿任务每 30 分钟跑一批） */
+export async function getEmbeddingStatusApi(sourceIds: string[], group?: string) {
+  return requestClient.get<HotlistApi.EmbeddingStatus>('/hotlist/embedding-status', {
+    params: {
+      group: group || undefined,
+      source_ids: sourceIds.length > 0 ? sourceIds.join(',') : undefined,
+    },
+  });
+}
+
+/** 手动触发存量语义索引补算：已处理成功的文章会被跳过，只补缺失/失败的 */
+export async function triggerEmbeddingBackfillApi(sourceIds: string[], group?: string) {
+  return requestClient.post<HotlistApi.EmbeddingBackfillResult>(
+    '/hotlist/embedding-backfill',
+    undefined,
+    {
+      params: {
+        group: group || undefined,
+        source_ids: sourceIds.length > 0 ? sourceIds.join(',') : undefined,
+      },
+    },
+  );
+}
+
+// -------------------------------------------------------------- RSSHub 路由目录 ----
+
+/** 浏览/搜索本机 RSSHub 支持的站点（namespace）列表（关键词 + 分类筛选 + 分页，后端 30 分钟缓存） */
+export async function listRsshubNamespacesApi(params: HotlistApi.RsshubNamespaceListParams) {
+  return requestClient.get<HotlistApi.RsshubNamespaceListResult>('/hotlist/rsshub/namespaces', {
+    params,
+  });
+}
+
+/** 浏览某个站点下的具体路由（传 namespace）；也可不传 namespace 做全量关键词搜索 */
+export async function listRsshubRoutesApi(params: HotlistApi.RsshubRouteListParams) {
+  return requestClient.get<HotlistApi.RsshubRouteListResult>('/hotlist/rsshub/routes', {
+    params,
+  });
 }

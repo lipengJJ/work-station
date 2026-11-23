@@ -88,8 +88,11 @@ async function fetchTopic() {
   }
 }
 
-// -------------------------------------------------------------- 步骤条（workflow） ----
-const activeStep = ref<'config' | 'notify' | 'reports' | 'sources'>('sources');
+// -------------------------------------------------------------- Tab 页签 ----
+// 平级 Tab，不是向导：可任意乱点、每页各自即时保存、没有"完成"终点。
+// 之前带编号+完成态勾的步骤条是在假装自己是向导，实际行为是 Tab，容易误导——
+// 真正的创建向导在 TopicCreateWizard.vue 里。
+const activeStep = ref<'basic' | 'config' | 'notify' | 'reports' | 'sources'>('sources');
 
 const steps = computed(() => {
   const hitOn = topic.value?.hit_notify_enabled;
@@ -97,30 +100,11 @@ const steps = computed(() => {
   const notifyBadge =
     hitOn && reportOn ? '命中✓ 报告✓' : hitOn ? '命中✓' : reportOn ? '报告✓' : '未开启';
   return [
-    {
-      key: 'sources' as const,
-      label: '数据源',
-      badge: `${topic.value?.enabled_source_count ?? 0} 个源`,
-      done: (topic.value?.enabled_source_count ?? 0) > 0,
-    },
-    {
-      key: 'config' as const,
-      label: '分析配置',
-      badge: topic.value?.skill_key || '默认 Prompt',
-      done: true,
-    },
-    {
-      key: 'notify' as const,
-      label: '推送设置',
-      badge: notifyBadge,
-      done: Boolean(hitOn || reportOn),
-    },
-    {
-      key: 'reports' as const,
-      label: '报告历史',
-      badge: `${reportsTotal.value} 篇`,
-      done: reportsTotal.value > 0,
-    },
+    { key: 'basic' as const, label: '基本设置', badge: topic.value?.name || '' },
+    { key: 'sources' as const, label: '数据源', badge: `${topic.value?.enabled_source_count ?? 0} 个源` },
+    { key: 'config' as const, label: '主题设置', badge: topic.value?.skill_key || '默认 Prompt' },
+    { key: 'notify' as const, label: '通知设置', badge: notifyBadge },
+    { key: 'reports' as const, label: '报告历史', badge: `${reportsTotal.value} 篇` },
   ];
 });
 
@@ -138,8 +122,11 @@ async function fetchSources() {
   sourcesLoading.value = true;
   try {
     sources.value = await listTopicSourcesApi(props.topicId);
+    // 失效判定看 permanent_failures（404/解析失败/空 feed/被拒），不看
+    // consecutive_failures——否则一次 DNS 抖动、上游熔断就能把健康源标成"失效"。
+    // 与后端 topic_service.list_stale_source_ids 同一套口径。
     staleIds.value = sources.value
-      .filter((s) => s.topic_enabled && s.consecutive_failures >= 5)
+      .filter((s) => s.topic_enabled && s.permanent_failures >= 5)
       .map((s) => s.id);
   } catch (e: any) {
     message.error(`加载源列表失败：${e.message}`);
@@ -150,28 +137,16 @@ async function fetchSources() {
 
 const currentEnabledIds = computed(() => sources.value.filter((s) => s.topic_enabled).map((s) => s.id));
 
-const sourceGroups = computed(() => {
-  const groups: { key: string; label: string; items: TopicsApi.TopicSource[] }[] = [];
-  const map = new Map<string, TopicsApi.TopicSource[]>();
-  for (const s of sources.value) {
-    const key = s.imported_from || 'manual';
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(s);
-  }
-  for (const [key, items] of map) {
-    groups.push({
-      key,
-      label:
-        key === 'manual'
-          ? '手动添加'
-          : key === 'builtin'
-            ? '内置源'
-            : `OPML 导入（${key.replace(/^opml:/, '')}）`,
-      items,
-    });
-  }
-  return groups;
-});
+// -------------------------------------------------------------- 紧凑视图 ----
+// 默认只显示已启用源（chip 清单），管理型字段（健康状态/近 7 天贡献/cron）和逐条开关
+// 收进「管理源关联」次级视图。见 doc/TOPIC_SOURCES_TAB_COMPACT_VIEW.md §4。
+const sourceViewMode = ref<'compact' | 'manage'>('compact');
+const enabledSources = computed(() => sources.value.filter((s) => s.topic_enabled));
+const COMPACT_CHIP_LIMIT = 30;
+const chipExpanded = ref(false);
+const visibleChips = computed(() =>
+  chipExpanded.value ? enabledSources.value : enabledSources.value.slice(0, COMPACT_CHIP_LIMIT),
+);
 
 async function batchToggle(mode: 'all_on' | 'all_off' | 'set', ids?: string[]) {
   try {
@@ -217,6 +192,40 @@ function disableStale() {
   });
 }
 
+function confirmAllOff() {
+  // 破坏性操作单独二次确认，不能和"导入 OPML"这类无损操作视觉平级
+  Modal.confirm({
+    title: `关闭全部 ${sources.value.length} 个源？`,
+    content: '本主题将不再从任何源抓取内容，直到你重新开启。',
+    okType: 'danger',
+    onOk: () => batchToggle('all_off'),
+  });
+}
+
+// -------------------------------------------------------------- 管理态：搜索/筛选/排序 ----
+const manageSearch = ref('');
+const manageStatusFilter = ref<'' | 'disabled' | 'failed' | 'produced' | 'zero'>('');
+const manageSortDesc = ref(true);
+
+const manageFilteredSources = computed(() => {
+  const q = manageSearch.value.trim().toLowerCase();
+  const list = sources.value.filter((s) => {
+    if (q && !s.name.toLowerCase().includes(q) && !s.id.toLowerCase().includes(q)) return false;
+    if (manageStatusFilter.value === 'produced' && s.hit_count_7d <= 0) return false;
+    if (manageStatusFilter.value === 'zero' && s.hit_count_7d > 0) return false;
+    if (manageStatusFilter.value === 'failed' && s.last_status !== 'failed') return false;
+    if (manageStatusFilter.value === 'disabled' && s.enabled && s.topic_enabled) return false;
+    return true;
+  });
+  return [...list].sort((a, b) => (manageSortDesc.value ? b.hit_count_7d - a.hit_count_7d : a.hit_count_7d - b.hit_count_7d));
+});
+
+/** 全部源抓取间隔一致时在摘要行显示一次，不重复列一整列全一样的值。 */
+const commonInterval = computed(() => {
+  const distinct = new Set(sources.value.map((s) => s.interval_hours));
+  return distinct.size === 1 ? [...distinct][0] : null;
+});
+
 function readOpmlFile(file: File) {
   const reader = new FileReader();
   reader.onload = () => {
@@ -227,8 +236,9 @@ function readOpmlFile(file: File) {
 }
 
 async function submitImport() {
-  if (!opmlUrl.value.trim() && !opmlFileText.value.trim()) {
-    message.warning('请上传 .opml 文件或粘贴 OPML 的 URL');
+  const feedUrls = opmlUrl.value.split('\n').map((s) => s.trim()).filter(Boolean);
+  if (feedUrls.length === 0 && !opmlFileText.value.trim()) {
+    message.warning('请上传 .opml 文件，或填写至少一个 RSS 订阅地址');
     return;
   }
   opmlSaving.value = true;
@@ -236,7 +246,7 @@ async function submitImport() {
     const { importOpmlApi } = await import('#/api/core/topics');
     const res = await importOpmlApi(props.topicId, {
       opml_text: opmlFileText.value || undefined,
-      opml_url: opmlUrl.value || undefined,
+      feed_urls: feedUrls.length > 0 ? feedUrls : undefined,
     });
     message.success(res.detail);
     opmlOpen.value = false;
@@ -534,10 +544,10 @@ onMounted(async () => {
 <template>
   <Spin :spinning="loading">
     <template v-if="topic">
-      <!-- ============================================================ 步骤条 -->
+      <!-- ============================================================ Tab 页签 -->
       <div class="mb-5 flex flex-wrap gap-2">
         <button
-          v-for="(step, idx) in steps"
+          v-for="step in steps"
           :key="step.key"
           class="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors"
           :class="
@@ -547,96 +557,193 @@ onMounted(async () => {
           "
           @click="activeStep = step.key"
         >
-          <span
-            class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
-            :class="step.done ? 'bg-success/20 text-success' : 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]'"
-          >
-            {{ idx + 1 }}
-          </span>
           <span class="font-semibold">{{ step.label }}</span>
-          <span class="opacity-70">{{ step.badge }}</span>
+          <span v-if="step.badge" class="opacity-70">{{ step.badge }}</span>
         </button>
+      </div>
+
+      <!-- ============================================================ 基本设置 -->
+      <div v-show="activeStep === 'basic'">
+        <div class="max-w-3xl">
+          <Form layout="vertical">
+            <FormItem label="主题名称">
+              <Input v-model:value="form.name" :maxlength="64" />
+            </FormItem>
+            <FormItem label="描述">
+              <Input.TextArea v-model:value="form.description" :rows="2" />
+            </FormItem>
+            <button
+              :disabled="saving"
+              class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary disabled:opacity-50"
+              @click="saveConfig"
+            >
+              保存
+            </button>
+          </Form>
+        </div>
       </div>
 
       <!-- ============================================================ 数据源 -->
       <div v-show="activeStep === 'sources'">
-        <div class="mb-4 flex flex-wrap items-center gap-2">
+        <!-- -------------------------------------------------- 紧凑视图（默认） -->
+        <template v-if="sourceViewMode === 'compact'">
+          <div class="mb-4 flex flex-wrap items-center gap-2">
+            <button
+              class="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary"
+              @click="pickerOpen = true"
+            >
+              <FolderInput class="h-3.5 w-3.5" />
+              从分组关联
+            </button>
+            <button
+              class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+              @click="opmlOpen = true"
+            >
+              <UploadIcon class="h-3.5 w-3.5" />
+              导入 OPML
+            </button>
+            <button
+              class="ml-auto text-xs font-medium text-primary hover:underline"
+              @click="sourceViewMode = 'manage'"
+            >
+              管理源关联 →
+            </button>
+          </div>
+
+          <Alert
+            v-if="topic.enabled_source_count === 0"
+            class="mb-4"
+            type="warning"
+            show-icon
+            message="主题下还没有启用任何源"
+            description="从分组关联、导入 OPML 或去「管理源关联」勾选启用；抓取任务只跑「被至少一个启用主题启用」的源。"
+          />
+          <template v-else>
+            <div class="mb-2 text-xs font-medium text-[hsl(var(--muted-foreground))]">
+              已启用 <b class="text-[hsl(var(--foreground))]">{{ topic.enabled_source_count }}</b> 个源
+              <span v-if="topic.enabled_source_count > 100" class="text-warning">· 超过 100 护栏，可能拖慢抓取</span>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <Tooltip v-for="record in visibleChips" :key="record.id" :title="record.id">
+                <span class="inline-flex items-center rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2.5 py-1 text-[11px] text-[hsl(var(--foreground))]">
+                  {{ record.name }}
+                </span>
+              </Tooltip>
+              <button
+                v-if="!chipExpanded && enabledSources.length > COMPACT_CHIP_LIMIT"
+                class="inline-flex items-center rounded-full border border-dashed border-[hsl(var(--border))] px-2.5 py-1 text-[11px] text-primary hover:bg-primary/5"
+                @click="chipExpanded = true"
+              >
+                还有 {{ enabledSources.length - COMPACT_CHIP_LIMIT }} 个，展开全部
+              </button>
+            </div>
+          </template>
+        </template>
+
+        <!-- -------------------------------------------------- 管理态 -->
+        <template v-else>
           <button
-            class="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary"
-            @click="pickerOpen = true"
+            class="mb-4 flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+            @click="sourceViewMode = 'compact'"
           >
-            <FolderInput class="h-3.5 w-3.5" />
-            从分组关联
+            ← 返回紧凑视图
           </button>
-          <button
-            class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
-            @click="opmlOpen = true"
-          >
-            <UploadIcon class="h-3.5 w-3.5" />
-            导入 OPML
-          </button>
-          <button
-            class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
-            @click="batchToggle('all_on')"
-          >
-            全开
-          </button>
-          <button
-            class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
-            @click="batchToggle('all_off')"
-          >
-            全关
-          </button>
-          <button
-            class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs text-destructive disabled:opacity-40"
-            :disabled="staleIds.length === 0"
-            @click="disableStale"
-          >
-            一键关闭失效源（{{ staleIds.length }}）
-          </button>
-          <span class="ml-auto text-xs text-[hsl(var(--muted-foreground))]">
-            启用
-            <b :class="topic.enabled_source_count > 100 ? 'text-warning' : 'text-[hsl(var(--foreground))]'">
-              {{ topic.enabled_source_count }}
-            </b>
-            个源
-            <span v-if="topic.enabled_source_count > 100" class="text-warning">
-              · 超过 100 护栏，可能拖慢抓取
+
+          <div class="mb-4 flex flex-wrap items-center gap-2">
+            <button
+              class="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary"
+              @click="pickerOpen = true"
+            >
+              <FolderInput class="h-3.5 w-3.5" />
+              从分组关联
+            </button>
+            <button
+              class="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+              @click="opmlOpen = true"
+            >
+              <UploadIcon class="h-3.5 w-3.5" />
+              导入 OPML
+            </button>
+            <button
+              class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+              @click="batchToggle('all_on')"
+            >
+              全开
+            </button>
+            <!-- 破坏性操作：颜色降权 + 二次确认，不与"导入 OPML"这类无损操作视觉平级 -->
+            <button
+              class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs text-warning hover:bg-warning/10"
+              @click="confirmAllOff"
+            >
+              全关
+            </button>
+            <button
+              v-if="staleIds.length > 0"
+              class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10"
+              @click="disableStale"
+            >
+              一键关闭失效源（{{ staleIds.length }}）
+            </button>
+            <span class="ml-auto text-xs text-[hsl(var(--muted-foreground))]">
+              启用
+              <b :class="topic.enabled_source_count > 100 ? 'text-warning' : 'text-[hsl(var(--foreground))]'">
+                {{ topic.enabled_source_count }}
+              </b>
+              / {{ sources.length }} 个源
+              <template v-if="commonInterval"> · 统一频率 <span class="font-mono">每 {{ commonInterval }} 小时</span></template>
+              <span v-if="topic.enabled_source_count > 100" class="text-warning"> · 超过 100 护栏，可能拖慢抓取</span>
             </span>
-          </span>
-        </div>
+          </div>
 
-        <Alert
-          v-if="topic.enabled_source_count === 0"
-          class="mb-4"
-          type="warning"
-          show-icon
-          message="主题下还没有启用任何源"
-          description="从分组关联、导入 OPML 或在下表勾选启用；抓取任务只跑「被至少一个启用主题启用」的源。"
-        />
+          <Alert
+            v-if="topic.enabled_source_count === 0"
+            class="mb-4"
+            type="warning"
+            show-icon
+            message="主题下还没有启用任何源"
+            description="从分组关联、导入 OPML 或在下表勾选启用；抓取任务只跑「被至少一个启用主题启用」的源。"
+          />
 
-        <Spin :spinning="sourcesLoading">
-          <div v-for="group in sourceGroups" :key="group.key" class="mb-5">
-            <div class="mb-2 text-xs font-medium text-[hsl(var(--muted-foreground))]">{{ group.label }}（{{ group.items.length }}）</div>
+          <div class="mb-3 flex flex-wrap items-center gap-2">
+            <input
+              v-model="manageSearch"
+              placeholder="搜索源名称或 ID"
+              class="w-56 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
+            />
+            <select
+              v-model="manageStatusFilter"
+              class="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 text-xs text-[hsl(var(--foreground))] outline-none focus:border-primary"
+            >
+              <option value="">全部</option>
+              <option value="produced">有产出</option>
+              <option value="zero">零产出</option>
+              <option value="failed">异常</option>
+              <option value="disabled">已关闭</option>
+            </select>
+          </div>
+
+          <Spin :spinning="sourcesLoading">
             <div class="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background-deep))] shadow-xl">
               <div class="overflow-x-auto">
                 <table class="w-full text-left text-xs">
                   <thead class="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] font-mono text-[11px] text-[hsl(var(--muted-foreground))] uppercase">
                     <tr>
-                      <th class="px-4 py-3">源 / ID</th>
-                      <th class="px-4 py-3">健康状态</th>
-                      <th class="px-4 py-3">近 7 天贡献</th>
-                      <th class="px-4 py-3">抓取频率</th>
-                      <th class="px-4 py-3">本主题启用</th>
+                      <th class="px-4 py-2">源</th>
+                      <th class="px-4 py-2">健康状态</th>
+                      <th class="cursor-pointer select-none px-4 py-2" @click="manageSortDesc = !manageSortDesc">
+                        近 7 天贡献 {{ manageSortDesc ? '↓' : '↑' }}
+                      </th>
+                      <th class="px-4 py-2">本主题启用</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-[hsl(var(--border))]">
-                    <tr v-for="record in group.items" :key="record.id" class="transition-colors hover:bg-[hsl(var(--accent))]">
-                      <td class="px-4 py-3">
-                        <div class="font-semibold text-[hsl(var(--foreground))]">{{ record.name }}</div>
-                        <div class="text-[11px] text-[hsl(var(--muted-foreground))]">{{ record.id }}</div>
+                    <tr v-for="record in manageFilteredSources" :key="record.id" class="transition-colors hover:bg-[hsl(var(--accent))]">
+                      <td class="px-4 py-2">
+                        <Tooltip :title="record.id">
+                          <span class="font-semibold text-[hsl(var(--foreground))]">{{ record.name }}</span>
+                        </Tooltip>
                       </td>
-                      <td class="px-4 py-3">
+                      <td class="px-4 py-2">
                         <Tooltip :title="record.last_error || '暂无错误信息'">
                           <span v-if="!record.enabled" class="inline-flex items-center gap-1.5 text-[hsl(var(--muted-foreground))]">
                             <span class="h-1.5 w-1.5 rounded-full bg-slate-500"></span>
@@ -645,10 +752,10 @@ onMounted(async () => {
                           <span
                             v-else-if="record.last_status === 'failed'"
                             class="inline-flex items-center gap-1.5"
-                            :class="record.consecutive_failures >= 5 ? 'text-destructive/60' : 'text-destructive'"
+                            :class="record.permanent_failures >= 5 ? 'text-destructive/60' : 'text-destructive'"
                           >
                             <span class="h-1.5 w-1.5 rounded-full bg-destructive"></span>
-                            失败×{{ record.consecutive_failures }}{{ record.consecutive_failures >= 5 ? '（失效）' : '' }}
+                            {{ record.last_error_label || '失败' }}{{ record.consecutive_failures > 1 ? `×${record.consecutive_failures}` : '' }}{{ record.permanent_failures >= 5 ? '（失效）' : '' }}
                           </span>
                           <span v-else-if="record.last_status === 'success'" class="inline-flex items-center gap-1.5 text-success">
                             <span class="h-1.5 w-1.5 rounded-full bg-success"></span>
@@ -660,9 +767,10 @@ onMounted(async () => {
                           </span>
                         </Tooltip>
                       </td>
-                      <td class="px-4 py-3 font-mono text-[hsl(var(--muted-foreground))]">{{ record.hit_count_7d }} 条</td>
-                      <td class="px-4 py-3 font-mono text-[hsl(var(--muted-foreground))]">{{ record.cron_expr }}</td>
-                      <td class="px-4 py-3">
+                      <td class="px-4 py-2 font-mono" :class="record.hit_count_7d === 0 ? 'text-destructive' : 'text-[hsl(var(--muted-foreground))]'">
+                        {{ record.hit_count_7d }} 条{{ record.hit_count_7d === 0 ? '（7 天零产出）' : '' }}
+                      </td>
+                      <td class="px-4 py-2">
                         <Switch
                           :checked="record.topic_enabled"
                           :disabled="!record.enabled"
@@ -674,24 +782,20 @@ onMounted(async () => {
                   </tbody>
                 </table>
               </div>
+              <div v-if="!sourcesLoading && manageFilteredSources.length === 0" class="p-8 text-center text-xs text-[hsl(var(--muted-foreground))]">
+                没有匹配的源
+              </div>
             </div>
-          </div>
-        </Spin>
+          </Spin>
+        </template>
       </div>
 
       <!-- ============================================================ 关键词规则 -->
-      <!-- ============================================================ 分析配置 -->
+      <!-- ============================================================ 主题设置 -->
       <div v-show="activeStep === 'config'">
         <div class="max-w-3xl">
           <Form layout="vertical">
-            <FormItem label="主题名称">
-              <Input v-model:value="form.name" :maxlength="64" />
-            </FormItem>
-            <FormItem label="描述">
-              <Input.TextArea v-model:value="form.description" :rows="2" />
-            </FormItem>
-
-            <div class="mb-2 mt-6 border-b border-[hsl(var(--border))] pb-1 text-sm font-medium text-[hsl(var(--foreground))]">AI 分析</div>
+            <div class="mb-2 mt-2 border-b border-[hsl(var(--border))] pb-1 text-sm font-medium text-[hsl(var(--foreground))]">AI 分析</div>
             <FormItem label="分析 Skill（留空 = 内置默认周报 Prompt）">
               <Select
                 v-model:value="form.skill_key"
@@ -863,7 +967,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- ============================================================ 推送设置 -->
+      <!-- ============================================================ 通知设置 -->
       <div v-show="activeStep === 'notify'">
         <div class="max-w-3xl">
           <Form layout="vertical">
@@ -1046,17 +1150,18 @@ onMounted(async () => {
   />
 
   <!-- OPML 导入弹窗 -->
-  <Modal v-model:open="opmlOpen" title="导入 OPML 订阅源" :footer="null" width="480px">
+  <Modal v-model:open="opmlOpen" title="导入订阅源" :footer="null" width="480px">
     <Form layout="vertical" class="pt-2">
       <FormItem label="上传 .opml 文件">
         <Upload :before-upload="readOpmlFile" :show-upload-list="false" accept=".opml,.xml">
           <button class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs">选择文件</button>
         </Upload>
       </FormItem>
-      <FormItem label="或粘贴 OPML 的 URL">
-        <Input
+      <FormItem label="或粘贴 RSS 订阅地址（支持多个，一行一个）">
+        <Input.TextArea
           v-model:value="opmlUrl"
-          placeholder="https://raw.githubusercontent.com/xxx/feeds/cn-ai-tools.opml"
+          :rows="4"
+          placeholder="https://openai.com/news/rss.xml&#10;https://example.com/feed"
         />
       </FormItem>
       <Alert
@@ -1064,7 +1169,7 @@ onMounted(async () => {
         type="info"
         show-icon
         message="导入说明"
-        description="重复的 feed 自动复用已有源（不覆盖你改过的名字和 cron）；新源默认关闭，导入后在源管理里逐个启用。RSS 源默认 4 小时抓一次。"
+        description="重复的 feed 自动复用已有源（不覆盖你改过的名字和 cron）；新源默认关闭，导入后在「热点聚合 → 榜单」页的「管理源」里逐个启用。RSS 源默认 4 小时抓一次。"
       />
       <div class="flex justify-end gap-2">
         <button class="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs" @click="opmlOpen = false">取消</button>

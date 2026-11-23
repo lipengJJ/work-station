@@ -11,7 +11,9 @@ import {
   Activity,
   ArrowRight,
   CheckCircle2,
+  ClipboardList,
   Database,
+  HardDrive,
   MessageSquare,
   PlusCircle,
   Radar,
@@ -49,12 +51,25 @@ const STATUS_LABEL: Record<string, string> = {
   failed: '失败',
 };
 
+const TASK_STATUS_META: Record<string, { label: string; cls: string }> = {
+  pending: { label: '排队中', cls: 'text-muted' },
+  running: { label: '运行中', cls: 'text-warning' },
+  success: { label: '成功', cls: 'text-success' },
+  failed: { label: '失败', cls: 'text-destructive' },
+};
+
 // ---------------------------------------------------------------- 数据 ----
 
 const data = ref<WorkbenchApi.HomeResponse>();
 const storage = ref<WorkbenchApi.StorageStats>();
 const loading = ref(true);
 const router = useRouter();
+
+const today = new Date().toLocaleDateString('zh-CN', {
+  month: 'long',
+  day: 'numeric',
+  weekday: 'long',
+});
 
 function formatBytes(n: number): string {
   if (!n) return '0 B';
@@ -97,6 +112,11 @@ const runningTasks = computed(() => data.value?.running_tasks ?? []);
 const hasRunning = computed(() => runningTasks.value.length > 0);
 const trend = computed(() => data.value?.trend ?? []);
 const dist = computed(() => data.value?.status_distribution ?? {});
+const recentTasks = computed(() => data.value?.recent_tasks ?? []);
+
+const totalBytes = computed(
+  () => (storage.value?.db_size ?? 0) + (storage.value?.storage_size ?? 0),
+);
 
 function taskProgress(t: WorkbenchApi.RunningTask): number {
   if (!t.progress_total) return 0;
@@ -107,11 +127,16 @@ function phaseText(t: WorkbenchApi.RunningTask): string {
   return PHASE_TEXT[t.phase ?? ''] ?? t.phase ?? '';
 }
 
-// ---------------------------------------------------------- 任务趋势柱状图（放大填满）----
+function taskTime(iso: null | string): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('zh-CN', { hour12: false }).slice(5, 16);
+}
+
+// ---------------------------------------------------------- 任务趋势柱状图 ----
 
 const TREND_W = 560;
-const TREND_H = 220;
-const TREND_PAD = { top: 16, right: 12, bottom: 26, left: 34 };
+const TREND_H = 200;
+const TREND_PAD = { top: 14, right: 12, bottom: 24, left: 32 };
 
 const trendChart = computed(() => {
   const points = trend.value;
@@ -119,7 +144,7 @@ const trendChart = computed(() => {
   const innerH = TREND_H - TREND_PAD.top - TREND_PAD.bottom;
   const max = Math.max(1, ...points.flatMap((p) => [p.created, p.finished]));
   const step = points.length > 1 ? innerW / points.length : innerW;
-  const barW = Math.min(34, step * 0.34);
+  const barW = Math.min(30, step * 0.32);
   const gap = 4;
   const bars = points.map((p, i) => {
     const cx = TREND_PAD.left + step * i + step / 2;
@@ -146,11 +171,11 @@ const trendChart = computed(() => {
   return { bars, labels, ticks, max };
 });
 
-// ---------------------------------------------------------- 存储面积折线图（Prometheus 风格）----
+// ---------------------------------------------------------- 存储面积折线图 ----
 
 const ST_W = 560;
-const ST_H = 210;
-const ST_PAD = { top: 14, right: 12, bottom: 24, left: 46 };
+const ST_H = 200;
+const ST_PAD = { top: 12, right: 12, bottom: 22, left: 44 };
 
 const storageChart = computed(() => {
   const points = storage.value?.trend ?? [];
@@ -201,13 +226,15 @@ const storageChart = computed(() => {
 
 // ---------------------------------------------------------- 成功率环形 ----
 
-const RING_R = 50;
+const RING_R = 46;
 const RING_C = 2 * Math.PI * RING_R;
 const successRate = computed(() => {
   const r = summary.value?.success_rate ?? 0;
   return Math.max(0, Math.min(100, r));
 });
-const successDone = computed(() => (summary.value?.success_count ?? 0) + (summary.value?.failed_count ?? 0));
+const successDone = computed(
+  () => (summary.value?.success_count ?? 0) + (summary.value?.failed_count ?? 0),
+);
 
 // ---------------------------------------------------------------- 时钟 ----
 
@@ -229,218 +256,251 @@ onBeforeUnmount(() => {
 
 <template>
   <Page :auto-content-height="true" content-class="!p-0">
-    <div class="home-eclipse custom-scrollbar flex h-full flex-col gap-5 overflow-y-auto p-6 lg:p-8 select-none">
-      <!-- 双列布局 -->
-      <div class="grid min-h-0 grid-cols-1 gap-5 xl:grid-cols-[1.9fr_1fr]">
-        <!-- ==================== 左列 ==================== -->
-        <div class="flex min-w-0 flex-col gap-5">
-          <!-- ① 概览 -->
-          <div class="rounded-[22px] p-6" style="background: var(--hm-card)">
-            <div class="mb-5 text-lg font-bold" style="color: var(--hm-ink)">概览</div>
-            <div class="grid grid-cols-2 gap-6 md:grid-cols-4">
-              <div
-                v-for="kpi in [
-                  { label: '任务总数', value: summary?.total_tasks ?? 0, icon: Database, sub: '全部模块累计' },
-                  { label: '运行中', value: summary?.running_count ?? 0, icon: Activity, sub: '采集 / 补抓 / 追踪' },
-                  { label: '今日新增', value: summary?.today_new ?? 0, icon: PlusCircle, sub: '今天创建的任务' },
-                  { label: '今日完成', value: summary?.today_done ?? 0, icon: CheckCircle2, sub: '今天跑完的任务' },
-                ] as const"
-                :key="kpi.label"
-                class="flex items-center gap-3.5"
-              >
-                <div class="flex size-12 shrink-0 items-center justify-center rounded-2xl" style="background: var(--hm-accent-soft); color: var(--hm-accent)">
-                  <component :is="kpi.icon" class="size-6" />
-                </div>
-                <div class="min-w-0">
-                  <div class="text-xs" style="color: var(--hm-muted)">{{ kpi.label }}</div>
-                  <div class="text-3xl font-black tabular-nums" style="color: var(--hm-accent)">{{ kpi.value }}</div>
-                  <div class="truncate text-[11px]" style="color: var(--hm-muted)">{{ kpi.sub }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
+    <div class="custom-scrollbar flex h-full flex-col gap-3 overflow-y-auto p-4 lg:p-5 select-none">
+      <!-- ==================== 页头：紧凑一行 ==================== -->
+      <div class="flex items-center justify-between gap-3 px-1">
+        <div class="min-w-0">
+          <div class="text-base font-bold text-foreground">总览</div>
+          <div class="mt-0.5 truncate text-xs text-muted-foreground">{{ today }} · 任务中心状态一览</div>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <span class="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
+            <i class="h-1.5 w-1.5 rounded-full bg-primary"></i>
+            运行中 {{ summary?.running_count ?? 0 }}
+          </span>
+          <span class="hidden items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground sm:flex">
+            <HardDrive class="size-3.5 text-primary" />
+            {{ formatBytes(totalBytes) }}
+          </span>
+        </div>
+      </div>
 
-          <!-- ② 任务趋势（独占左列宽度，柱状图放大填满） -->
-          <div class="rounded-[22px] p-6" style="background: var(--hm-card)">
-            <div class="mb-4 flex items-center justify-between">
-              <span class="text-lg font-bold" style="color: var(--hm-ink)">任务趋势</span>
-              <span class="flex gap-3 text-[11px]" style="color: var(--hm-muted)">
-                <span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full" style="background: var(--hm-accent)"></i>创建</span>
-                <span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full" style="background: var(--hm-chart-2)"></i>完成</span>
-              </span>
-            </div>
-            <svg :viewBox="`0 0 ${TREND_W} ${TREND_H}`" class="h-auto w-full">
-              <template v-for="tick in trendChart.ticks" :key="tick.y">
-                <line :x1="TREND_PAD.left" :x2="TREND_W - TREND_PAD.right" :y1="tick.y" :y2="tick.y" stroke="var(--hm-inner)" stroke-width="0.7" stroke-dasharray="3 4" />
-                <text :x="TREND_PAD.left - 6" :y="tick.y + 3" text-anchor="end" fill="var(--hm-muted)" style="font-size: 10px">{{ tick.label }}</text>
-              </template>
-              <template v-if="trend.length">
-                <g v-for="(b, i) in trendChart.bars" :key="i">
-                  <rect :x="b.x1" :y="b.y1" :width="b.w" :height="Math.max(b.h1, 2)" rx="4" fill="var(--hm-accent)" opacity="0.92" />
-                  <rect :x="b.x2" :y="b.y2" :width="b.w" :height="Math.max(b.h2, 2)" rx="4" fill="var(--hm-chart-2)" opacity="0.9" />
-                </g>
-                <g v-for="(label, i) in trendChart.labels" :key="label">
-                  <text
-                    :x="TREND_PAD.left + (trend.length > 1 ? ((TREND_W - TREND_PAD.left - TREND_PAD.right) / trend.length) * i + (TREND_W - TREND_PAD.left - TREND_PAD.right) / trend.length / 2 : TREND_W / 2)"
-                    :y="TREND_H - 6"
-                    text-anchor="middle"
-                    fill="var(--hm-muted)"
-                    style="font-size: 10px"
-                  >
-                    {{ label }}
-                  </text>
-                </g>
-              </template>
+      <!-- ==================== KPI 条 ==================== -->
+      <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div
+          v-for="kpi in [
+            { label: '任务总数', value: summary?.total_tasks ?? 0, icon: Database, sub: '全部模块累计' },
+            { label: '运行中', value: summary?.running_count ?? 0, icon: Activity, sub: '采集 / 补抓 / 追踪' },
+            { label: '今日新增', value: summary?.today_new ?? 0, icon: PlusCircle, sub: '今天创建的任务' },
+            { label: '今日完成', value: summary?.today_done ?? 0, icon: CheckCircle2, sub: '今天跑完的任务' },
+          ] as const"
+          :key="kpi.label"
+          class="rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/40"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <span class="truncate text-xs text-muted-foreground">{{ kpi.label }}</span>
+            <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <component :is="kpi.icon" class="size-4" />
+            </span>
+          </div>
+          <div class="mt-2.5 text-2xl font-bold tabular-nums text-foreground">{{ kpi.value }}</div>
+          <div class="mt-0.5 truncate text-[11px] text-muted-foreground">{{ kpi.sub }}</div>
+        </div>
+      </div>
+
+      <!-- ==================== 图表区 ==================== -->
+      <div class="grid gap-3 lg:grid-cols-2">
+        <!-- 任务趋势 -->
+        <div class="rounded-xl border border-border bg-card p-4">
+          <div class="mb-3 flex items-center justify-between">
+            <span class="text-sm font-semibold text-foreground">任务趋势</span>
+            <span class="flex gap-3 text-[11px] text-muted-foreground">
+              <span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-primary"></i>创建</span>
+              <span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-success"></i>完成</span>
+            </span>
+          </div>
+          <svg :viewBox="`0 0 ${TREND_W} ${TREND_H}`" class="h-auto w-full">
+            <template v-for="tick in trendChart.ticks" :key="tick.y">
+              <line :x1="TREND_PAD.left" :x2="TREND_W - TREND_PAD.right" :y1="tick.y" :y2="tick.y" stroke="hsl(var(--border))" stroke-width="0.7" stroke-dasharray="3 4" />
+              <text :x="TREND_PAD.left - 6" :y="tick.y + 3" text-anchor="end" fill="hsl(var(--muted-foreground))" style="font-size: 10px">{{ tick.label }}</text>
+            </template>
+            <template v-if="trend.length">
+              <g v-for="(b, i) in trendChart.bars" :key="i">
+                <rect :x="b.x1" :y="b.y1" :width="b.w" :height="Math.max(b.h1, 2)" rx="3" fill="hsl(var(--primary))" opacity="0.9" />
+                <rect :x="b.x2" :y="b.y2" :width="b.w" :height="Math.max(b.h2, 2)" rx="3" fill="hsl(var(--success))" opacity="0.85" />
+              </g>
+              <g v-for="(label, i) in trendChart.labels" :key="label">
+                <text
+                  :x="TREND_PAD.left + (trend.length > 1 ? ((TREND_W - TREND_PAD.left - TREND_PAD.right) / trend.length) * i + (TREND_W - TREND_PAD.left - TREND_PAD.right) / trend.length / 2 : TREND_W / 2)"
+                  :y="TREND_H - 6"
+                  text-anchor="middle"
+                  fill="hsl(var(--muted-foreground))"
+                  style="font-size: 10px"
+                >
+                  {{ label }}
+                </text>
+              </g>
+            </template>
+            <text v-if="!trend.length" :x="TREND_W / 2" :y="TREND_H / 2" text-anchor="middle" fill="hsl(var(--muted-foreground))" style="font-size: 12px">
+              暂无任务数据
+            </text>
+          </svg>
+        </div>
+
+        <!-- 存储使用 -->
+        <div class="rounded-xl border border-border bg-card p-4">
+          <div class="mb-3 flex items-center justify-between">
+            <span class="text-sm font-semibold text-foreground">存储使用</span>
+            <span class="flex gap-3 text-[11px] text-muted-foreground">
+              <span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-primary"></i>数据库</span>
+              <span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-secondary-foreground/70"></i>素材</span>
+            </span>
+          </div>
+          <svg :viewBox="`0 0 ${ST_W} ${ST_H}`" class="h-auto w-full">
+            <defs>
+              <linearGradient id="home-grad-db" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="hsl(var(--primary))" stop-opacity="0.22" />
+                <stop offset="100%" stop-color="hsl(var(--primary))" stop-opacity="0" />
+              </linearGradient>
+              <linearGradient id="home-grad-st" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="hsl(var(--secondary-foreground))" stop-opacity="0.18" />
+                <stop offset="100%" stop-color="hsl(var(--secondary-foreground))" stop-opacity="0" />
+              </linearGradient>
+            </defs>
+            <template v-for="tick in storageChart.ticks" :key="tick.y">
+              <line :x1="ST_PAD.left" :x2="ST_W - ST_PAD.right" :y1="tick.y" :y2="tick.y" stroke="hsl(var(--border))" stroke-width="0.7" stroke-dasharray="3 4" />
+              <text :x="ST_PAD.left - 6" :y="tick.y + 3" text-anchor="end" fill="hsl(var(--muted-foreground))" style="font-size: 10px">{{ tick.label }}</text>
+            </template>
+            <template v-if="storageChart.count > 1">
+              <path :d="storageChart.areaStorage" fill="url(#home-grad-st)" />
+              <path :d="storageChart.areaDb" fill="url(#home-grad-db)" />
+              <path :d="storageChart.lineStorage" fill="none" stroke="hsl(var(--secondary-foreground))" stroke-width="1.8" opacity="0.55" />
+              <path :d="storageChart.lineDb" fill="none" stroke="hsl(var(--primary))" stroke-width="1.8" opacity="0.95" />
+            </template>
+            <text v-if="!storageChart.count" :x="ST_W / 2" :y="ST_H / 2" text-anchor="middle" fill="hsl(var(--muted-foreground))" style="font-size: 12px">
+              正在采样中，每 5 分钟记录一个点
+            </text>
+            <g v-for="l in storageChart.labels" :key="l.x">
+              <text :x="l.x" :y="ST_H - 6" text-anchor="middle" fill="hsl(var(--muted-foreground))" style="font-size: 10px">{{ l.t }}</text>
+            </g>
+          </svg>
+          <div class="mt-3 flex justify-between border-t pt-2.5 text-[11px] text-muted-foreground" style="border-color: hsl(var(--border))">
+            <span>笔记 {{ storage?.note_count ?? 0 }}</span>
+            <span>评论 {{ storage?.comment_count ?? 0 }}</span>
+            <span>任务 {{ storage?.task_count ?? 0 }}</span>
+            <span>结构化 {{ storage?.structured_count ?? 0 }}</span>
+            <span>报告 {{ storage?.report_count ?? 0 }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== 底部三栏 ==================== -->
+      <div class="grid gap-3 lg:grid-cols-3">
+        <!-- 成功率 -->
+        <div class="rounded-xl border border-border bg-card p-4">
+          <div class="mb-3 text-sm font-semibold text-foreground">成功率</div>
+          <div class="flex items-center gap-4">
+            <svg viewBox="0 0 120 120" class="h-[104px] w-[104px] shrink-0">
+              <circle cx="60" cy="60" r="52" fill="none" stroke="hsl(var(--muted))" stroke-width="4" />
+              <circle
+                cx="60"
+                cy="60"
+                :r="RING_R"
+                fill="none"
+                stroke="hsl(var(--primary))"
+                stroke-width="12"
+                :stroke-dasharray="`${(successRate / 100) * RING_C} ${RING_C}`"
+                stroke-linecap="round"
+                transform="rotate(-90 60 60)"
+              />
+              <text x="60" y="63" text-anchor="middle" fill="hsl(var(--foreground))" style="font-size: 21px; font-weight: 800">{{ successRate }}%</text>
+              <text x="60" y="79" text-anchor="middle" fill="hsl(var(--muted-foreground))" style="font-size: 9px">成功率</text>
             </svg>
-          </div>
-
-          <!-- ⑤ 系统信息（深色 CTA 卡片） -->
-          <div class="rounded-[22px] p-7" style="background: var(--hm-dark-card); color: var(--hm-dark-text)">
-            <div class="flex flex-wrap items-center justify-between gap-6">
-              <div>
-                <div class="text-sm opacity-70">当前数据</div>
-                <div class="text-4xl font-black tabular-nums">
-                  {{ formatBytes((storage?.db_size ?? 0) + (storage?.storage_size ?? 0)) }}
-                </div>
-                <div class="mt-1 text-xs opacity-60">数据库 + 素材合计</div>
-                <ul class="mt-4 space-y-1.5 text-sm">
-                  <li>· 结构化笔记 {{ storage?.structured_count ?? 0 }} 篇</li>
-                  <li>· 分析报告 {{ storage?.report_count ?? 0 }} 份</li>
-                </ul>
+            <div class="min-w-0 flex-1">
+              <div class="mb-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>成功 {{ summary?.success_count ?? 0 }}</span>
+                <span>完成 {{ successDone }}</span>
               </div>
-              <button
-                class="flex items-center gap-2 rounded-full px-6 py-3 text-sm font-bold transition-opacity hover:opacity-90"
-                style="background: var(--hm-accent-soft); color: var(--hm-accent)"
-                @click="router.push('/system/task-center')"
-              >
-                进入任务中心
-                <ArrowRight class="size-4" />
-              </button>
+              <div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div class="h-full rounded-full bg-primary" :style="{ width: `${successRate}%` }"></div>
+              </div>
+              <div class="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                <span v-for="(v, k) in dist" :key="k" class="rounded-md bg-muted/60 px-1.5 py-0.5">
+                  {{ STATUS_LABEL[k] ?? k }} {{ v }}
+                </span>
+                <span v-if="!Object.keys(dist).length">暂无统计</span>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- ==================== 右列 ==================== -->
-        <div class="flex min-w-0 flex-col gap-5">
-          <!-- ② 成功率环形 -->
-          <div class="rounded-[22px] p-6" style="background: var(--hm-card)">
-            <div class="mb-3 text-lg font-bold" style="color: var(--hm-ink)">成功率</div>
-            <div class="flex items-center gap-5">
-              <svg viewBox="0 0 140 140" class="h-[130px] w-[130px] shrink-0">
-                <circle cx="70" cy="70" r="60" fill="none" stroke="var(--hm-inner)" stroke-width="4" />
-                <circle
-                  cx="70"
-                  cy="70"
-                  :r="RING_R"
-                  fill="none"
-                  stroke="var(--hm-accent)"
-                  stroke-width="13"
-                  :stroke-dasharray="`${(successRate / 100) * RING_C} ${RING_C}`"
-                  stroke-linecap="round"
-                  transform="rotate(-90 70 70)"
-                />
-                <text x="70" y="74" text-anchor="middle" fill="var(--hm-accent)" style="font-size: 24px; font-weight: 900">
-                  {{ successRate }}%
-                </text>
-                <text x="70" y="92" text-anchor="middle" fill="var(--hm-muted)" style="font-size: 10px">成功率</text>
-              </svg>
+        <!-- 运行中任务 -->
+        <div class="flex min-h-0 flex-col rounded-xl border border-border bg-card p-4">
+          <div class="mb-2 flex items-center justify-between">
+            <span class="text-sm font-semibold text-foreground">运行中任务</span>
+            <span class="text-[11px] text-muted-foreground">点击跳转详情</span>
+          </div>
+          <Empty v-if="!loading && !hasRunning" :image="Empty.PRESENTED_IMAGE_SIMPLE" description="暂无运行中的任务" />
+          <div v-else class="flex max-h-[260px] flex-col gap-1.5 overflow-y-auto pr-0.5">
+            <div
+              v-for="t in runningTasks"
+              :key="`${t.kind}-${t.id}`"
+              class="flex cursor-pointer items-start gap-2.5 rounded-lg p-2 transition-colors hover:bg-muted/50"
+              @click="router.push(KIND_META[t.kind]?.route ?? '/')"
+            >
+              <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <component :is="KIND_META[t.kind]?.icon" class="size-4" />
+              </div>
               <div class="min-w-0 flex-1">
-                <div class="mb-2 flex items-center justify-between text-[11px]" style="color: var(--hm-muted)">
-                  <span>成功 {{ summary?.success_count ?? 0 }}</span>
-                  <span>完成 {{ successDone }}</span>
+                <div class="flex items-center justify-between gap-2">
+                  <div class="truncate text-[13px] font-semibold text-foreground">{{ t.title }}</div>
+                  <span class="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <i
+                      class="h-1.5 w-1.5 rounded-full home-dot-running"
+                      :style="{ background: t.status === 'running' ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))' }"
+                    ></i>
+                    {{ t.status === 'pending' ? '排队中' : '进行中' }}
+                  </span>
                 </div>
-                <div class="h-1.5 w-full overflow-hidden rounded-full" style="background: var(--hm-inner)">
-                  <div class="h-full rounded-full" style="background: var(--hm-accent)" :style="{ width: `${successRate}%` }"></div>
+                <div class="truncate text-xs text-muted-foreground">{{ phaseText(t) }}</div>
+                <div class="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+                  <div class="h-full rounded-full bg-primary" :style="{ width: `${taskProgress(t)}%` }"></div>
                 </div>
-                <div class="mt-3 text-[11px] leading-relaxed" style="color: var(--hm-muted)">
-                  {{ Object.entries(dist).map(([k, v]) => `${STATUS_LABEL[k] ?? k} ${v}`).join(' · ') || '暂无统计' }}
+                <div class="mt-1 text-[11px] text-muted-foreground">
+                  <span v-if="t.started_at">{{ new Date(t.started_at).toLocaleTimeString() }} 开始</span>
+                  <span class="ml-2">{{ t.progress_current ?? 0 }}/{{ t.progress_total ?? 0 }}</span>
                 </div>
               </div>
             </div>
           </div>
+        </div>
 
-          <!-- ③ 存储使用（Prometheus 风格面积折线图） -->
-          <div class="rounded-[22px] p-6" style="background: var(--hm-card)">
-            <div class="mb-4 flex items-center justify-between">
-              <span class="text-lg font-bold" style="color: var(--hm-ink)">存储使用</span>
-              <span class="flex gap-3 text-[11px]" style="color: var(--hm-muted)">
-                <span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full" style="background: var(--hm-accent)"></i>数据库</span>
-                <span class="flex items-center gap-1.5"><i class="h-2 w-2 rounded-full" style="background: var(--hm-chart-2)"></i>素材</span>
-              </span>
-            </div>
-            <svg :viewBox="`0 0 ${ST_W} ${ST_H}`" class="h-auto w-full">
-              <defs>
-                <linearGradient id="home-grad-db" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="var(--hm-accent)" stop-opacity="0.25" />
-                  <stop offset="100%" stop-color="var(--hm-accent)" stop-opacity="0" />
-                </linearGradient>
-                <linearGradient id="home-grad-st" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="var(--hm-chart-2)" stop-opacity="0.25" />
-                  <stop offset="100%" stop-color="var(--hm-chart-2)" stop-opacity="0" />
-                </linearGradient>
-              </defs>
-              <template v-for="tick in storageChart.ticks" :key="tick.y">
-                <line :x1="ST_PAD.left" :x2="ST_W - ST_PAD.right" :y1="tick.y" :y2="tick.y" stroke="var(--hm-inner)" stroke-width="0.7" stroke-dasharray="3 4" />
-                <text :x="ST_PAD.left - 6" :y="tick.y + 3" text-anchor="end" fill="var(--hm-muted)" style="font-size: 10px">{{ tick.label }}</text>
-              </template>
-              <template v-if="storageChart.count > 1">
-                <path :d="storageChart.areaStorage" fill="url(#home-grad-st)" />
-                <path :d="storageChart.areaDb" fill="url(#home-grad-db)" />
-                <path :d="storageChart.lineStorage" fill="none" stroke="var(--hm-chart-2)" stroke-width="1.8" opacity="0.9" />
-                <path :d="storageChart.lineDb" fill="none" stroke="var(--hm-accent)" stroke-width="1.8" opacity="0.95" />
-              </template>
-              <text v-if="!storageChart.count" :x="ST_W / 2" :y="ST_H / 2" text-anchor="middle" fill="var(--hm-muted)" style="font-size: 12px">
-                正在采样中，每 5 分钟记录一个点
-              </text>
-              <g v-for="l in storageChart.labels" :key="l.x">
-                <text :x="l.x" :y="ST_H - 6" text-anchor="middle" fill="var(--hm-muted)" style="font-size: 10px">{{ l.t }}</text>
-              </g>
-            </svg>
-            <div class="mt-4 flex justify-between border-t pt-3 text-[11px]" style="border-color: var(--hm-inner); color: var(--hm-muted)">
-              <span>笔记 {{ storage?.note_count ?? 0 }}</span>
-              <span>评论 {{ storage?.comment_count ?? 0 }}</span>
-              <span>任务 {{ storage?.task_count ?? 0 }}</span>
-            </div>
+        <!-- 最近任务 -->
+        <div class="flex min-h-0 flex-col rounded-xl border border-border bg-card p-4">
+          <div class="mb-2 flex items-center justify-between">
+            <span class="text-sm font-semibold text-foreground">最近任务</span>
+            <button
+              class="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-primary"
+              @click="router.push('/system/task-center')"
+            >
+              全部
+              <ArrowRight class="size-3" />
+            </button>
           </div>
-
-          <!-- ④ 运行中任务 -->
-          <div class="flex min-h-0 flex-1 flex-col rounded-[22px] p-6" style="background: var(--hm-card)">
-            <div class="mb-4 flex items-center justify-between">
-              <span class="text-lg font-bold" style="color: var(--hm-ink)">运行中任务</span>
-              <span class="text-[11px]" style="color: var(--hm-muted)">点击跳转详情</span>
-            </div>
-            <Empty v-if="!loading && !hasRunning" description="暂无运行中的任务" />
-            <div v-else class="flex max-h-[560px] flex-col gap-2 overflow-y-auto">
-              <div
-                v-for="t in runningTasks"
-                :key="`${t.kind}-${t.id}`"
-                class="flex cursor-pointer items-start gap-3 rounded-2xl p-3 transition-colors hover:bg-[var(--hm-inner)]"
-                @click="router.push(KIND_META[t.kind]?.route ?? '/')"
-              >
-                <div class="flex size-10 shrink-0 items-center justify-center rounded-xl" style="background: var(--hm-accent-soft); color: var(--hm-accent)">
-                  <component :is="KIND_META[t.kind]?.icon" class="size-5" />
+          <Empty v-if="!loading && !recentTasks.length" :image="Empty.PRESENTED_IMAGE_SIMPLE" description="暂无任务记录" />
+          <div v-else class="flex max-h-[260px] flex-col gap-1.5 overflow-y-auto pr-0.5">
+            <div
+              v-for="t in recentTasks.slice(0, 8)"
+              :key="t.id"
+              class="flex cursor-pointer items-center gap-2.5 rounded-lg p-2 transition-colors hover:bg-muted/50"
+              @click="router.push('/system/task-center')"
+            >
+              <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <ClipboardList class="size-4" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="truncate text-[13px] font-medium text-foreground">
+                    {{ t.module }} · {{ t.task_type }}
+                  </span>
+                  <span class="shrink-0 text-[11px]" :class="TASK_STATUS_META[t.status]?.cls ?? 'text-muted'">
+                    {{ TASK_STATUS_META[t.status]?.label ?? t.status }}
+                  </span>
                 </div>
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center justify-between gap-2">
-                    <div class="truncate text-sm font-bold" style="color: var(--hm-ink)">{{ t.title }}</div>
-                    <span class="flex shrink-0 items-center gap-1.5 text-[11px]" style="color: var(--hm-muted)">
-                      <i
-                        class="h-1.5 w-1.5 rounded-full"
-                        :class="{ 'home-dot-running': t.status === 'running' }"
-                        :style="{ background: t.status === 'running' ? 'var(--hm-accent)' : 'var(--hm-muted)' }"
-                      ></i>
-                      {{ t.status === 'pending' ? '排队中' : '进行中' }}
-                    </span>
-                  </div>
-                  <div class="truncate text-xs" style="color: var(--hm-muted)">{{ phaseText(t) }}</div>
-                  <div class="mt-1.5 h-1 w-full overflow-hidden rounded-full" style="background: var(--hm-inner)">
-                    <div class="h-full rounded-full" style="background: var(--hm-accent)" :style="{ width: `${taskProgress(t)}%` }"></div>
-                  </div>
-                  <div class="mt-1.5 text-[11px]" style="color: var(--hm-muted)">
-                    <span v-if="t.started_at">{{ new Date(t.started_at).toLocaleTimeString() }} 开始</span>
-                    <span class="ml-2">{{ t.progress_current ?? 0 }}/{{ t.progress_total ?? 0 }}</span>
-                  </div>
+                <div class="truncate text-xs text-muted-foreground">
+                  {{ t.result_summary || '—' }}
                 </div>
+                <div class="mt-0.5 text-[11px] text-muted-foreground">{{ taskTime(t.created_at) }}</div>
               </div>
             </div>
           </div>
@@ -451,46 +511,16 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* ===== 首页专属墨绿色板（Eclipse 风格），亮暗两套 ===== */
-.home-eclipse {
-  --hm-page: #e5e5e5;
-  --hm-card: #edece7;
-  --hm-inner: #e3e2dc;
-  --hm-ink: #2b3a45;
-  --hm-muted: #8a8f8a;
-  --hm-accent: #1a4d1a;
-  --hm-accent-mid: #5c8a52;
-  --hm-accent-soft: #a9c89b;
-  --hm-chart-2: #a9c89b;
-  --hm-dark-card: #3d453d;
-  --hm-dark-text: #f0efea;
-  background: var(--hm-page);
-}
-
-.dark .home-eclipse {
-  --hm-page: #141614;
-  --hm-card: #1e211e;
-  --hm-inner: #262a26;
-  --hm-ink: #e8eae6;
-  --hm-muted: #8a928a;
-  --hm-accent: #7db86a;
-  --hm-accent-mid: #5c8a52;
-  --hm-accent-soft: #35502e;
-  --hm-chart-2: #5c8a52;
-  --hm-dark-card: #2a2e2a;
-  --hm-dark-text: #e8eae6;
-}
-
 .home-dot-running {
   animation: home-pulse 1.8s infinite;
 }
 
 @keyframes home-pulse {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--hm-accent) 45%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, hsl(var(--primary)) 45%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 7px transparent;
+    box-shadow: 0 0 0 6px transparent;
   }
   100% {
     box-shadow: 0 0 0 0 transparent;

@@ -19,6 +19,10 @@ class EmbeddingRequest:
     model: str
     texts: list[str]
     task_type: str = TASK_DOCUMENT  # retrieval_document / retrieval_query
+    dimension: int | None = None
+    """目标向量维度。部分厂商支持输出降维（gemini outputDimensionality /
+    openai dimensions），配置维度小于模型默认维度时务必显式传入，否则两边的
+    向量维度对不上（如 gemini-embedding-001 默认 3072，配置 768 需降维）。"""
 
 
 @dataclass

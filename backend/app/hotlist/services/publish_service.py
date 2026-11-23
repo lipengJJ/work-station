@@ -232,6 +232,24 @@ code{{background:#f4f4f4;padding:1px 6px;border-radius:4px;font-size:14px}}
 
 # ------------------------------------------------------------ 发布 ----
 
+def apply_publish_result(db: Session, report: HotTopicReport, result: dict) -> None:
+    """把 publish_report 的返回结果回写到报告行并提交。
+
+    publish_report 失败不抛异常，而是返回 {"status": "failed", "error": ...}；
+    把「成功→记 urls/时间、失败→记 error」这段收尾统一到这里，让控制器的手动
+    生成路径与调度器的定时路径复用同一实现。
+    """
+    if result["status"] == "success":
+        report.publish_status = "success"
+        report.publish_urls = json.dumps(result["urls"], ensure_ascii=False)
+        report.published_at = datetime.now(timezone.utc)
+        report.error = ""
+    else:
+        report.publish_status = "failed"
+        report.error = result.get("error", "")[:500]
+    db.commit()
+
+
 def publish_report(db: Session, report: HotTopicReport) -> dict:
     """发布一期报告 + 增量维护索引。
 

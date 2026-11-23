@@ -17,9 +17,9 @@ from app.core.scheduler import shutdown_scheduler, start_scheduler
 
 setup_logging()
 from app.analysis.controllers import analyses as analyses_api
-from app.hotlist.controllers import digest as hotlist_digest_api
 from app.hotlist.controllers import hotlist as hotlist_api
 from app.hotlist.controllers import reports as hotlist_reports_api
+from app.hotlist.controllers import rsshub as hotlist_rsshub_api
 from app.hotlist.controllers import sources as hotlist_sources_api
 from app.hotlist.controllers import topics as hotlist_topics_api
 from app.resource.controllers import resource as resource_api
@@ -65,6 +65,15 @@ async def lifespan(app: FastAPI):
     hotlist_source_service.seed_default_groups()
     hotlist_source_service.seed_default_sources()
     hotlist_scheduler_jobs.register_all_enabled_jobs()
+    # 上一个进程若在生成报告时被杀/重启，report.status 会孤儿地停在 running
+    # 永远不再变化（前端一直显示"生成中"，日志也不会再有动静）；启动时清理掉
+    try:
+        from app.core.database import SessionLocal as _SessionLocal
+        from app.hotlist.services import topic_report_service as hotlist_topic_report_service
+        with _SessionLocal() as _db:
+            hotlist_topic_report_service.cleanup_stale_running_reports(_db)
+    except Exception:
+        logger.exception("清理孤儿 running 报告失败")
     # 签名脚本缺失检测：clone 仓库后 backend/static 没有逆向签名脚本时给出明确提示
     # （不影响启动，评论等页面级功能正常；搜索/详情接口首次使用时会再次报错）
     try:
@@ -133,9 +142,9 @@ def create_app() -> FastAPI:
     app.include_router(hotlist_api.router)
     app.include_router(hotlist_sources_api.router)
     app.include_router(hotlist_sources_api.group_router)
-    app.include_router(hotlist_digest_api.router)
     app.include_router(hotlist_topics_api.router)
     app.include_router(hotlist_reports_api.router)
+    app.include_router(hotlist_rsshub_api.router)
     app.include_router(datacenter_router)
 
     return app

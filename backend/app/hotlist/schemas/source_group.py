@@ -11,6 +11,8 @@ class SourceGroupIn(BaseModel):
     description: str = ""
     color: str = ""
     sort_order: int = 0
+    crawl_enabled: bool = False
+    """是否让组内源不依赖主题订阅、常驻自动抓取。默认关闭。"""
 
 
 class SourceGroupUpdateIn(BaseModel):
@@ -20,6 +22,7 @@ class SourceGroupUpdateIn(BaseModel):
     description: str | None = None
     color: str | None = None
     sort_order: int | None = None
+    crawl_enabled: bool | None = None
 
 
 class SourceGroupOut(BaseModel):
@@ -33,4 +36,5 @@ class SourceGroupOut(BaseModel):
     color: str = ""
     sort_order: int = 0
     is_builtin: bool = False
+    crawl_enabled: bool = False
     source_count: int = 0

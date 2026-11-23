@@ -8,8 +8,8 @@
 - GET/POST /source-groups                 分组列表 / 新建
 - PUT/DELETE /source-groups/{group_id}    分组更新 / 删除（内置分组拒删）
 
-只做参数校验与编排，业务逻辑在 source_service；更新/新建/删除后同步重调度对应 cron job，
-不用重启进程就能生效（cron_expr 入库就是为了这个）。
+只做参数校验与编排，业务逻辑在 source_service；更新/新建/删除后同步重调度对应抓取 job，
+不用重启进程就能生效（interval_hours 入库就是为了这个）。
 """
 from __future__ import annotations
 
@@ -101,8 +101,13 @@ def delete_source(
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ) -> dict:
+    try:
+        source_service.delete_source(db, source_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    # 只有真删成功才摘 job：先摘的话，一旦上面因为还被主题订阅关联而拒绝，
+    # 这个还活着的源就会平白丢了 cron job，得等下次重启才能恢复抓取。
     scheduler_jobs.unregister_job(source_id)
-    source_service.delete_source(db, source_id)
     return {"ok": True}
 
 
@@ -172,13 +177,7 @@ def crawl_sources(
     后台线程跑、立即返回：几十个源即使有熔断也要十几秒，同步等会顶到网关超时。
     返回 job_id，前端拿它轮询 GET /crawl-status 看进度；页面刷新也能靠 job_id 恢复。
     """
-    source_ids = payload.source_ids or [
-        row[0]
-        for row in db.query(HotSource.id)
-        .filter(HotSource.enabled.is_(True))
-        .order_by(HotSource.sort_order.asc())
-        .all()
-    ]
+    source_ids = payload.source_ids or source_service.list_enabled_source_ids(db)
     if not source_ids:
         raise HTTPException(400, "没有可抓取的源")
     if len(source_ids) > MAX_MANUAL_CRAWL_SOURCES:
@@ -306,28 +305,45 @@ def import_opml(
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ) -> dict:
-    """批量导入 OPML 到分组（content 优先；给了 opml_url 先拉文本）。不依赖主题。"""
+    """批量导入到分组：feed_urls（直填地址列表）优先，其次 content，最后 opml_url。不依赖主题。"""
     try:
-        content = payload.content
-        if not (content or "").strip() and payload.opml_url:
-            content = opml_service.fetch_opml(payload.opml_url)
-        if not (content or "").strip():
-            raise ValueError("请提供 OPML 文本或 URL")
-        filename = (
-            payload.opml_url.rstrip("/").split("/")[-1][:100]
-            if payload.opml_url
-            else ""
-        )
-        imported_from = f"opml:{filename}" if filename else "opml:paste"
-        result = opml_service.import_opml(
-            db,
-            content,
-            group_id=payload.group_id,
-            topic_id=None,
-            imported_from=imported_from,
-        )
+        if payload.feed_urls:
+            result = opml_service.import_feed_urls(
+                db,
+                payload.feed_urls,
+                group_id=payload.group_id,
+                topic_id=None,
+                imported_from="manual",
+            )
+        else:
+            content = payload.content
+            if not (content or "").strip() and payload.opml_url:
+                content = opml_service.fetch_opml(payload.opml_url)
+            if not (content or "").strip():
+                raise ValueError("请提供 OPML 文本、URL 或 RSS 订阅地址")
+            filename = (
+                payload.opml_url.rstrip("/").split("/")[-1][:100]
+                if payload.opml_url
+                else ""
+            )
+            imported_from = f"opml:{filename}" if filename else "opml:paste"
+            result = opml_service.import_opml(
+                db,
+                content,
+                group_id=payload.group_id,
+                topic_id=None,
+                imported_from=imported_from,
+            )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    # 新建的源默认 enabled=True，但只有 register_job 才能让它进当前正在跑的
+    # 调度器；不补这一下，新源要等下次进程重启（register_all_enabled_jobs）
+    # 才会真的开始抓，界面上会看着像"导入了但一直没有新闻"。
+    if result.source_ids:
+        for source in (
+            db.query(HotSource).filter(HotSource.id.in_(result.source_ids)).all()
+        ):
+            scheduler_jobs.register_job(source)
     return result.model_dump()
 
 
@@ -376,8 +392,14 @@ def update_group(
 def delete_group(
     group_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)
 ) -> dict:
+    """删除分组：连组内源一起删，级联清掉这些源产出的全部新闻数据（不可逆）。"""
+    source_ids = source_service.get_group_source_ids(db, group_id)
     try:
-        source_service.delete_group(db, group_id)
+        stats = source_service.delete_group(db, group_id)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"ok": True}
+    # 源已从库里删了，调度器里对应的 cron job 也要摘掉，否则会在正在跑的进程里
+    # 空跑到下次重启（run_crawl 对不存在的 source_id 是安全 no-op，但留着不干净）。
+    for source_id in source_ids:
+        scheduler_jobs.unregister_job(source_id)
+    return {"ok": True, **stats}

@@ -36,6 +36,9 @@ def embed_gemini(request: EmbeddingRequest, api_key: str) -> EmbeddingResult:
                     "model": f"models/{request.model}",
                     "content": {"parts": [{"text": t}]},
                     "taskType": task_type,
+                    # gemini-embedding-001 默认输出 3072 维，配置了目标维度必须显式降维，
+                    # 否则与文章/主题向量库（按配置维度建）对不上
+                    **({"outputDimensionality": request.dimension} if request.dimension else {}),
                 }
                 for t in batch
             ]

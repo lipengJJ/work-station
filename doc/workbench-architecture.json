@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Workbench 整体架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "request-path", "label": "用户请求主路径", "focus": ["users", "webapp", "api", "hotlist", "db"], "note": "从浏览器到热点聚合与持久化的一条主链路。" },
+      { "id": "pipeline", "label": "抓取 → 语义索引 → 推送", "focus": ["sources", "hotlist", "core", "ai", "notify"], "note": "定时抓取、向量化、语义命中与通知分发的后台管线。" },
+      { "id": "modules", "label": "业务模块", "focus": ["hotlist", "xhs", "stock", "core"], "note": "热点聚合、小红书、股票分析共享 Common Core 的 AI 与配置能力。" }
+    ]
+  },
+  "components": [
+    { "id": "users", "type": "external", "label": "用户", "sublabel": "Browser", "pos": [40, 360], "size": [120, 56] },
+    { "id": "webapp", "type": "frontend", "label": "Web App", "sublabel": "web-antd · Vue 3", "pos": [210, 360], "size": [150, 60] },
+    { "id": "api", "type": "backend", "label": "API Server", "sublabel": "FastAPI · :8012", "pos": [430, 360], "size": [150, 64], "tag": "JWT" },
+    { "id": "hotlist", "type": "backend", "label": "热点聚合", "sublabel": "抓取 · 语义检索 · 主题报告", "pos": [700, 360], "size": [180, 72] },
+    { "id": "db", "type": "database", "label": "SQLite", "sublabel": "workbench.db · 向量 BLOB", "pos": [960, 360], "size": [150, 56] },
+    { "id": "core", "type": "backend", "label": "Common Core", "sublabel": "认证 · AI/Embedding Gateway · 通知", "pos": [700, 140], "size": [180, 72] },
+    { "id": "ai", "type": "external", "label": "AI Providers", "sublabel": "Gemini · DeepSeek · Embedding", "pos": [960, 140], "size": [150, 56] },
+    { "id": "sources", "type": "external", "label": "热点数据源", "sublabel": "RSS · GitHub · arXiv · HN", "pos": [210, 140], "size": [150, 56] },
+    { "id": "xhs", "type": "backend", "label": "小红书模块", "sublabel": "采集 · 追踪 · 分析", "pos": [430, 610], "size": [150, 64] },
+    { "id": "stock", "type": "backend", "label": "股票分析", "sublabel": "行情 · 基本面 · AI 报告", "pos": [700, 610], "size": [160, 64] },
+    { "id": "notify", "type": "external", "label": "通知渠道", "sublabel": "企业微信 · Server酱 · 邮件", "pos": [960, 610], "size": [150, 56] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Workbench（自托管）", "wraps": ["webapp", "api", "hotlist", "db", "core", "xhs", "stock"] },
+    { "kind": "security-group", "label": "API · JWT 鉴权", "wraps": ["api"] }
+  ],
+  "connections": [
+    { "id": "users-webapp", "from": "users", "to": "webapp", "label": "HTTPS", "variant": "emphasis" },
+    { "id": "webapp-api", "from": "webapp", "to": "api", "label": "REST JSON" },
+    { "id": "api-hotlist", "from": "api", "to": "hotlist" },
+    { "id": "api-xhs", "from": "api", "to": "xhs", "variant": "dashed" },
+    { "id": "api-stock", "from": "api", "to": "stock", "variant": "dashed" },
+    { "id": "hotlist-db", "from": "hotlist", "to": "db", "label": "SQLAlchemy", "variant": "emphasis" },
+    { "id": "hotlist-core", "from": "hotlist", "to": "core", "label": "AI 总结 · 语义嵌入" },
+    { "id": "core-ai", "from": "core", "to": "ai", "label": "对话 / 嵌入 API", "variant": "security" },
+    { "id": "hotlist-sources", "from": "hotlist", "to": "sources", "label": "定时抓取" },
+    { "id": "hotlist-notify", "from": "hotlist", "to": "notify", "label": "命中推送" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "主路径", "items": ["用户经 web-antd 前端访问 FastAPI 网关", "热点聚合（抓取 → 语义召回 → 报告）持久化到 SQLite"] },
+    { "dot": "cyan", "title": "AI 服务", "items": ["Gemini / DeepSeek 负责对话总结（AI Gateway）", "Embedding Gateway 生成文章/主题向量做语义检索", "向量以 float32 BLOB 存 SQLite，NumPy 余弦召回"] },
+    { "dot": "amber", "title": "自动化", "items": ["APScheduler 定时抓取、报告生成、向量回填", "语义命中经企业微信 / Server酱 / 邮件推送"] }
+  ]
+}

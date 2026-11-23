@@ -1,22 +1,28 @@
 """主题报告生成：三种裁剪策略（simple / two_stage / funnel）+ Skill Runtime 集成（Phase 6）。
 
-策略语义（§4.1）：
+策略语义（§4.1，funnel 于 2026-08-29 重构）：
 - simple：条目少（一周 < 50 条）的窄主题。全部条目摘要一次喂给 Skill，一次 AI 调用。
 - two_stage：中等量。按源分组 → 每组出小结 → 合成报告。
-- funnel（默认）：L0 全貌筛选（AI 挑 shortlist_size 条）→ L1 分组小结 → L2 全文放大 + 成稿。
+- funnel（默认）：candidates 已按综合分（语义+热度+新鲜度）排好序，直接取前
+  fulltext_size 条 → 并发抓正文（trafilatura）+ GLM-4-Flash 逐篇摘要 → 一次成稿调用
+  （分类由 Skill 模板自己完成，不再有 AI 预选/预分组这两级中间调用）。
 
 防注入不是可选项：条目标题和摘要来自外部 RSS，别人完全可以在标题里写「忽略之前的指令」。
-L0/L1 的中间调用同样带安全前言（与 prompt_builder._PLATFORM_SAFETY_PREAMBLE 同义）。
+two_stage 的中间调用带安全前言（_MIDDLE_SYSTEM，与 prompt_builder._PLATFORM_SAFETY_PREAMBLE
+同义）；funnel 现在只有一次成稿调用，安全前言由 Skill Runtime 的 prompt_builder 统一加。
 """
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
+import random
 import re
+import time
 from typing import Optional
 
 from loguru import logger
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.common.services.ai_config import get_ai_credentials
@@ -34,14 +40,23 @@ from app.common.utils.text import strip_html, truncate
 from app.hotlist.models import (
     HotItem,
     HotReportCandidate,
+    HotSource,
     HotTopic,
     HotTopicReport,
     HotTopicSource,
 )
-from app.hotlist.services import embedding_service, fulltext_service
-from app.hotlist.services.topic_service import list_topic_sources
+from app.hotlist.schemas.report import (
+    CandidateOut,
+    ReportDetailOut,
+    ReportItemRefOut,
+    ReportOut,
+    ReportPage,
+)
+from app.hotlist.services import crawl_service, embedding_service, fulltext_service
+from app.hotlist.services.topic_source_service import list_topic_sources
 
-FULLTEXT_WORKERS = 5
+FULLTEXT_WORKERS = 8  # 2026-08-29 从 5 提到 8：L2 现在常规抓取更多篇（50 篇量级），
+# WAL 模式已开，能扛住更高并发
 SUMMARY_TRUNCATE = 500          # L1 输入里摘要截断长度
 GROUP_MAX = 40                  # 每组最多条目数（超出再切组）
 HIGHLIGHT_PREFIX = "- 🔍 "
@@ -131,7 +146,8 @@ def _call_ai(
     api_key: str,
     model: str,
 ) -> tuple[str, int, int]:
-    """单次 AI 调用（非流式收集）。"""
+    """单次 AI 调用（非流式收集）。每次调用打日志（含耗时），报告卡在"生成中"时
+    能从日志看出是还在等 AI 响应，还是某一步已经彻底没动静了。"""
     request = AIRequest(
         provider=provider,
         model=model,
@@ -140,7 +156,14 @@ def _call_ai(
         tools=[],
         thinking_enabled=False,
     )
-    return _stream_text(request, api_key)
+    logger.info(f"AI 调用开始：model={model}，system+user 共 {len(system) + len(user)} 字符")
+    started = time.monotonic()
+    text, pt, ct = _stream_text(request, api_key)
+    logger.info(
+        f"AI 调用完成：model={model}，耗时 {time.monotonic() - started:.1f}s，"
+        f"prompt_tokens={pt}，completion_tokens={ct}，输出 {len(text)} 字符"
+    )
+    return text, pt, ct
 
 
 # ------------------------------------------------------------ 候选条目 ----
@@ -158,13 +181,59 @@ def _topic_source_ids(db: Session, topic: HotTopic) -> set[str]:
     }
 
 
+def _ensure_sources_fresh(db: Session, topic: HotTopic, period_start: datetime) -> None:
+    """生成报告前的新鲜度兜底：主题绑定的源里，凡是 `last_fetched_at` 早于本期
+    `period_start`（本期窗口内还没更新过）的，强制刷新一次，避免定时任务因未知原因
+    （见 TODO）没触发导致该源当天/本周永远没有候选条目——不是内容不相关，是压根
+    没有"本期"的数据可选。只检查这个主题实际绑定的源，不全局扫描。
+
+    强制刷新本身失败（源真的挂了）不能阻塞报告生成：记日志，这个源这期就是没数据，
+    继续往下走，跟现有 RSS 抓取失败的容错哲学一致。
+    """
+    source_ids = _topic_source_ids(db, topic)
+    if not source_ids:
+        return
+    # 比较交给 SQL 层做（SQLite 存的是不带时区的字符串），不在 Python 里直接拿
+    # HotSource.last_fetched_at（naive）跟 period_start（aware）比较——那样会因
+    # "can't compare offset-naive and offset-aware datetimes" 直接抛异常。
+    stale_ids = [
+        row[0]
+        for row in db.query(HotSource.id)
+        .filter(
+            HotSource.id.in_(source_ids),
+            or_(
+                HotSource.last_fetched_at.is_(None),
+                HotSource.last_fetched_at < period_start,
+            ),
+        )
+        .all()
+    ]
+    if not stale_ids:
+        return
+    logger.info(
+        f"主题 {topic.name} 报告生成前发现 {len(stale_ids)} 个源在本期窗口内未更新，"
+        f"强制刷新一次: {stale_ids}"
+    )
+    try:
+        crawl_service.run_crawl(db, source_ids=stale_ids, trigger="manual")
+    except Exception as exc:  # noqa: BLE001  刷新失败不阻塞报告生成，这些源本期就是没数据
+        logger.warning(f"主题 {topic.name} 报告生成前的新鲜度兜底刷新失败: {exc}")
+
+
 def fetch_candidate_pool(
     db: Session,
     topic: HotTopic,
     period_start: datetime,
     period_end: datetime,
 ) -> list[HotItem]:
-    """结构化候选池：主题启用源 + 本期内活跃（period_start <= last_crawl_time < period_end）。
+    """结构化候选池：主题启用源 + 本期内活跃。
+
+    「本期内活跃」优先按 published_at（源给的真实发布时间，RSS/arXiv 类源才有）
+    判断；published_at 为空（热榜类源，没有可靠发布时间，见 HotItem.stat_date 的
+    注释）才退化用 last_crawl_time。不能一律用 last_crawl_time：RSS 源每次轮询会
+    把 feed 里还在列表中的老文章也重新盖一遍 last_crawl_time（crawl_service 对
+    当批出现的每一条都会更新），几个月前发布的文章只要还挂在 feed 上，last_crawl_time
+    就会一直停留在"今天"，导致日报/周报把陈旧内容当成本期新闻报出来。
 
     候选过滤只包含结构化条件（源、周期、文章状态），不再做任何关键词匹配——
     主题相关性只有「语义检索」一个实现（见 HOTLIST_SEMANTIC_RETRIEVAL_IMPLEMENTATION.md）。
@@ -176,13 +245,21 @@ def fetch_candidate_pool(
     if not source_ids:
         return []
     cap = min(max((topic.max_items or 500) * 10, 1000), 5000)
-    return (
-        db.query(HotItem)
-        .filter(
-            HotItem.source_id.in_(source_ids),
+    active_in_period = or_(
+        and_(
+            HotItem.published_at.isnot(None),
+            HotItem.published_at >= period_start,
+            HotItem.published_at < period_end,
+        ),
+        and_(
+            HotItem.published_at.is_(None),
             HotItem.last_crawl_time >= period_start,
             HotItem.last_crawl_time < period_end,
-        )
+        ),
+    )
+    return (
+        db.query(HotItem)
+        .filter(HotItem.source_id.in_(source_ids), active_in_period)
         .order_by(HotItem.weight.desc(), HotItem.id.desc())
         .limit(cap)
         .all()
@@ -237,46 +314,75 @@ def _save_retrieval_snapshot(
     db.commit()
 
 
-def _format_candidate(
-    item: HotItem,
-    idx: int,
-    source_name: str = "",
-    semantic_score: float | None = None,
-) -> str:
-    """L0 全貌输入行：#ID | 标题 | 来源 | 日期 | 语义相关度\n摘要：前 240 字。"""
-    time_str = (
-        item.published_at.strftime("%Y-%m-%d")
-        if item.published_at
-        else item.stat_date
+# ------------------------------------------------------------ 全文 + GLM 摘要 ----
+
+def _glm_digest(item: HotItem, content_md: str, api_key: str, model: str) -> str | None:
+    """把一篇文章的 Markdown 正文丢给 GLM-4-Flash（官方长期免费），抽取一段含具体
+    事实/数字的精简摘要——省下喂给主模型的 token（一篇正文可能几万字符），顺便把
+    trafilatura 偶尔抽出来的整页噪声在这一步洗掉。失败返回 None，调用方降级用
+    RSS 自带的短摘要，不阻塞报告生成。
+    """
+    from app.common.services.ai_gateway.glm_structured import (
+        GlmStructuredError,
+        generate_structured,
     )
-    line = f"#{idx} | {item.title} | {source_name or item.source_id} | {time_str}"
-    if semantic_score is not None:
-        line += f" | 语义相关度 {semantic_score:.2f}"
-    summary = strip_html(item.summary or "")[:240].strip()
-    if summary:
-        line += f"\n摘要：{summary}"
-    return line
+
+    system = (
+        "你是一个新闻事实抽取助手。给你一篇文章的 Markdown 正文，抽取这篇文章最核心的"
+        "具体事实：具体做了什么、涉及哪些具体名词（项目名/产品名/公司名/人名/机构名）、"
+        "有哪些具体数字（参数量、性能指标、金额、时间等）。只抽取事实，不要总结、不要"
+        "评论、不要使用「全栈化」「生态」「体系」「范式」这类抽象总结词。"
+        '只输出 JSON，格式：{"digest": "300~500字的事实摘要"}'
+    )
+    user = truncate(content_md, 6000)  # trafilatura 输出通常已经比整页干净很多，但仍设上限防极端情况
+    try:
+        data = generate_structured(system, user, api_key, model)
+    except GlmStructuredError as exc:
+        logger.warning(f"GLM 逐篇摘要失败（item {item.id}）: {exc}")
+        return None
+    digest = data.get("digest") if isinstance(data, dict) else None
+    return digest.strip() if isinstance(digest, str) and digest.strip() else None
 
 
-# ------------------------------------------------------------ 全文 ----
+def _fetch_and_digest_one(
+    item: HotItem, glm_api_key: str | None, glm_model: str
+) -> str | None:
+    row = fulltext_service.fetch_fulltext(item)
+    if row.status != "success" or not row.content:
+        return None
+    if not glm_api_key:
+        return None
+    return _glm_digest(item, row.content, glm_api_key, glm_model)
 
-def _fetch_fulltexts_concurrent(items: list[HotItem]) -> dict[int, str]:
-    """并发抓全文（L2）。返回 {item_id: 正文}，只保留 success。"""
+
+def _fetch_and_digest_concurrent(db: Session, items: list[HotItem]) -> dict[int, str]:
+    """并发抓正文（trafilatura，写 HotItemContent 缓存供详情页复用）+ GLM 逐篇摘要。
+    返回 {item_id: 摘要}，只保留真正拿到摘要的；抓取/抽取失败的条目不在返回值里，
+    调用方退化用该条目自己的 RSS 摘要，不阻塞报告生成。
+
+    GLM Key/模型只在主线程读一次再传进各线程——SQLAlchemy Session 不能跨线程共享
+    并发使用（fetch_fulltext 内部自己开关 Session，同理不能把这层的 db 传进线程）。
+    """
     result: dict[int, str] = {}
     if not items:
         return result
+    from app.common.services import zhipu_config
+
+    glm_api_key, glm_model = zhipu_config.get_zhipu_config(db)
+    if not glm_api_key:
+        logger.warning("GLM（zhipu_api_key）未配置，L2 全文将只做正文抓取，不做逐篇摘要")
     with ThreadPoolExecutor(max_workers=FULLTEXT_WORKERS) as pool:
         futures = {
-            pool.submit(fulltext_service.fetch_fulltext, item): item
+            pool.submit(_fetch_and_digest_one, item, glm_api_key, glm_model): item
             for item in items
         }
         for future, item in futures.items():
             try:
-                row = future.result()
-                if row.status == "success" and row.content:
-                    result[item.id] = row.content
-            except Exception:  # noqa: BLE001  fetch_fulltext 已兜底，这里再防一层
-                logger.warning(f"全文获取异常（item {item.id}）")
+                digest = future.result()
+                if digest:
+                    result[item.id] = digest
+            except Exception as exc:  # noqa: BLE001  单条失败不能打断整批
+                logger.warning(f"正文抓取/摘要异常（item {item.id}）: {exc}")
     return result
 
 
@@ -288,10 +394,11 @@ def _run_simple(
     stats: dict,
 ) -> tuple[str, dict]:
     """simple：全部条目摘要一次喂给 Skill。"""
+    logger.info(f"simple 策略开始：{len(candidates)} 条候选，1 次成稿调用")
     lines = []
-    for idx, item in enumerate(candidates, 1):
+    for item in candidates:
         lines.append(
-            f"#{idx} | {item.title} | 来源: "
+            f"#{item.id} | {item.title} | 来源: "
             f"{source_names.get(item.source_id, item.source_id)}\n"
             f"摘要: {truncate(strip_html(item.summary), SUMMARY_TRUNCATE)}\n"
             f"链接: {item.url}"
@@ -308,7 +415,7 @@ def _run_simple(
         business_context,
         stats,
     )
-    return final, {"selected_ids": list(range(1, len(candidates) + 1))}
+    return final, {"selected_ids": [item.id for item in candidates]}
 
 
 def _run_two_stage(
@@ -320,15 +427,16 @@ def _run_two_stage(
     groups: dict[str, list[HotItem]] = {}
     for item in candidates:
         groups.setdefault(item.source_id, []).append(item)
+    logger.info(f"two_stage 策略开始：{len(candidates)} 条候选，{len(groups)} 个来源分组")
 
     group_summaries: list[str] = []
     for source_id, items in groups.items():
         for chunk_start in range(0, len(items), GROUP_MAX):
             chunk = items[chunk_start : chunk_start + GROUP_MAX]
             lines = []
-            for idx, item in enumerate(chunk, 1):
+            for item in chunk:
                 lines.append(
-                    f"#{idx} | {item.title}\n摘要: "
+                    f"#{item.id} | {item.title}\n摘要: "
                     f"{truncate(strip_html(item.summary), SUMMARY_TRUNCATE)}"
                 )
             system = _MIDDLE_SYSTEM
@@ -364,7 +472,7 @@ def _run_two_stage(
         business_context,
         stats,
     )
-    return final, {"selected_ids": list(range(1, len(candidates) + 1))}
+    return final, {"selected_ids": [item.id for item in candidates]}
 
 
 def _run_funnel(
@@ -372,154 +480,56 @@ def _run_funnel(
     api_key: str, model: str, source_names: dict[str, str],
     stats: dict, semantic_scores: dict[int, float] | None = None,
 ) -> tuple[str, dict]:
-    """funnel（默认）：L0 全貌筛选 → L1 分组小结 → L2 全文放大 + 成稿。"""
-    # ---- L0：全貌筛选（AI 挑 shortlist_size 条 + 顺带给分组标签）----
-    all_lines = [
-        _format_candidate(
-            item,
-            idx,
-            source_names.get(item.source_id),
-            semantic_scores.get(item.id) if semantic_scores else None,
-        )
-        for idx, item in enumerate(candidates, 1)
-    ]
-    l0_system = _MIDDLE_SYSTEM
-    l0_user = (
-        f"主题「{topic.name}」本周共 {len(candidates)} 条候选条目。"
-        f"请选出与本主题最相关的 {topic.shortlist_size} 条，并按内容主题分成 3~8 组。\n"
-        "只输出 JSON（不要任何其他文字）：\n"
-        '{"groups": [{"name": "分组名", "ids": [1, 5, 12]}], '
-        '"selected_ids": [1, 5, 12, ...]}\n'
-        "约束：selected_ids 是去重后的 #ID 列表，长度不超过 "
-        f"{topic.shortlist_size}；每条目只能出现在一个组里；只选真正相关的，宁可少选。\n\n"
-        + "\n".join(all_lines)
+    """funnel（默认，2026-08-29 重构）：candidates 已经按综合分（语义+热度+新鲜度）
+    降序排好（见 embedding_service.rank_with_query），直接取前 fulltext_size 条——
+    不再用 AI 重新挑选/分组（原 L0/L1 两级已下线）：既有的综合分已经可解释、可复现
+    （落了 HotReportCandidate 快照），AI 重选一遍只多花一次调用（实测能到 200 秒）
+    还不保证顺序跟分数一致。
+
+    每条并发抓正文（trafilatura 抽取 Markdown，写 HotItemContent 缓存供报告详情页
+    展示）+ GLM-4-Flash 逐篇抽取事实摘要（省 token、顺手洗掉抓取噪声），一次成稿
+    调用直接读全部摘要自己分类撰写——分类逻辑写在 Skill 的模板 Prompt 里，不用 AI
+    预先分组。
+    """
+    n = topic.fulltext_size if topic.fulltext_size > 0 else 30
+    top_items = candidates[:n]
+
+    logger.info(
+        f"funnel 开始：综合分 top {len(top_items)} 条（候选共 {len(candidates)} 条）"
     )
-    selected_ids: list[int] = []
-    groups: list[dict] = []
-    try:
-        l0_text, pt, ct = _call_ai(
-            db, l0_system, l0_user, provider, api_key, model
-        )
-        stats["prompt_tokens"] += pt
-        stats["completion_tokens"] += ct
-        stats["ai_call_count"] += 1
-        parsed = _parse_l0_response(l0_text)
-        selected_ids = parsed["selected_ids"]
-        groups = parsed["groups"]
-        logger.info(f"funnel L0 完成：选中 {len(selected_ids)} 条 / {len(groups)} 组")
-    except ValueError as exc:
-        logger.warning(
-            f"funnel L0 调用失败，降级按权重取 Top {topic.shortlist_size}: {exc}"
-        )
-        stats["ai_call_count"] += 1
 
-    if not selected_ids:
-        selected_ids = list(
-            range(1, min(topic.shortlist_size, len(candidates)) + 1)
-        )
-    if not groups:
-        groups = [{"name": f"分组 {i + 1}", "ids": selected_ids}]
-
-    # 收集被选中的条目（保持权重序）
-    by_idx = {i + 1: item for i, item in enumerate(candidates)}
-    shortlist: list[HotItem] = []
-    for sid in selected_ids:
-        item = by_idx.get(sid)
-        if item is not None and item.id not in {it.id for it in shortlist}:
-            shortlist.append(item)
-
-    # ---- L1：分组小结 ----
-    group_summaries: list[str] = []
-    for group in groups:
-        ids = [sid for sid in group.get("ids", []) if sid in by_idx]
-        if not ids:
-            continue
-        chunk_items = []
-        seen: set[int] = set()
-        for sid in ids:
-            item = by_idx[sid]
-            if item.id not in seen:
-                chunk_items.append(item)
-                seen.add(item.id)
-        for chunk_start in range(0, len(chunk_items), GROUP_MAX):
-            chunk = chunk_items[chunk_start : chunk_start + GROUP_MAX]
-            lines = []
-            for item in chunk:
-                # 组内用原始 #ID，保证 L2 引用一致
-                orig_idx = next(
-                    i for i, it in by_idx.items() if it.id == item.id
-                )
-                lines.append(
-                    f"#{orig_idx} | {item.title} | "
-                    f"{source_names.get(item.source_id, item.source_id)}\n"
-                    f"摘要: "
-                    f"{truncate(strip_html(item.summary), SUMMARY_TRUNCATE)}\n"
-                    f"链接: {item.url}"
-                )
-            system = _MIDDLE_SYSTEM
-            user = (
-                f"以下是主题「{topic.name}」分组「{group.get('name', '')}」的 "
-                f"{len(chunk)} 条条目。\n"
-                "输出 300~500 字小结：这组内容的主要脉络 + 最值得看的 3 条（用 #ID 标注，便于后续引用）。\n\n"
-                + "\n\n".join(lines)
-            )
-            try:
-                text, pt, ct = _call_ai(
-                    db, system, user, provider, api_key, model
-                )
-            except ValueError as exc:
-                logger.warning(f"funnel L1 分组小结失败: {exc}")
-                text = f"（{group.get('name', '')} 小结生成失败）"
-                pt = ct = 0
-            stats["prompt_tokens"] += pt
-            stats["completion_tokens"] += ct
-            stats["ai_call_count"] += 1
-            group_summaries.append(f"### {group.get('name', '')}\n{text}")
-
-    # ---- L2：全文放大 + 成稿 ----
-    fulltext_items = (
-        shortlist[: topic.fulltext_size]
-        if topic.fulltext_size > 0
-        else []
+    digests = _fetch_and_digest_concurrent(db, top_items)
+    logger.info(
+        f"funnel 正文抓取+摘要完成：{len(top_items)} 条里 {len(digests)} 条拿到 GLM 摘要，"
+        f"其余退化用 RSS 摘要"
     )
-    fulltexts = (
-        _fetch_fulltexts_concurrent(fulltext_items)
-        if fulltext_items
-        else {}
-    )
-    fulltext_blocks: list[str] = []
-    for item in fulltext_items:
-        content = fulltexts.get(item.id)
-        if not content:
-            continue
-        orig_idx = next(i for i, it in by_idx.items() if it.id == item.id)
-        fulltext_blocks.append(
-            f"#### 条目 #{orig_idx}：{item.title}\n"
-            f"（来源: {source_names.get(item.source_id, item.source_id)}，"
-            f"链接: {item.url}）\n"
-            f"{truncate(content, 8000)}"
-        )
 
-    business_context = "\n\n".join(group_summaries)
-    if fulltext_blocks:
-        business_context += (
-            "\n\n## 以下为少数重要条目的全文（选择性放大）\n\n"
-            + "\n\n".join(fulltext_blocks)
+    lines = []
+    for item in top_items:
+        digest = digests.get(item.id)
+        summary = digest or truncate(strip_html(item.summary), SUMMARY_TRUNCATE)
+        score = semantic_scores.get(item.id) if semantic_scores else None
+        score_str = f" | 语义相关度 {score:.2f}" if score is not None else ""
+        lines.append(
+            f"#{item.id} | {item.title} | "
+            f"{source_names.get(item.source_id, item.source_id)}{score_str}\n"
+            f"链接: {item.url}\n"
+            f"摘要: {summary}"
         )
+    business_context = "\n\n".join(lines)
 
+    logger.info(f"funnel 成稿开始：{len(top_items)} 条")
     final = _prepare_final(
         db,
         topic,
-        shortlist,
+        top_items,
         provider,
         api_key,
         model,
         business_context,
         stats,
     )
-    return final, {
-        "selected_ids": [sid for sid in selected_ids if sid in by_idx]
-    }
+    return final, {"selected_ids": [item.id for item in top_items]}
 
 
 # ------------------------------------------------------------ 成稿 ----
@@ -596,46 +606,6 @@ def _prepare_final(
     return text
 
 
-def _parse_l0_response(text: str) -> dict:
-    """解析 L0 的 JSON 响应：直接 JSON.parse → 剥离 ```json 围栏 → 校验结构。"""
-    raw = (text or "").strip()
-    data = None
-    try:
-        data = json.loads(raw)
-    except (ValueError, TypeError):
-        m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
-        if m:
-            try:
-                data = json.loads(m.group(1).strip())
-            except (ValueError, TypeError):
-                data = None
-    if not isinstance(data, dict):
-        raise ValueError("L0 响应不是合法 JSON")
-    selected = data.get("selected_ids") or []
-    groups = data.get("groups") or []
-    if not isinstance(selected, list):
-        raise ValueError("L0 selected_ids 不是列表")
-    clean_selected = [
-        int(s)
-        for s in selected
-        if isinstance(s, int) or str(s).isdigit()
-    ]
-    clean_groups = []
-    for g in groups:
-        if isinstance(g, dict) and isinstance(g.get("ids"), list):
-            clean_groups.append(
-                {
-                    "name": str(g.get("name") or "")[:64],
-                    "ids": [
-                        int(s)
-                        for s in g["ids"]
-                        if isinstance(s, int) or str(s).isdigit()
-                    ],
-                }
-            )
-    return {"selected_ids": clean_selected, "groups": clean_groups}
-
-
 def _extract_highlights(content_md: str) -> list[str]:
     """从报告正文提取核心结论（- 🔍 开头行），同时把它们从正文里移除（不重复展示）。"""
     lines = content_md.splitlines()
@@ -669,6 +639,32 @@ def _in_notify_window(topic: HotTopic) -> bool:
         return True
 
 
+def notify_pending_reports(db: Session) -> None:
+    """补推待通知报告：遍历近期成功报告，对启用通知且在通知时段内的主题触发补推。
+
+    由 scheduler_jobs 的补推扫描 job 调用，作为即时通知之外的兜底——静默时段
+    生成的报告，到点后在这里补推。
+    """
+    reports = (
+        db.query(HotTopicReport)
+        .filter(HotTopicReport.status == "success")
+        .order_by(HotTopicReport.period_end.desc())
+        .limit(50)
+        .all()
+    )
+    for report in reports:
+        topic = db.get(HotTopic, report.topic_id)
+        if topic is None or not topic.report_notify_enabled:
+            continue
+        try:
+            channel_ids = json.loads(topic.report_notify_channel_ids or "[]")
+        except (ValueError, TypeError):
+            continue
+        if not channel_ids or not _in_notify_window(topic):
+            continue
+        notify_report(db, report)
+
+
 def _previous_report(
     db: Session,
     topic_id: int,
@@ -691,6 +687,51 @@ def _prev_item_ids(prev) -> set[int]:
         return set(json.loads(prev.item_ids or "[]"))
     except (ValueError, TypeError):
         return set()
+
+
+_DAILY_KEY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_WEEKLY_KEY_RE = re.compile(r"^\d{4}-W\d{2}$")
+
+
+def _same_period_type(a: str, b: str) -> bool:
+    """日报只跟日报比、周报只跟周报比——周报本来就该回顾本周内日报报过的内容，
+    那是复盘/综合，不是重复，不能跨类型互相排除。"""
+    if _DAILY_KEY_RE.match(a):
+        return bool(_DAILY_KEY_RE.match(b))
+    if _WEEKLY_KEY_RE.match(a):
+        return bool(_WEEKLY_KEY_RE.match(b))
+    return False
+
+
+def _recently_cited_ids(
+    db: Session, topic_id: int, period_key: str, lookback: int = 1
+) -> set[int]:
+    """最近 lookback 期同周期类型报告已经引用过的条目 id，用于生成时硬排除，避免
+    同一篇文章被连续几期报告反复报道（实测两期相隔 3 天的日报重叠率高达 66%）。"""
+    rows = (
+        db.query(HotTopicReport.period_key, HotTopicReport.item_ids)
+        .filter(
+            HotTopicReport.topic_id == topic_id,
+            HotTopicReport.status == "success",
+            HotTopicReport.period_key != period_key,
+        )
+        .order_by(HotTopicReport.period_end.desc())
+        .limit(20)  # 同周期类型的可能跟另一类型交错排列，多取几行再按类型筛出需要的 lookback 期
+        .all()
+    )
+    ids: set[int] = set()
+    matched = 0
+    for key, item_ids_json in rows:
+        if not _same_period_type(period_key, key):
+            continue
+        try:
+            ids.update(json.loads(item_ids_json or "[]"))
+        except (ValueError, TypeError):
+            pass
+        matched += 1
+        if matched >= lookback:
+            break
+    return ids
 
 
 def _new_count(db: Session, report: HotTopicReport) -> int:
@@ -768,6 +809,188 @@ def notify_report(db: Session, report: HotTopicReport) -> dict:
     return result
 
 
+def cleanup_stale_running_reports(db: Session) -> int:
+    """启动时清理孤儿 running 报告。
+
+    生成报告在后台线程里跑，状态落库为 running 后才真正调用 AI；如果进程在这期间
+    被重启/杀掉（部署、崩溃），线程随进程消亡，report.status 会永远停在 running——
+    前端一直显示"生成中"，日志却再也不会有任何新动静，用户没法判断是卡住了还是
+    真的还在跑。进程启动时能看到的 running 行必然是上一个进程留下的孤儿，直接标
+    failed，用户能看到明确的失败原因并重新生成。
+    """
+    rows = db.query(HotTopicReport).filter(HotTopicReport.status == "running").all()
+    if not rows:
+        return 0
+    for row in rows:
+        row.status = "failed"
+        row.error = "进程重启导致生成中断，请重新生成"
+    db.commit()
+    logger.warning(f"hotlist 报告生成：启动时清理 {len(rows)} 条孤儿 running 报告（已标记 failed）")
+    return len(rows)
+
+
+# ------------------------------------------------------------ 查询编排 ----
+# reports 控制器的打薄：把「组装响应结构」这类业务拼装从路由层下移到这里，
+# 路由层只剩参数校验 + 404/429/400 的 HTTP 语义。
+
+CANDIDATES_SAMPLE = 20  # 漏检抽查随机抽 20 条
+
+
+def list_reports(
+    db: Session, topic_id: int, page: int, page_size: int
+) -> ReportPage:
+    """某主题的历史报告分页（page/page_size 已由路由参数校验过）。"""
+    q = (
+        db.query(HotTopicReport)
+        .filter(HotTopicReport.topic_id == topic_id)
+        .order_by(HotTopicReport.period_end.desc(), HotTopicReport.id.desc())
+    )
+    total = q.count()
+    rows = q.offset((page - 1) * page_size).limit(page_size).all()
+    return ReportPage(
+        reports=[ReportOut.model_validate(r) for r in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+def record_generation_failure(
+    db: Session, topic_id: int, period_key: str, strategy: str, error: str
+) -> None:
+    """落一条 failed 报告行（唯一约束按 (topic_id, period_key) 覆盖）。
+
+    生成报告的后台线程在捕获到 ValueError / 未知异常后调用：前端报告历史里
+    能看到失败原因，而不是「点了没反应」。
+    """
+    topic = db.get(HotTopic, topic_id)
+    if topic is None:
+        return
+    try:
+        key, start, end = compute_period(topic, period_key)
+    except Exception:  # noqa: BLE001
+        key, start, end = period_key or "", None, None
+    db.query(HotTopicReport).filter(
+        HotTopicReport.topic_id == topic_id, HotTopicReport.period_key == key
+    ).delete()
+    db.add(
+        HotTopicReport(
+            topic_id=topic_id,
+            period_key=key,
+            period_start=start,
+            period_end=end,
+            status="failed",
+            strategy=strategy or topic.digest_strategy,
+            skill_key=topic.skill_key or "",
+            template_key=topic.template_key,
+            model="",
+            error=error[:500],
+        )
+    )
+    db.commit()
+
+
+def get_report_detail(db: Session, report_id: int) -> ReportDetailOut | None:
+    """报告详情：正文 + 条目快照 + 引用覆盖率 + 上期引用 id。
+
+    返回 None 表示报告不存在（由控制器转 404）。
+    """
+    report = db.get(HotTopicReport, report_id)
+    if report is None:
+        return None
+    topic = db.get(HotTopic, report.topic_id)
+
+    detail = ReportDetailOut.model_validate(report)
+    detail.topic_name = topic.name if topic else ""
+    detail.topic_slug = topic.slug if topic else ""
+
+    # 引用条目明细（hot_items 现查；被清理任务删掉的条目跳过）
+    item_ids = []
+    try:
+        item_ids = json.loads(report.item_ids or "[]")
+    except (ValueError, TypeError):
+        pass
+    if item_ids:
+        rows = db.query(HotItem).filter(HotItem.id.in_(item_ids)).all()
+        sources = {s.id: s.name for s in db.query(HotSource).all()}
+        detail.items = [
+            ReportItemRefOut(
+                id=r.id,
+                title=r.title,
+                url=r.url,
+                source_id=r.source_id,
+                source_name=sources.get(r.source_id, r.source_id),
+                weight=r.weight,
+                published_at=r.published_at,
+            )
+            for r in rows
+        ]
+    # 引用覆盖率 = 引用数 / 候选数
+    candidate_ids = []
+    try:
+        candidate_ids = json.loads(report.candidate_ids or "[]")
+    except (ValueError, TypeError):
+        pass
+    detail.coverage = (
+        round(len(item_ids) / len(candidate_ids), 4) if candidate_ids else 0.0
+    )
+    # 上一期引用 id（前端标「新出现/持续/已消退」）
+    prev = _previous_report(
+        db, report.topic_id, report.period_key, exclude_id=report.id
+    )
+    if prev is not None:
+        detail.prev_item_ids = _prev_item_ids(prev)
+    return detail
+
+
+def get_report_candidates(db: Session, report_id: int) -> dict | None:
+    """漏检抽查：从本期进入分析但未被引用的条目里随机抽 CANDIDATES_SAMPLE 条。
+
+    返回 None 表示报告不存在（由控制器转 404）。
+    """
+    report = db.get(HotTopicReport, report_id)
+    if report is None:
+        return None
+    candidate_ids = []
+    try:
+        candidate_ids = json.loads(report.candidate_ids or "[]")
+    except (ValueError, TypeError):
+        pass
+    item_ids = set()
+    try:
+        item_ids = set(json.loads(report.item_ids or "[]"))
+    except (ValueError, TypeError):
+        pass
+
+    not_referenced = [cid for cid in candidate_ids if cid not in item_ids]
+    random.shuffle(not_referenced)
+    sample_ids = not_referenced[:CANDIDATES_SAMPLE]
+
+    sources = {s.id: s.name for s in db.query(HotSource).all()}
+    rows = (
+        db.query(HotItem).filter(HotItem.id.in_(sample_ids)).all()
+        if sample_ids
+        else []
+    )
+    items = [
+        CandidateOut(
+            id=r.id,
+            title=r.title,
+            url=r.url,
+            source_id=r.source_id,
+            source_name=sources.get(r.source_id, r.source_id),
+            weight=r.weight,
+            published_at=r.published_at,
+        )
+        for r in rows
+    ]
+    return {
+        "total_unreferenced": len(not_referenced),
+        "sampled": len(items),
+        "items": items,
+    }
+
+
 # ------------------------------------------------------------ 主入口 ----
 
 def generate_report(
@@ -778,6 +1001,7 @@ def generate_report(
     max_items: int | None = None,
 ) -> HotTopicReport:
     """生成一期报告（同步）。同期重跑覆盖（UniqueConstraint(topic_id, period_key)）。"""
+    logger.info(f"主题报告生成请求：topic_id={topic_id}，period_key={period_key or '(自动)'}")
     topic = db.get(HotTopic, topic_id)
     if topic is None:
         raise ValueError("主题不存在")
@@ -803,6 +1027,16 @@ def generate_report(
             "主题语义向量生成失败：请检查「系统设置 → API 配置」的 embedding_* 配置"
         )
 
+    _ensure_sources_fresh(db, topic, period_start)
+
+    # _ensure_sources_fresh 可能同步触发了一轮抓取（观测到耗时可达一分钟以上），
+    # 期间新抓到的条目 last_crawl_time 会晚于上面 compute_period() 算出的
+    # period_end——越"新鲜"的刷新反而越可能被这个已经过期的上界挡在候选池外，
+    # 等于新鲜度兜底把自己绕死了（实测复现：4 个源同步刷新耗时 67 秒，刷新出的
+    # 508 条新条目全部因为 last_crawl_time 晚于旧 period_end 被过滤掉，候选池
+    # 报 0）。兜底跑完后按"现在"重新收紧上界，把这批刚抓到的条目纳入候选池。
+    period_end = max(period_end, datetime.now(timezone.utc))
+
     pool = fetch_candidate_pool(db, topic, period_start, period_end)
     if not pool:
         raise ValueError(f"本期（{period_key}）没有候选条目：请确认主题下启用了源且已抓取到数据")
@@ -823,6 +1057,30 @@ def generate_report(
     candidates = [r.item for r in retrieved]
     semantic_scores = {r.item.id: r.semantic_score for r in retrieved}
     retrieval_result = retrieved
+
+    # 硬排除上一期（同周期类型）已经引用过的条目，避免连续两期报告重复报道同一篇
+    # 文章——candidates/candidate_ids/stats 仍然落全量候选池（保持"新出现"统计和
+    # 历史复现语义不变），只有真正喂给成稿策略的列表做排除。候选池被排空时宁可
+    # 允许重复也不能让报告生成失败，退回全量。
+    recent_cited_ids = _recently_cited_ids(db, topic_id, period_key)
+    citable_candidates = (
+        [c for c in candidates if c.id not in recent_cited_ids]
+        if recent_cited_ids
+        else candidates
+    )
+    if recent_cited_ids and not citable_candidates:
+        logger.warning(
+            f"主题 {topic.name} {period_key}：本期候选全部已在上一期引用过，"
+            f"排除会导致无条目可写，本期允许重复引用"
+        )
+        citable_candidates = candidates
+    elif recent_cited_ids:
+        excluded = len(candidates) - len(citable_candidates)
+        if excluded:
+            logger.info(
+                f"主题 {topic.name} {period_key}：排除上一期已引用 {excluded} 条，"
+                f"剩余候选 {len(citable_candidates)}/{len(candidates)}"
+            )
 
     source_names = {s.id: s.name for s in list_topic_sources(db, topic_id)}
 
@@ -858,6 +1116,10 @@ def generate_report(
     db.add(report)
     db.commit()
     db.refresh(report)
+    logger.info(
+        f"主题报告开始生成：{topic.name} {period_key}，候选 {len(candidates)} 篇，"
+        f"策略 {strategy}，模型 {model}（report_id={report.id}）"
+    )
 
     # 保存本期语义召回快照（解释入选原因 / 复现历史 / 阈值调优）
     _save_retrieval_snapshot(db, report, topic, retrieval_result)
@@ -867,7 +1129,7 @@ def generate_report(
             content_md, meta = _run_simple(
                 db,
                 topic,
-                candidates,
+                citable_candidates,
                 provider,
                 api_key,
                 model,
@@ -878,7 +1140,7 @@ def generate_report(
             content_md, meta = _run_two_stage(
                 db,
                 topic,
-                candidates,
+                citable_candidates,
                 provider,
                 api_key,
                 model,
@@ -889,7 +1151,7 @@ def generate_report(
             content_md, meta = _run_funnel(
                 db,
                 topic,
-                candidates,
+                citable_candidates,
                 provider,
                 api_key,
                 model,
@@ -899,12 +1161,11 @@ def generate_report(
             )
 
         highlights, content_body = _extract_highlights(content_md)
-        # 引用条目：meta.selected_ids 是候选 #ID，映射回真实 HotItem.id
-        by_idx = {i + 1: c for i, c in enumerate(candidates)}
+        # meta.selected_ids 就是真实 HotItem.id（正文里的 [n] 引用同样用的是这个 id，
+        # 前端按 id 直接查表就能定位到对应条目，不需要位置号↔真实 id 的二次映射）
+        candidate_ids = {c.id for c in candidates}
         item_ids = [
-            by_idx[sid].id
-            for sid in meta.get("selected_ids", [])
-            if sid in by_idx
+            sid for sid in meta.get("selected_ids", []) if sid in candidate_ids
         ]
 
         report.status = "success"

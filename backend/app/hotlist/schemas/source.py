@@ -13,11 +13,10 @@ class SourceOut(BaseModel):
 
     id: str
     name: str = ""
-    source_kind: str = "hotlist"
     adapter: str = ""
     expected_domain: str = ""
     decay_half_life_hours: float = 0.0
-    cron_expr: str = "*/30 * * * *"
+    interval_hours: float = 0.5
     enabled: bool = True
     sort_order: int = 0
     group_id: int | None = None
@@ -53,7 +52,7 @@ class SourceIn(BaseModel):
 
     name: str | None = None
     enabled: bool | None = None
-    cron_expr: str | None = None
+    interval_hours: float | None = None
     expected_domain: str | None = None
     decay_half_life_hours: float | None = None
     sort_order: int | None = None
@@ -66,10 +65,9 @@ class SourceCreateIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     adapter: str = Field(min_length=1, max_length=32)
     adapter_params: dict = Field(default_factory=dict)
-    source_kind: str = "hotlist"
     expected_domain: str = ""
     decay_half_life_hours: float = 0.0
-    cron_expr: str = "*/30 * * * *"
+    interval_hours: float = 0.5
     enabled: bool = True
     sort_order: int = 0
     group_id: int | None = None
@@ -91,8 +89,13 @@ class SourceCrawlIn(BaseModel):
 
 
 class SourceImportOpmlIn(BaseModel):
-    """OPML 批量导入到分组：content（文本）与 opml_url（远端）二选一，content 优先。"""
+    """批量导入到分组：三选一，优先级 feed_urls > content > opml_url。
+
+    feed_urls：直接给一批 RSS/Atom 订阅地址（前端按行拆好传数组），不要求是 OPML
+    文档——用户手头常见的就是散的 feed 地址，硬要求先包一层 OPML 外壳没有必要。
+    """
 
     content: str = ""
     opml_url: str = ""
+    feed_urls: list[str] = Field(default_factory=list)
     group_id: int | None = None

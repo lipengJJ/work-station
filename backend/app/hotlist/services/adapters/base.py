@@ -95,7 +95,8 @@ HOST_TRIP_KINDS = frozenset({
 })
 
 _HTTP_KIND_MAP = {
-    403: "http_403", 404: "http_404", 410: "http_410", 429: "http_429",
+    403: "http_403", 404: "http_404", 410: "http_410",
+    422: "http_422", 429: "http_429",
 }
 
 _KIND_LABELS = {
@@ -108,6 +109,7 @@ _KIND_LABELS = {
     "http_403": "被拒绝访问 403（可能需要代理）",
     "http_404": "地址失效 404",
     "http_410": "地址失效 410",
+    "http_422": "请求被拒绝 422（参数或查询语法不合法）",
     "http_429": "被限流 429（该降低抓取频率）",
     "parse_error": "返回内容不是合法 RSS/Atom",
     "empty_feed": "feed 里没有任何条目",
@@ -188,10 +190,8 @@ class HotSourceAdapterError(Exception):
 class HotSourceAdapter(ABC):
     """抓取器抽象。一个 adapter 可服务多行 HotSource（靠 params 区分）。
 
-    新增一个源的三种情况：
-      1. 已有 adapter 能覆盖（如再加一个 RSS 源）→ 前端加一行，零代码
-      2. 新协议 → 写一个 adapter 子类 + 注册一行 + seed 一行源
-      3. NewsNow 已支持的平台 → seed 一行源即可
+    目前只注册了 rss 一个 adapter（见 adapters/__init__.py）——新增一个源就是
+    前端加一行 RSS/Atom 地址，零代码；不再支持其他协议。
     """
 
     adapter_key: str = ""

@@ -36,24 +36,54 @@ const xhsConfigured = computed(() => !!configByName('xhs_cookie')?.value);
 const zhipuConfigured = computed(() => !!configByName('zhipu_api_key')?.value);
 
 // ============================================================ 语义检索模型 ----
-// 向量模型配置（embedding_*）。API Key 留空时后端自动复用 AI 模型的 gemini_api_key。
-const embeddingConfigured = computed(
-  () =>
-    !!configByName('embedding_api_key')?.value || !!configByName('gemini_api_key')?.value,
-);
+// 向量模型配置（embedding_*）。API Key 留空时只有 provider=gemini 会回退复用
+// gemini_api_key；其余厂商（zhipu 等）是独立业务，必须单独填 embedding_api_key，
+// 不隐式复用其他功能已配的 Key（见 embedding_config.py::get_embedding_api_key）。
+const embeddingConfigured = computed(() => {
+  const provider = configByName('embedding_provider')?.value || 'gemini';
+  if (configByName('embedding_api_key')?.value) return true;
+  return provider === 'gemini' && !!configByName('gemini_api_key')?.value;
+});
 const embeddingModalOpen = ref(false);
 const embeddingSaving = ref(false);
-const embeddingForm = reactive({
+const embeddingForm = reactive<{
+  provider: string;
+  api_key: string;
+  model: string;
+  dimension: number | undefined;
+}>({
   provider: 'gemini',
   api_key: '',
   model: '',
-  dimension: 768,
+  dimension: undefined,
+});
+// 与后端 embedding_gateway/service.py 里各 provider 的 default_model/default_dimension 对应，
+// 仅用于占位提示；真正生效的默认值由后端 embedding_config.py 按 provider 取。
+const EMBEDDING_PROVIDER_DEFAULTS: Record<string, { label: string; model: string; dimension: number }> = {
+  gemini: { label: 'Gemini', model: 'gemini-embedding-001', dimension: 768 },
+  zhipu: { label: '智谱', model: 'embedding-3', dimension: 1024 },
+};
+// 只有 gemini 会在留空时回退复用「AI 模型」的 Key；其余厂商必须在这里单独填一遍，
+// 即便同一厂商在别处（如笔记结构化的智谱 Key）已经配过。
+const embeddingApiKeyPlaceholder = computed(() => {
+  if (embeddingForm.provider === 'gemini') return '留空则复用「AI 模型」的 Gemini Key';
+  const label = EMBEDDING_PROVIDER_DEFAULTS[embeddingForm.provider]?.label;
+  return label ? `必填：${label}开放平台的 API Key（与其他功能的 Key 分开配置）` : '必填';
+});
+const embeddingModelPlaceholder = computed(() => {
+  const d = EMBEDDING_PROVIDER_DEFAULTS[embeddingForm.provider];
+  return d ? `留空则用默认 ${d.model}` : '留空则用当前厂商的默认模型';
+});
+const embeddingDimensionPlaceholder = computed(() => {
+  const d = EMBEDDING_PROVIDER_DEFAULTS[embeddingForm.provider];
+  return d ? `留空则用默认 ${d.dimension}` : '留空则用当前厂商的默认维度';
 });
 
 function openEmbeddingModal() {
   embeddingForm.provider = configByName('embedding_provider')?.value || 'gemini';
   embeddingForm.model = configByName('embedding_model')?.value || '';
-  embeddingForm.dimension = Number(configByName('embedding_dimension')?.value) || 768;
+  const savedDimension = configByName('embedding_dimension')?.value;
+  embeddingForm.dimension = savedDimension ? Number(savedDimension) : undefined;
   embeddingForm.api_key = ''; // 不回显 key
   embeddingModalOpen.value = true;
 }
@@ -71,8 +101,8 @@ async function submitEmbedding() {
         await deleteApiConfigApi(idByName[name]);
       }
     };
-    await patch('embedding_provider', embeddingForm.provider, '向量模型厂商（gemini / openai_compatible）');
-    await patch('embedding_api_key', embeddingForm.api_key, '向量模型 API Key（留空复用 AI 模型的 Gemini Key）');
+    await patch('embedding_provider', embeddingForm.provider, '向量模型厂商（gemini / zhipu / openai_compatible）');
+    await patch('embedding_api_key', embeddingForm.api_key, '向量模型 API Key（仅 gemini 留空可复用 AI 模型的 Key，其余厂商必填）');
     await patch('embedding_model', embeddingForm.model, '向量模型名（如 gemini-embedding-001）');
     await patch('embedding_dimension', String(embeddingForm.dimension || ''), '向量维度（如 768）');
     message.success('已保存');
@@ -547,7 +577,7 @@ onMounted(() => {
 
     <!-- ============================ 语义检索模型配置弹窗 ============================ -->
     <Modal v-model:open="embeddingModalOpen" title="语义检索模型配置" :footer="null" width="480px">
-      <div class="ss-modal-desc">主题订阅的语义召回向量。API Key 留空则自动复用「AI 模型」的 Gemini Key。</div>
+      <div class="ss-modal-desc">主题订阅的语义召回向量。仅 Gemini 留空可复用「AI 模型」的 Key，其余厂商需单独填写。</div>
       <Form layout="vertical">
         <FormItem label="厂商">
           <Select
@@ -555,6 +585,7 @@ onMounted(() => {
             style="width: 100%"
             :options="[
               { label: 'Gemini（Google）', value: 'gemini' },
+              { label: '智谱 AI（BigModel）', value: 'zhipu' },
               { label: 'OpenAI 兼容（/embeddings）', value: 'openai_compatible' },
             ]"
           />
@@ -562,14 +593,20 @@ onMounted(() => {
         <FormItem label="API Key">
           <Input.Password
             v-model:value="embeddingForm.api_key"
-            placeholder="留空则复用 AI 模型的 Gemini Key"
+            :placeholder="embeddingApiKeyPlaceholder"
           />
         </FormItem>
         <FormItem label="模型">
-          <Input v-model:value="embeddingForm.model" placeholder="留空则用默认 gemini-embedding-001" />
+          <Input v-model:value="embeddingForm.model" :placeholder="embeddingModelPlaceholder" />
         </FormItem>
         <FormItem label="向量维度">
-          <InputNumber v-model:value="embeddingForm.dimension" class="w-full" :min="1" :max="4096" placeholder="留空则用默认 768" />
+          <InputNumber
+            v-model:value="embeddingForm.dimension"
+            class="w-full"
+            :min="1"
+            :max="4096"
+            :placeholder="embeddingDimensionPlaceholder"
+          />
         </FormItem>
         <div class="flex justify-end gap-2">
           <Button @click="embeddingModalOpen = false">取消</Button>

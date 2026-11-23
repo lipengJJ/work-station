@@ -88,12 +88,12 @@ async function submit() {
 <template>
   <Modal v-model:open="open" title="从分组关联源" :footer="null" width="640px">
     <p class="mb-3 text-xs text-[hsl(var(--muted-foreground))]">
-      勾选的源会覆盖本主题当前启用的源（含之前 OPML 导入或手动关联的）；按分组批量勾选，来自「源管理」的分组
+      勾选的源会覆盖本主题当前启用的源（含之前 OPML 导入或手动关联的）；按分组批量勾选，来自「热点聚合 → 榜单」页的分组
     </p>
     <div v-if="loading" class="py-8 text-center text-xs text-[hsl(var(--muted-foreground))]">加载中…</div>
     <div v-else class="max-h-[50vh] overflow-y-auto pr-1">
       <div v-if="groupedView.length === 0" class="rounded-lg border border-dashed border-[hsl(var(--border))] px-3 py-8 text-center text-xs text-[hsl(var(--muted-foreground))]">
-        还没有源，先去「源管理」添加
+        还没有源，先去「热点聚合 → 榜单」页的「管理源」添加
       </div>
       <div v-for="group in groupedView" :key="group.key" class="mb-4">
         <div class="mb-1.5 flex items-center justify-between">

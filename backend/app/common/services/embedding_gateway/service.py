@@ -45,6 +45,17 @@ register_provider(
     )
 )
 
+register_provider(
+    EmbeddingProviderSpec(
+        key="zhipu",
+        label="智谱 AI（BigModel）",
+        description="智谱开放平台（open.bigmodel.cn）获取 API Key；模型如 embedding-3 / embedding-2",
+        default_model="embedding-3",
+        default_dimension=1024,
+        handler=make_openai_compatible_embed("https://open.bigmodel.cn/api/paas/v4"),
+    )
+)
+
 
 def embed(request: EmbeddingRequest, api_key: str) -> EmbeddingResult:
     spec = get_provider(request.provider)

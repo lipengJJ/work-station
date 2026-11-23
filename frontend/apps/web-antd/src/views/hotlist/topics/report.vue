@@ -19,7 +19,7 @@ import {
   Tag,
   Tooltip,
 } from 'ant-design-vue';
-import { ArrowLeft, ExternalLink, RefreshCw, Send, UploadCloud } from 'lucide-vue-next';
+import { ArrowLeft, FileText, RefreshCw, Send, UploadCloud } from 'lucide-vue-next';
 
 import {
   getReportApi,
@@ -27,10 +27,21 @@ import {
   notifyReportApi,
   publishReportApi,
 } from '#/api/core/topics';
+import { buildToc, escapeHtml, makeLinkify, parseSections, renderBody } from '#/views/hotlist/shared/reportContent';
 
 const route = useRoute();
 const router = useRouter();
-const reportId = computed(() => Number(route.params.reportId));
+// 路由参数可能是 "undefined"/空/重复段，Number() 会得到 NaN——非法 id 直接回主题列表，
+// 避免把 /reports/NaN 发到后端触发「unable to parse string as an integer」
+const reportId = computed(() => {
+  const raw = route.params.reportId;
+  const n = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : 0;
+});
+
+function backToTopics() {
+  router.replace('/hotlist/topics');
+}
 
 const report = ref<TopicsApi.ReportDetail | null>(null);
 const loading = ref(true);
@@ -60,6 +71,11 @@ function coverageHint(coverage: number) {
 
 // -------------------------------------------------------------- 加载 ----
 async function fetchReport() {
+  if (reportId.value === 0) {
+    message.warning('报告 id 无效，已返回主题列表');
+    backToTopics();
+    return;
+  }
   loading.value = true;
   try {
     report.value = await getReportApi(reportId.value);
@@ -120,88 +136,15 @@ async function openCandidates() {
 }
 
 // -------------------------------------------------------------- markdown ----
-function renderMarkdown(md: string) {
-  if (!md) return '';
-  const items = itemsById.value;
-  const lines = md.split(/\r?\n/);
-  const html: string[] = [];
-  let inList = false;
-  let inQuote = false;
-
-  const closeList = () => {
-    if (inList) {
-      html.push('</ul>');
-      inList = false;
-    }
-  };
-  const escapeHtml = (s: string) =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const linkify = (s: string) => {
-    // [n] 或 [n][m] → 可点击引用；[text](url) → 链接；裸 URL → 链接
-    let out = s.replace(/\[(\d+)\]/g, (_, n) => {
-      const id = Number(n);
-      const item = items.get(id);
-      if (item && item.url) {
-        return `<a href="${item.url}" target="_blank" rel="noopener" class="ref-link" title="${escapeHtml(item.title)}">[${n}]</a>`;
-      }
-      return `<span class="ref-missing" title="条目已被清理">[${n}]</span>`;
-    });
-    out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-    out = out.replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
-    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
-    return out;
-  };
-
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    if (line.startsWith('```')) {
-      closeList();
-      html.push('<pre class="code-block">' + escapeHtml(line.slice(3)) + '</pre>');
-      continue;
-    }
-    if (line.startsWith('>')) {
-      closeList();
-      if (!inQuote) {
-        html.push('<blockquote>');
-        inQuote = true;
-      }
-      html.push(linkify(escapeHtml(line.slice(1).trim())));
-      continue;
-    }
-    if (inQuote) {
-      html.push('</blockquote>');
-      inQuote = false;
-    }
-    if (/^#{1,6}\s/.test(line)) {
-      closeList();
-      const level = line.match(/^#+/)![0].length;
-      html.push(`<h${level}>${linkify(escapeHtml(line.replace(/^#+\s*/, '')))}</h${level}>`);
-    } else if (/^[-*]\s/.test(line)) {
-      if (!inList) {
-        html.push('<ul>');
-        inList = true;
-      }
-      html.push(`<li>${linkify(escapeHtml(line.replace(/^[-*]\s*/, '')))}</li>`);
-    } else if (/^\d+\.\s/.test(line)) {
-      if (!inList) {
-        html.push('<ol>');
-        inList = true;
-      }
-      html.push(`<li>${linkify(escapeHtml(line.replace(/^\d+\.\s*/, '')))}</li>`);
-    } else if (line.trim() === '') {
-      closeList();
-    } else {
-      closeList();
-      html.push(`<p>${linkify(escapeHtml(line))}</p>`);
-    }
-  }
-  closeList();
-  if (inQuote) html.push('</blockquote>');
-  return html.join('\n');
-}
-
-const contentHtml = computed(() => renderMarkdown(report.value?.content_md || ''));
+// 解析/渲染逻辑抽到了 shared/reportContent.ts（跟「日报」读者视图共用同一份）。
+const linkify = computed(() => makeLinkify(itemsById.value));
+const parsedSections = computed(() => parseSections(report.value?.content_md || ''));
+const bodyHtml = computed(() => renderBody(parsedSections.value, linkify.value));
+const highlightHtmlList = computed(() =>
+  (report.value?.highlights || []).map((h) => linkify.value(escapeHtml(h))),
+);
+const toc = computed(() => buildToc(parsedSections.value));
+const tocTotalArticles = computed(() => toc.value.reduce((sum, r) => sum + r.count, 0));
 
 // 条目状态：新出现 / 持续 / 已消退（相对上一期）
 function itemStatus(item: TopicsApi.ReportItemRef): null | 'new' | 'kept' {
@@ -302,14 +245,38 @@ onMounted(fetchReport);
         >
           <div class="mb-2 text-sm font-semibold text-primary">核心结论</div>
           <ul class="space-y-2">
-            <li v-for="(h, i) in report.highlights" :key="i" class="text-sm leading-relaxed">
-              {{ h }}
-            </li>
+            <!-- eslint-disable-next-line vue/no-v-html -- 引用 [n] 需要渲染成可点击的站内链接，跟正文用同一套 linkify -->
+            <li v-for="(h, i) in highlightHtmlList" :key="i" class="text-sm leading-relaxed" v-html="h"></li>
           </ul>
         </div>
 
+        <!-- 今日看点：分类总览，数字编号 + 篇数 + 首条标题预览 -->
+        <div v-if="toc.length > 0" class="mb-4 rounded-lg border border-border/60 p-4">
+          <div class="mb-3 flex items-center justify-between">
+            <span class="text-sm font-semibold">今日看点</span>
+            <span class="text-xs text-muted-foreground">{{ tocTotalArticles }} 篇报道</span>
+          </div>
+          <div>
+            <div
+              v-for="row in toc"
+              :key="row.index"
+              class="toc-row"
+            >
+              <span class="toc-index">{{ row.index }}</span>
+              <div class="toc-body">
+                <div class="toc-name">
+                  <span class="font-semibold">{{ row.name }}</span>
+                  <span class="toc-count">{{ row.count }}</span>
+                </div>
+                <div class="toc-preview">{{ row.preview }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 正文 -->
-        <div class="markdown-body" v-html="contentHtml"></div>
+        <!-- eslint-disable-next-line vue/no-v-html -- 报告正文是本站按固定模板生成的可信内容 -->
+        <div class="markdown-body prose prose-sm dark:prose-invert max-w-none prose-img:rounded-md" v-html="bodyHtml"></div>
 
         <!-- 引用条目 -->
         <div v-if="report.status === 'success'" class="mt-8">
@@ -328,16 +295,14 @@ onMounted(fetchReport);
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'title'">
                 <a
-                  v-if="record.url"
-                  :href="record.url"
+                  :href="`/hotlist/items/${record.id}`"
                   target="_blank"
                   rel="noopener"
                   class="inline-flex items-center gap-1"
                 >
                   {{ record.title }}
-                  <ExternalLink class="size-3 text-foreground/40" />
+                  <FileText class="size-3 text-foreground/40" />
                 </a>
-                <span v-else>{{ record.title }}</span>
                 <Tag v-if="itemStatus(record as TopicsApi.ReportItemRef) === 'new'" color="blue" class="ml-2">新出现</Tag>
                 <Tag v-else-if="itemStatus(record as TopicsApi.ReportItemRef) === 'kept'" color="default" class="ml-2">持续</Tag>
               </template>
@@ -383,10 +348,9 @@ onMounted(fetchReport);
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'title'">
-              <a v-if="record.url" :href="record.url" target="_blank" rel="noopener">
+              <a :href="`/hotlist/items/${record.id}`" target="_blank" rel="noopener">
                 {{ record.title }}
               </a>
-              <span v-else>{{ record.title }}</span>
             </template>
           </template>
         </Table>
@@ -397,42 +361,22 @@ onMounted(fetchReport);
 </template>
 
 <style scoped>
-.markdown-body {
-  line-height: 1.8;
-  font-size: 14px;
-}
+/* 段落/列表/引用块/代码/图片这些通用排版交给 prose（@tailwindcss/typography，
+   见 internal/tailwind-config/src/theme.css）统一兜底，这里只保留跟 prose 默认
+   样式不一样的、有意做的定制：h2/h3 的独立视觉分量，以及下面全是本站自创、
+   prose 完全不认识的类（section-header/article-card/source-tag/ref-link/toc-*）。 */
 .markdown-body :deep(h2) {
-  margin: 28px 0 12px;
-  font-size: 18px;
   border-bottom: 1px solid hsl(var(--border));
   padding-bottom: 6px;
 }
+/* h3 现在是"列表式"格式下每条新闻自己的标题，密度比以前的叙事段落高很多，
+   需要比原来更强的视觉分量才能跟正文分清——加粗 + 左侧色条 + 单独留白。 */
 .markdown-body :deep(h3) {
-  margin: 20px 0 8px;
-  font-size: 15px;
+  padding-left: 10px;
+  border-left: 3px solid hsl(var(--primary) / 0.6);
 }
-.markdown-body :deep(p) {
-  margin: 10px 0;
-}
-.markdown-body :deep(ul),
-.markdown-body :deep(ol) {
-  padding-left: 22px;
-  margin: 8px 0;
-}
-.markdown-body :deep(li) {
-  margin: 4px 0;
-}
-.markdown-body :deep(blockquote) {
-  border-left: 3px solid hsl(var(--border));
-  padding-left: 12px;
-  color: hsl(var(--muted-foreground));
-  margin: 10px 0;
-}
-.markdown-body :deep(code) {
-  background: hsl(var(--muted));
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 13px;
+.markdown-body :deep(.section-header + .article-card h3) {
+  margin-top: 14px;
 }
 .markdown-body :deep(a) {
   color: hsl(var(--primary));
@@ -446,5 +390,100 @@ onMounted(fetchReport);
 }
 .markdown-body :deep(.ref-missing) {
   color: hsl(var(--muted-foreground));
+}
+
+/* 分类小节标题：编号 + 分类名 + 篇数，替代原来纯 <h2>，跟 AIHOT 日报风格的
+   编号分类头对齐；只用于「有三级小节」的分类（今日速览/值得关注/数据来源这类
+   没有小节的仍然走普通 <h2>，见下面 .markdown-body :deep(h2)）。 */
+.markdown-body :deep(.section-header) {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 32px 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.markdown-body :deep(.section-header:first-of-type) {
+  margin-top: 0;
+}
+.markdown-body :deep(.section-index) {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: hsl(var(--primary));
+}
+.markdown-body :deep(.section-name) {
+  font-size: 17px;
+  font-weight: 700;
+}
+.markdown-body :deep(.section-count) {
+  margin-left: auto;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.markdown-body :deep(.article-card) {
+  margin-bottom: 18px;
+}
+.markdown-body :deep(.article-title-link) {
+  color: inherit;
+  text-decoration: none;
+}
+.markdown-body :deep(.article-title-link:hover) {
+  text-decoration: underline;
+}
+.markdown-body :deep(h3 .ref-link) {
+  margin-left: 6px;
+}
+.markdown-body :deep(.source-tag) {
+  display: inline-block;
+  margin: 2px 0 4px 10px;
+  padding: 1px 8px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted));
+  border-radius: 999px;
+}
+
+/* 今日看点：分类总览卡片，编号 + 分类名 + 篇数 + 首条标题预览，行间细分隔线 */
+.toc-row {
+  display: flex;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+}
+.toc-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.toc-row:first-child {
+  padding-top: 0;
+}
+.toc-index {
+  flex-shrink: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: hsl(var(--primary));
+}
+.toc-body {
+  min-width: 0;
+}
+.toc-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+}
+.toc-count {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.toc-preview {
+  margin-top: 2px;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

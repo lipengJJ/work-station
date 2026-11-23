@@ -120,9 +120,12 @@ def notify_topic_hits(db: Session, topic_id: int) -> None:
 
         # 频率判断：realtime 立即推；汇总类看距首次暂存是否达到间隔
         if freq > 0 and topic.hit_notify_pending_since:
-            elapsed = (
-                datetime.now(timezone.utc) - topic.hit_notify_pending_since
-            ).total_seconds() / 60
+            pending_since = topic.hit_notify_pending_since
+            # SQLite 的 DateTime 列不保留 tzinfo，读回来是 naive，写入时一律用 UTC，
+            # 按 UTC 补回 tzinfo 才能和 aware 的 now() 相减（否则 TypeError）
+            if pending_since.tzinfo is None:
+                pending_since = pending_since.replace(tzinfo=timezone.utc)
+            elapsed = (datetime.now(timezone.utc) - pending_since).total_seconds() / 60
             if elapsed < freq:
                 topic.hit_notify_pending_hits = total
                 db.commit()

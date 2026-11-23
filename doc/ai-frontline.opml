@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>大模型一手信源（官方 / 高信噪比）</title>
+    <dateCreated>2026-08-22</dateCreated>
+  </head>
+  <body>
+
+    <outline text="官方一手（已实测 2026-08-22）">
+      <outline type="rss" text="MCP 官方博客" title="MCP 官方博客"
+               xmlUrl="https://blog.modelcontextprotocol.io/index.xml"
+               htmlUrl="https://blog.modelcontextprotocol.io/" />
+      <outline type="rss" text="OpenAI News" title="OpenAI News"
+               xmlUrl="https://openai.com/news/rss.xml"
+               htmlUrl="https://openai.com/news/" />
+      <outline type="rss" text="Google DeepMind" title="Google DeepMind"
+               xmlUrl="https://deepmind.google/blog/rss.xml"
+               htmlUrl="https://deepmind.google/blog/" />
+      <outline type="rss" text="Google AI Blog" title="Google AI Blog"
+               xmlUrl="https://blog.google/technology/ai/rss/"
+               htmlUrl="https://blog.google/technology/ai/" />
+      <outline type="rss" text="Hugging Face Blog" title="Hugging Face Blog"
+               xmlUrl="https://huggingface.co/blog/feed.xml"
+               htmlUrl="https://huggingface.co/blog" />
+      <outline type="rss" text="vLLM Blog" title="vLLM Blog"
+               xmlUrl="https://vllm.ai/blog/rss.xml"
+               htmlUrl="https://vllm.ai/blog" />
+    </outline>
+
+    <outline text="高信噪比二手（人已经筛过一遍）">
+      <outline type="rss" text="AINews · smol.ai（工作日，聚合 AI Discord/Reddit/社媒）" title="AINews · smol.ai"
+               xmlUrl="https://news.smol.ai/rss.xml"
+               htmlUrl="https://news.smol.ai/" />
+      <outline type="rss" text="Latent Space" title="Latent Space"
+               xmlUrl="https://www.latent.space/feed"
+               htmlUrl="https://www.latent.space/" />
+      <outline type="rss" text="Simon Willison" title="Simon Willison"
+               xmlUrl="https://simonwillison.net/atom/everything/"
+               htmlUrl="https://simonwillison.net/" />
+    </outline>
+
+    <outline text="开源工作 · GitHub Releases（官方、零噪音、只在发版时更新）">
+      <outline type="rss" text="MCP Servers releases" title="MCP Servers releases"
+               xmlUrl="https://github.com/modelcontextprotocol/servers/releases.atom"
+               htmlUrl="https://github.com/modelcontextprotocol/servers/releases" />
+      <outline type="rss" text="MCP Python SDK releases" title="MCP Python SDK releases"
+               xmlUrl="https://github.com/modelcontextprotocol/python-sdk/releases.atom"
+               htmlUrl="https://github.com/modelcontextprotocol/python-sdk/releases" />
+      <outline type="rss" text="MCP TypeScript SDK releases" title="MCP TypeScript SDK releases"
+               xmlUrl="https://github.com/modelcontextprotocol/typescript-sdk/releases.atom"
+               htmlUrl="https://github.com/modelcontextprotocol/typescript-sdk/releases" />
+      <outline type="rss" text="vLLM releases" title="vLLM releases"
+               xmlUrl="https://github.com/vllm-project/vllm/releases.atom"
+               htmlUrl="https://github.com/vllm-project/vllm/releases" />
+      <outline type="rss" text="llama.cpp releases" title="llama.cpp releases"
+               xmlUrl="https://github.com/ggml-org/llama.cpp/releases.atom"
+               htmlUrl="https://github.com/ggml-org/llama.cpp/releases" />
+      <outline type="rss" text="Ollama releases" title="Ollama releases"
+               xmlUrl="https://github.com/ollama/ollama/releases.atom"
+               htmlUrl="https://github.com/ollama/ollama/releases" />
+      <outline type="rss" text="SGLang releases" title="SGLang releases"
+               xmlUrl="https://github.com/sgl-project/sglang/releases.atom"
+               htmlUrl="https://github.com/sgl-project/sglang/releases" />
+      <outline type="rss" text="Transformers releases" title="Transformers releases"
+               xmlUrl="https://github.com/huggingface/transformers/releases.atom"
+               htmlUrl="https://github.com/huggingface/transformers/releases" />
+    </outline>
+
+    <outline text="社区">
+      <outline type="rss" text="r/LocalLLaMA 每日热帖" title="r/LocalLLaMA 每日热帖"
+               xmlUrl="https://www.reddit.com/r/LocalLLaMA/top/.rss?t=day"
+               htmlUrl="https://www.reddit.com/r/LocalLLaMA/" />
+    </outline>
+
+    <outline text="中文">
+      <outline type="rss" text="量子位" title="量子位"
+               xmlUrl="https://www.qbitai.com/feed"
+               htmlUrl="https://www.qbitai.com/" />
+    </outline>
+
+  </body>
+</opml>

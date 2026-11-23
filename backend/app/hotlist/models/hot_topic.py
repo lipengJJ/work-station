@@ -31,6 +31,10 @@ class HotTopic(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    setup_done: Mapped[bool] = mapped_column(Boolean, default=True)
+    """创建向导是否走完。False = 草稿（向导中途退出），列表里单独标记。
+    与 enabled 正交：enabled 表示"要不要跑"，setup_done 表示"配没配完"。
+    老库迁移默认 True——存量主题都视为已配置完成。"""
 
     # ---------------------------------------------------------- 分析配置 ----
     skill_key: Mapped[str] = mapped_column(String(64), default="")

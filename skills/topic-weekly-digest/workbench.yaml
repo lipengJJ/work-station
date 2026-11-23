@@ -1,0 +1,22 @@
+version: "1.0.0"
+category: "digest"
+tags:
+  - "主题"
+  - "周报"
+  - "日报"
+  - "信息聚合"
+runtime:
+  preferred_provider: "deepseek"
+  recommended_model: "deepseek-chat"
+  tools:
+    google_search: false
+    url_context: false
+templates:
+  - id: "weekly"
+    name: "主题周报"
+    description: "周期为周的主题报告：核心结论 + 分节正文 + 推荐清单 + 数据来源"
+    prompt: "./assets/prompts/weekly.md"
+  - id: "daily"
+    name: "主题日报"
+    description: "周期为日的主题报告：当日要点 + 分节正文 + 推荐清单 + 数据来源"
+    prompt: "./assets/prompts/daily.md"

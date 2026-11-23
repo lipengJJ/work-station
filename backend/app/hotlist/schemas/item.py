@@ -72,3 +72,44 @@ class RankPointOut(BaseModel):
 class ItemDetailOut(BaseModel):
     item: ItemOut
     history: list[RankPointOut] = Field(default_factory=list)
+
+
+class ItemFulltextOut(BaseModel):
+    """条目全文（trafilatura 抽取的 Markdown，保留标题层级/图片/链接）。
+
+    status：success（有全文，content 非空）/ skipped（robots 禁止或疑似付费墙）/
+    failed（抓取失败或正文过短）。skipped/failed 时 content 为空，前端退化展示
+    summary + 原文外链。
+    """
+
+    status: str
+    content: str = ""
+    char_count: int = 0
+    error: str = ""
+    fetched_at: datetime | None = None
+
+
+class GroupSummaryOut(BaseModel):
+    """数据源分组 AI 总结。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    group_filter: str = ""
+    status: str = "running"
+    content: str = ""
+    error: str = ""
+    item_count: int = 0
+    model: str = ""
+    created_at: datetime
+
+
+class EmbeddingStatusOut(BaseModel):
+    """文章语义向量索引进度：供榜单页展示补偿任务的完成情况。"""
+
+    total: int = 0
+    indexed: int = 0
+    pending: int = 0
+    failed: int = 0
+    running: bool = False
+    """是否有手动补算任务正在后台执行。"""

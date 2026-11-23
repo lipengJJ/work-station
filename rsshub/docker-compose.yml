@@ -1,0 +1,86 @@
+# RSSHub 独立部署
+#
+# 为什么单独一个 compose 而不是塞进 workbench 的 docker-compose.yml：
+#   这台机器上跑了两套 workbench（主工作区 + notify 分支，见 ../start.sh 的端口注释）。
+#   RSSHub 是它们共用的基础设施，塞进任一个 compose 都会导致另一套起不来
+#   （容器名冲突 + 1200 端口冲突）。独立部署，两边都指向 http://localhost:1200。
+#
+# 用法：
+#   cp .env.example .env   # 填 token / cookie
+#   docker compose up -d
+#   curl -s http://localhost:1200/github/topics/mcp | head -30
+#
+# 端口选择：1200 是 RSSHub 默认端口，与本机已占用的 80 / 8010 / 8012 /
+#   5666 / 5668 / 5676 / 8020 / 8090 都不冲突。
+# Redis 刻意不映射到宿主机端口，避免和你本机可能已有的 Redis 抢 6379。
+
+services:
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: rsshub
+    restart: unless-stopped
+    ports:
+      - "1200:1200"
+    environment:
+      NODE_ENV: production
+
+      # ---- 缓存 ----
+      # RSSHub 默认只缓存 5 分钟。你的 RSS 源是 4 小时抓一次，缓存设长一点能
+      # 大幅减少对上游站点的请求次数，降低被反爬/限流的概率。
+      CACHE_TYPE: redis
+      REDIS_URL: redis://rsshub-redis:6379/
+      CACHE_EXPIRE: 1800          # 路由结果缓存 30 分钟
+      CACHE_CONTENT_EXPIRE: 3600  # 正文缓存 1 小时
+
+      # ---- 网络 ----
+      REQUEST_TIMEOUT: 20000      # 单次请求超时（毫秒）
+      REQUEST_RETRY: 2
+
+      # ---- 访问控制（可选但建议开）----
+      # 不填 = 局域网内任何人都能用你这台 RSSHub 打外网。填了之后
+      # 请求要带 ?key=xxx。个人机器上无所谓，放公网必须填。
+      ACCESS_KEY: ${RSSHUB_ACCESS_KEY:-}
+
+      # ---- 各平台凭证（在 .env 里填）----
+      # GitHub：topics / search 路由用。不填也能跑，但 GitHub 对未认证请求
+      # 限制很紧，几十个源很容易撞限流。token 不需要勾任何 scope。
+      GITHUB_ACCESS_TOKEN: ${GITHUB_ACCESS_TOKEN:-}
+
+      # Telegram：不填也能用（默认抓 t.me/s/ 公开预览页）。
+      # 填了能覆盖关闭了 web 预览的频道。
+      TELEGRAM_SESSION: ${TELEGRAM_SESSION:-}
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
+
+      # 知乎：2024-07 起大部分路由未登录拿不到全文，必须填。
+      # cookie 需含 z_c0，建议同时带 d_c0 和 __zse_ck。
+      ZHIHU_COOKIES: ${ZHIHU_COOKIES:-}
+
+      # X / Twitter：填登录 Web 后的 auth_token cookie（逗号分隔可多个）。
+      # ⚠️ 用专门的小号，主号有被风控封禁的风险。
+      TWITTER_AUTH_TOKEN: ${TWITTER_AUTH_TOKEN:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:1200/"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  redis:
+    image: redis:alpine
+    container_name: rsshub-redis
+    restart: unless-stopped
+    # 不映射宿主机端口，只在 compose 内部网络里被 rsshub 访问
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis-data:

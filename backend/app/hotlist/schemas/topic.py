@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 # ---------------------------------------------------------------- 主题 ----
 
@@ -21,6 +21,8 @@ class TopicIn(BaseModel):
     description: str = ""
     enabled: bool = True
     sort_order: int = 0
+    setup_done: bool = True
+    """创建向导是否走完；向导创建时前端显式传 False，走完最后一步再置 True。"""
 
     skill_key: str = ""
     template_key: str | None = None
@@ -163,6 +165,7 @@ class TopicUpdateIn(BaseModel):
     description: str | None = None
     enabled: bool | None = None
     sort_order: int | None = None
+    setup_done: bool | None = None
     skill_key: str | None = None
     template_key: str | None = None
     extra_question: str | None = None
@@ -202,14 +205,15 @@ class TopicSourceOut(BaseModel):
 
     id: str
     name: str
-    source_kind: str
     adapter: str
-    cron_expr: str
+    interval_hours: float
     enabled: bool = True          # HotSource.enabled（全局熔断）
     last_status: str = ""
     last_error: str = ""
     consecutive_failures: int = 0
     last_error_kind: str = ""
+    last_error_label: str = ""
+    """last_error_kind 的中文说明，前端直接展示（与 SourceOut 同一套 kind_label）。"""
     transient_failures: int = 0
     permanent_failures: int = 0
     fail_count: int = 0
@@ -218,6 +222,14 @@ class TopicSourceOut(BaseModel):
     topic_enabled: bool = False   # HotTopicSource.enabled（本主题内开关）
     imported_from: str = ""
     hit_count_7d: int = 0         # 近 7 天贡献的命中条目数（controller/service 回填）
+
+    @model_validator(mode="after")
+    def _fill_error_label(self) -> "TopicSourceOut":
+        if self.last_error_kind and not self.last_error_label:
+            from app.hotlist.services.adapters.base import kind_label
+
+            self.last_error_label = kind_label(self.last_error_kind)
+        return self
 
 
 class TopicSourceBatchIn(BaseModel):
@@ -228,10 +240,15 @@ class TopicSourceBatchIn(BaseModel):
 
 
 class ImportOpmlIn(BaseModel):
-    """OPML 导入：二选一（opml_text 优先于 opml_url）。"""
+    """导入源：三选一，优先级 feed_urls > opml_text > opml_url。
+
+    feed_urls：直接给一批 RSS/Atom 订阅地址（前端按行拆好传数组），不要求是 OPML
+    文档——用户手头常见的就是散的 feed 地址，硬要求先包一层 OPML 外壳没有必要。
+    """
 
     opml_text: str = ""
     opml_url: str = ""
+    feed_urls: list[str] = Field(default_factory=list)
 
 
 class OpmlImportResult(BaseModel):
